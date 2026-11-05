@@ -222,7 +222,8 @@ def test_intersect_all_files_preserves_input_crs_and_concatenates_seeded_random_
     assert "pop_sum_seed" in result.columns
 
 
-def test_intersect_all_files_returns_empty_geodataframe_with_geometry_when_no_country_has_rasters(monkeypatch):
+def test_intersect_all_files_keeps_rows_of_countries_without_rasters(monkeypatch):
+    """R7: polygons in countries without a raster used to vanish from the output."""
     gdf = gpd.GeoDataFrame(
         {
             "ISO_2": ["ZZ"],
@@ -239,10 +240,39 @@ def test_intersect_all_files_returns_empty_geodataframe_with_geometry_when_no_co
 
     result = add_pop.intersect_all_files(gdf, tif_dir="unused", max_workers=1, all_years=True, country_col="ISO_2")
 
-    assert result.empty
+    assert len(result) == 1
+    assert result["ISO_2"].tolist() == ["ZZ"]
     assert result.crs is not None
     assert result.crs.to_epsg() == 3857
     assert "geometry" in result.columns
+
+
+def test_intersect_all_files_keeps_rows_with_invalid_country_and_marks_population_missing(monkeypatch):
+    """R7: rows with country XX/empty and rows of countries without rasters stay, with NaN population."""
+    gdf = gpd.GeoDataFrame(
+        {
+            "ISO_2": ["DE", None, " ", "ZZ"],
+            "site": [1, 2, 3, 4],
+            "geometry": [Point(0, 0), Point(1, 1), Point(2, 2), Point(3, 3)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    monkeypatch.setattr(add_pop, "find_country_tif_files", lambda countries, tif_dir: {"DE": ["de_2020.tif"], "ZZ": None})
+    monkeypatch.setattr(add_pop, "ProcessPoolExecutor", _ImmediateExecutor)
+    monkeypatch.setattr(add_pop, "as_completed", lambda futures: futures)
+    monkeypatch.setattr(add_pop, "tqdm", lambda iterable, total=None, desc=None: iterable)
+    monkeypatch.setattr(
+        add_pop, "intersect_single_file", lambda sub, paths, all_years=True: sub.assign(**{"2020_zonal_sum": 50.0})
+    )
+
+    result = add_pop.intersect_all_files(gdf, tif_dir="unused", max_workers=1, country_col="ISO_2")
+
+    assert sorted(result["site"]) == [1, 2, 3, 4]
+    by_site = result.set_index("site")["2020_zonal_sum"]
+    assert by_site[1] == 50.0
+    assert by_site[[2, 3, 4]].isna().all()
 
 
 def test_intersect_all_files_rejects_non_positive_workers(monkeypatch):
@@ -658,9 +688,12 @@ def test_add_pop_import_fallback_block_executes(monkeypatch):
     utils_stub.configure_logging = lambda *args, **kwargs: None
     utils_stub.ensure_output_dir_for_file = lambda path: None
     utils_stub.get_iso_codes = lambda: ({}, {}, {}, {})
+    geo_utils_stub = ModuleType("geo_utils")
+    geo_utils_stub.repair_geometry = lambda geom: geom
 
     monkeypatch.setitem(sys.modules, "starter", starter_stub)
     monkeypatch.setitem(sys.modules, "utils", utils_stub)
+    monkeypatch.setitem(sys.modules, "geo_utils", geo_utils_stub)
 
     module_globals = runpy.run_path(str(module_path), run_name="not_main")
 
@@ -680,10 +713,38 @@ def test_add_pop_script_entrypoint_runs_main_guard(monkeypatch):
     utils_stub.configure_logging = lambda *args, **kwargs: None
     utils_stub.ensure_output_dir_for_file = lambda path: None
     utils_stub.get_iso_codes = lambda: ({}, {}, {}, {})
+    geo_utils_stub = ModuleType("geo_utils")
+    geo_utils_stub.repair_geometry = lambda geom: geom
 
     monkeypatch.setitem(sys.modules, "starter", starter_stub)
     monkeypatch.setitem(sys.modules, "utils", utils_stub)
+    monkeypatch.setitem(sys.modules, "geo_utils", geo_utils_stub)
     monkeypatch.setattr(sys, "argv", [str(module_path), "--index", "0"])
 
     with pytest.raises(KeyError, match="voronoi_dir"):
         runpy.run_path(str(module_path), run_name="__main__")
+
+def test_intersect_single_file_repairs_invalid_polygons_and_leaves_null_geometry_unmeasured(monkeypatch):
+    """R7: an invalid polygon used to be dropped and reported as 0 people."""
+    bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)])  # self-intersecting
+    gdf = gpd.GeoDataFrame(
+        {"ISO_2": ["DE", "DE", "DE"], "geometry": [bowtie, None, Polygon()]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    tif_path = "worldpop_2024_deu.tif"
+    monkeypatch.setattr(add_pop.os.path, "exists", lambda path: path == tif_path)
+    monkeypatch.setattr(add_pop.rasterio, "open", lambda path: _RasterStub())
+
+    def fake_extract(rast, vec, ops, output):
+        assert len(vec) == 1 and vec.geometry.iloc[0].is_valid
+        return pd.DataFrame({"sum": [7.0], "stdev": [1.0]})
+
+    monkeypatch.setattr(add_pop, "exact_extract", fake_extract)
+
+    result = add_pop.intersect_single_file(gdf.copy(), [tif_path])
+
+    sums = result["2024_zonal_sum"].tolist()
+    assert sums[0] == 7.0
+    assert np.isnan(sums[1])
+    assert sums[2] == 0.0

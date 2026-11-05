@@ -36,8 +36,8 @@ def _industrial_cfg_defaults(request):
     cfg.setdefault("k_max", 0.92)
     cfg.setdefault("detection_confidence_threshold", 3)
     cfg.setdefault("industrial_min_cells", 100)
-    cfg.setdefault("industrial_category_numbers", [])
-    cfg.setdefault("mix_use_categories", [])
+    cfg.setdefault("industrial_category_numbers", [2, 4])
+    cfg.setdefault("mix_use_categories", [6])
     cfg.setdefault("overwrite_existing", False)
     cfg.setdefault("unconnected_sjoin_workers", 8)
     cfg.setdefault("scipy_true", False)
@@ -55,6 +55,8 @@ def _industrial_cfg_defaults(request):
     paths.setdefault("hydrowaste", "hydrowaste.csv")
     paths.setdefault("buffers_dir", "buffers")
     paths.setdefault("voronoi_dir", "voronoi")
+    paths.setdefault("industrial_buffers_dir", "industrial_buffers")
+    paths.setdefault("industrial_voronoi_dir", "industrial_voronoi")
     paths.setdefault("overture", "overture.parquet")
     paths.setdefault("overture_s3_url", "s3://example/overture")
 
@@ -66,6 +68,29 @@ def test_filter_industrial_wwtps_keeps_only_matching_categories(mock_cfg, tiny_p
     result = find_unconnected_industrial_areas.filter_industrial_wwtps(cfg, tiny_points_gdf)
 
     assert set(result["WASTE_ID"]) == {1, 6}
+
+
+def test_filter_industrial_wwtps_rejects_an_empty_category_list(mock_cfg, tiny_points_gdf):
+    """R10: an empty list used to mean "every plant", i.e. a copy of the main run."""
+    mock_cfg["industrial_category_numbers"] = []
+
+    with pytest.raises(ValueError, match="industrial_category_numbers is empty"):
+        find_unconnected_industrial_areas.filter_industrial_wwtps(mock_cfg, tiny_points_gdf)
+
+
+def test_industrial_output_paths_never_point_at_the_main_voronoi_outputs(mock_cfg):
+    """R10: the industrial run used the create_voronoi file names and directories."""
+    from src.pipelines import create_output_paths
+
+    for key in ("level", "version", "buffer_path_token", "weight_type", "weight_func_suffix"):
+        mock_cfg.setdefault(key, "x")
+    main = create_output_paths(mock_cfg)
+    industrial = find_unconnected_industrial_areas.industrial_output_paths(mock_cfg)
+
+    for group in ("voronoi", "buffers"):
+        for key, path in industrial[group].items():
+            assert path != main[group][key]
+            assert path.startswith("industrial_")
 
 
 def test_find_unconnected_areas_returns_only_polygons_outside_service_regions():
@@ -344,7 +369,7 @@ def test_main_skips_when_output_exists_and_overwrite_disabled(mock_cfg, monkeypa
     monkeypatch.setattr(sys, "argv", ["find_unconnected_industrial_areas.py"])
     monkeypatch.setattr(find_unconnected_industrial_areas, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_unconnected_industrial_areas, "create_output_paths", lambda config: {"voronoi": {"1": "unused.gpkg"}})
+    monkeypatch.setattr(find_unconnected_industrial_areas, "industrial_output_paths", lambda config: {"voronoi": {"1": "unused.gpkg"}})
     monkeypatch.setattr(
         find_unconnected_industrial_areas.os.path,
         "exists",
@@ -377,7 +402,7 @@ def test_main_writes_industrial_copy_when_no_industrial_wwtps(mock_cfg, monkeypa
     monkeypatch.setattr(sys, "argv", ["find_unconnected_industrial_areas.py"])
     monkeypatch.setattr(find_unconnected_industrial_areas, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_unconnected_industrial_areas, "create_output_paths", lambda config: {"voronoi": {"1": "unused.gpkg"}})
+    monkeypatch.setattr(find_unconnected_industrial_areas, "industrial_output_paths", lambda config: {"voronoi": {"1": "unused.gpkg"}})
     monkeypatch.setattr(find_unconnected_industrial_areas.os.path, "exists", lambda path: False)
     monkeypatch.setattr(find_unconnected_industrial_areas.os, "makedirs", lambda path, exist_ok=False: None)
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_industrial_areas", lambda config: industrial_gdf.copy())
@@ -425,7 +450,7 @@ def test_main_returns_false_when_voronoi_generation_fails(
     monkeypatch.setattr(sys, "argv", ["find_unconnected_industrial_areas.py"])
     monkeypatch.setattr(find_unconnected_industrial_areas, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_unconnected_industrial_areas, "create_output_paths", lambda config: {"voronoi": {"1": "voronoi.gpkg"}})
+    monkeypatch.setattr(find_unconnected_industrial_areas, "industrial_output_paths", lambda config: {"voronoi": {"1": "voronoi.gpkg"}})
     monkeypatch.setattr(find_unconnected_industrial_areas.os.path, "exists", lambda path: False)
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_industrial_areas", lambda config: industrial_gdf.copy())
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_wwtps", lambda config, approach_id: tiny_points_gdf.copy())
@@ -520,7 +545,7 @@ def test_main_returns_false_when_wwtps_empty(mock_cfg, monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["find_unconnected_industrial_areas.py"])
     monkeypatch.setattr(find_unconnected_industrial_areas, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_unconnected_industrial_areas, "create_output_paths", lambda config: {"voronoi": {"1": "unused.gpkg"}})
+    monkeypatch.setattr(find_unconnected_industrial_areas, "industrial_output_paths", lambda config: {"voronoi": {"1": "unused.gpkg"}})
     monkeypatch.setattr(find_unconnected_industrial_areas.os.path, "exists", lambda path: False)
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_industrial_areas", lambda config: industrial_gdf.copy())
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_wwtps", lambda config, approach_id: industrial_gdf.iloc[0:0].copy())
@@ -556,7 +581,7 @@ def test_main_removes_existing_output_before_parquet_write(
     monkeypatch.setattr(sys, "argv", ["find_unconnected_industrial_areas.py"])
     monkeypatch.setattr(find_unconnected_industrial_areas, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_unconnected_industrial_areas, "create_output_paths", lambda config: {"voronoi": {"1": "voronoi.gpkg"}})
+    monkeypatch.setattr(find_unconnected_industrial_areas, "industrial_output_paths", lambda config: {"voronoi": {"1": "voronoi.gpkg"}})
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_industrial_areas", lambda config: industrial_gdf.copy())
     monkeypatch.setattr(find_unconnected_industrial_areas, "load_wwtps", lambda config, approach_id: tiny_points_gdf.iloc[:1].copy())
     monkeypatch.setattr(find_unconnected_industrial_areas, "filter_industrial_wwtps", lambda config, wwtps_gdf: wwtps_gdf.copy())

@@ -162,6 +162,22 @@ def select_industrial_categories(df, industrial_categories, mix_use_categories,
     return selected
 
 
+def reported_population_mask(df, column='QUAL_POP'):
+    """True where HydroWASTE marks POP_SERVED as reported (``QUAL_POP == 1``).
+
+    The column is read as a number, so ``1``, ``1.0`` and ``'1.0'`` all count.
+    A missing column raises: the comparisons used to backfill it with ``'1.0'``
+    or skip the filter, which silently treated every estimated value as
+    reported.
+    """
+    if column not in df.columns:
+        raise KeyError(
+            f"Column '{column}' is required to select plants with reported population; "
+            "it is missing from the comparison input."
+        )
+    return pd.to_numeric(df[column], errors='coerce').eq(1)
+
+
 @contextmanager
 def duckdb_connection(in_memory=False, read_only=False):
     """Yield a DuckDB connection, owning the scratch database's whole lifecycle.

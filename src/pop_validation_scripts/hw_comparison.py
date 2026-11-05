@@ -14,10 +14,10 @@ import seaborn as sns
 import numpy as np
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, ensure_output_dir_for_file
+    from ..utils import configure_logging, ensure_output_dir_for_file, reported_population_mask
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, ensure_output_dir_for_file
+    from src.utils import configure_logging, ensure_output_dir_for_file, reported_population_mask
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ def composite_histogram(data, my_dict, title, output_filepath=None, save=False, 
     plt.close(fig)
 
 def orchestrate_single(gdf, approach, plot_args, output_dir, filename, pop_col='POP_SERVED',
-                        qual_pop_default='1.0', filter_qual_pop=True, upper_quantile_hw_comp=1,
+                        qual_pop_default=None, filter_qual_pop=True, upper_quantile_hw_comp=1,
                         comp_output_prefix='hw_comp', reference_name='HydroWaste', hide_empty_axis=True):
     """Compute reference-comparison metrics for one verification file.
 
@@ -171,12 +171,12 @@ def orchestrate_single(gdf, approach, plot_args, output_dir, filename, pop_col='
         Source verification filename.
     pop_col : str, default='POP_SERVED'
         Population reference column used for comparisons.
-    qual_pop_default : str | None, default='1.0'
-        Value used to backfill a missing ``QUAL_POP`` column. ``None`` skips
-        backfilling entirely (the EU comparison has no such column).
+    qual_pop_default : str | None, default=None
+        Value used to backfill a missing ``QUAL_POP`` column. The default
+        ``None`` does not backfill, so a missing column raises when
+        ``filter_qual_pop`` is set instead of marking every plant as reported.
     filter_qual_pop : bool, default=True
-        Whether to additionally require ``QUAL_POP == '1.0'`` when selecting
-        rows for comparison.
+        Whether to keep only rows with reported population (``QUAL_POP == 1``).
     upper_quantile_hw_comp : float, default=1
         Upper quantile used to clip the multiplicative-comparison histogram.
     comp_output_prefix : str, default='hw_comp'
@@ -195,6 +195,7 @@ def orchestrate_single(gdf, approach, plot_args, output_dir, filename, pop_col='
     gdf['indx'] = range(len(gdf))
     if qual_pop_default is not None and 'QUAL_POP' not in gdf.columns:
         gdf['QUAL_POP'] = qual_pop_default
+    reported = reported_population_mask(gdf).to_numpy() if filter_qual_pop else None
 
     verified = 'single'
     if 'unver' in filename:
@@ -214,7 +215,7 @@ def orchestrate_single(gdf, approach, plot_args, output_dir, filename, pop_col='
         HW_comp_dict[year] = HW_comp_col
 
         if filter_qual_pop:
-            pop_file = gdf[(gdf[pop_col].notna()) & (gdf[col].notna()) & (gdf['QUAL_POP'] == '1.0')]
+            pop_file = gdf[(gdf[pop_col].notna()) & (gdf[col].notna()) & reported]
         else:
             pop_file = gdf[(gdf[pop_col].notna()) & (gdf[col].notna())]
 

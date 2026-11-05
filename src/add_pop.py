@@ -23,14 +23,18 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 import rasterio
 import geopandas as gpd
+import numpy as np
 import pandas as pd
+from shapely.ops import unary_union
 from shapely.validation import explain_validity
 try:
     from .starter import load_config, parse_config_overrides, add_standard_override_arguments
     from .utils import configure_logging, ensure_output_dir_for_file, get_iso_codes
+    from .geo_utils import repair_geometry
 except ImportError:  # Support running as a top-level script
     from starter import load_config, parse_config_overrides, add_standard_override_arguments
     from utils import configure_logging, ensure_output_dir_for_file, get_iso_codes
+    from geo_utils import repair_geometry
 from exactextract import exact_extract
 
 logger = logging.getLogger(__name__)
@@ -44,6 +48,15 @@ def _normalize_country_code(value):
         return None
     code = str(value).strip().upper() 
     return code if code else None
+
+
+def _polygonal_repair(geom):
+    """Repair an invalid polygon and keep only its polygonal parts (or ``None``)."""
+    repaired = repair_geometry(geom)
+    if repaired is None or repaired.geom_type in ("Polygon", "MultiPolygon"):
+        return repaired
+    parts = [g for g in getattr(repaired, "geoms", []) if g.geom_type in ("Polygon", "MultiPolygon")]
+    return unary_union(parts) if parts else None
 
 
 def _find_failing_geometry_indices(tif_path, gdf, max_report=10):
@@ -163,7 +176,15 @@ def intersect_single_file(gdf, tif_paths, all_years=True):
                     invalid_sample,
                 )
 
-            extract_gdf = gdf.loc[~bad_mask].copy()
+            # Invalid polygons are repaired for the extraction instead of being
+            # counted as zero people; null geometries get NaN (not measured),
+            # empty ones a true zero.
+            skip_mask = null_mask | empty_mask
+            extract_gdf = gdf.loc[~skip_mask].copy()
+            repair_rows = invalid_mask[~skip_mask]
+            if repair_rows.any():
+                extract_gdf.loc[repair_rows, 'geometry'] = extract_gdf.loc[repair_rows, 'geometry'].map(_polygonal_repair)
+                extract_gdf = extract_gdf[extract_gdf.geometry.notna()]
             if extract_gdf.empty:
                 raise RuntimeError(
                     f"No valid geometries remain for exact_extract for country={country_hint}, year={year}, tif={tif_path}"
@@ -182,6 +203,8 @@ def intersect_single_file(gdf, tif_paths, all_years=True):
             std_col = f"{year}_zonal_std"
             gdf[sum_col] = 0.0
             gdf[std_col] = 0.0
+            not_measured = gdf.index.difference(extract_gdf.index).difference(gdf.index[empty_mask])
+            gdf.loc[not_measured, [sum_col, std_col]] = np.nan
             gdf.loc[extract_gdf.index, sum_col] = stats_df['sum'].clip(lower=0).values
             gdf.loc[extract_gdf.index, std_col] = stats_df['stdev'].clip(lower=0).values
 
@@ -359,28 +382,33 @@ def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_co
         raise KeyError(f"country_col '{country_col}' not found in GeoDataFrame")
 
     gdf = gdf.copy()
-    gdf[country_col] = gdf[country_col].apply(_normalize_country_code)
-    before_rows = len(gdf)
-    gdf = gdf[gdf[country_col].notna()].copy()
-    dropped_rows = before_rows - len(gdf)
-    if dropped_rows > 0:
+    normalized = gdf[country_col].apply(_normalize_country_code)
+    # Rows that cannot be matched to a raster are kept with NaN population
+    # (not dropped) so the output has one row per input polygon and the
+    # missing population is visible instead of silently absent.
+    unmatched = [gdf[normalized.isna()]]
+    if len(unmatched[0]):
         logger.warning(
-            "Dropped %s rows with empty/invalid %s before TIFF matching",
-            dropped_rows,
+            "%s rows with empty/invalid %s kept with NaN population",
+            len(unmatched[0]),
             country_col,
         )
+    gdf = gdf[normalized.notna()].copy()
+    gdf[country_col] = normalized[normalized.notna()]
 
     requested_countries = sorted(gdf[country_col].unique().tolist())
-    tif_filepaths = find_country_tif_files(requested_countries, tif_dir)
+    tif_filepaths = find_country_tif_files(requested_countries, tif_dir) if requested_countries else {}
 
     data = []
     countries = [c for c in requested_countries if c in tif_filepaths and tif_filepaths[c] is not None]
     missing_rasters = sorted(set(requested_countries) - set(countries))
     if missing_rasters:
+        unmatched.append(gdf[gdf[country_col].isin(missing_rasters)])
         logger.warning(
-            "Skipping %s/%s countries without raster TIFFs (examples: %s)",
+            "%s/%s countries have no raster TIFFs; their %s rows are kept with NaN population (examples: %s)",
             len(missing_rasters),
             len(requested_countries),
+            len(unmatched[-1]),
             ", ".join(missing_rasters[:20]),
         )
 
@@ -418,13 +446,13 @@ def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_co
         raise RuntimeError(
             f"Population raster intersection failed for {len(failures)} countries. Examples: {preview}"
         )
-    if data:
-        data = pd.concat(data, ignore_index=True)
-        data = gpd.GeoDataFrame(data, geometry='geometry', crs=gdf.crs)
-        return data
-    else:
+    if not data:
         logger.warning("No data returned from any country - check raster files and polygon-raster intersection")
+    parts = [part for part in data + unmatched if len(part)]
+    if not parts:
         return gdf.iloc[0:0].copy()
+    data = pd.concat(parts, ignore_index=True)
+    return gpd.GeoDataFrame(data, geometry='geometry', crs=gdf.crs)
     
 def orchestrate_intersections(data_dir, tif_dir, output_dir, index, max_workers=16, country_col='ISO_2', overwrite=True):
     """Run the population-intersection workflow for one Voronoi file.

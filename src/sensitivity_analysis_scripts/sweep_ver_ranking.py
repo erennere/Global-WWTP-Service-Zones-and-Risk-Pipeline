@@ -37,7 +37,7 @@ import pandas as pd
 
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, default_cpu_workers
+    from ..utils import configure_logging, default_cpu_workers, reported_population_mask
     from ..geo_utils import load_eu_reference_layer
     from ..pop_validation_scripts.verification_script import find_verification_watersheds
     from ..sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
@@ -49,7 +49,7 @@ try:
     from ..data_merge.merge_seg_results import assign_to_nearest
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, default_cpu_workers
+    from src.utils import configure_logging, default_cpu_workers, reported_population_mask
     from src.geo_utils import load_eu_reference_layer
     from src.pop_validation_scripts.verification_script import find_verification_watersheds
     from src.sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
@@ -197,14 +197,12 @@ def _process_ver_record(record):
         if sub.empty:
             continue
 
-        # HW: QUAL_POP == '1.0' filter (matching hw_comparison.py behaviour)
-        hw_sub = sub.copy()
-        if "QUAL_POP" in hw_sub.columns:
-            hw_sub = hw_sub[hw_sub["QUAL_POP"] == "1.0"].copy()
+        # HW: plants with reported population only (QUAL_POP == 1), as in hw_comparison.py
+        hw_sub = sub[reported_population_mask(sub)].copy()
         hw_metrics = compute_sensitivity_metrics(hw_sub, year_col, "POP_SERVED")
 
-        # EU: nearest-neighbour join, keep matched rows only
-        eu_sub = assign_to_nearest(sub.copy(), _REF_GDF, _THRESHOLD)
+        # EU: nearest-neighbour join, one source row per EU plant, matched rows only
+        eu_sub = assign_to_nearest(sub.copy(), _REF_GDF, _THRESHOLD, one_to_one=True)
         if "uwwCapacity" in eu_sub.columns:
             eu_sub = eu_sub[eu_sub["uwwCapacity"].notna()].reset_index(drop=True)
         else:

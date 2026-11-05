@@ -74,7 +74,7 @@ def main():
         params = extract_voronoi_parameters(filepath)
         approach = params.get('approach') if isinstance(params, dict) else None
         gdf = gpd.read_file(filepath)
-        gdf = assign_to_nearest(gdf, ref_file, threshold)
+        gdf = assign_to_nearest(gdf, ref_file, threshold, one_to_one=True)
         gdf = gdf[gdf[organic_m_column].notna()].reset_index(drop=True)
         orchestrate_single(
             gdf, approach, plot_args, plots_dir, filename, pop_col,

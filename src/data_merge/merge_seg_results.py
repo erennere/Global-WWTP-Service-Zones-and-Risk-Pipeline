@@ -7,6 +7,7 @@ Supports two workflows:
 
 import os
 import argparse
+import numpy as np
 import pandas as pd
 import geopandas as gpd
 import zipfile
@@ -19,7 +20,7 @@ except ImportError:
     from src.utils import configure_logging, ensure_output_dir_for_file
     from src.geo_utils import nearest_within_threshold
 
-def assign_to_nearest(gdf_source, gdf_target, threshold=None):
+def assign_to_nearest(gdf_source, gdf_target, threshold=None, one_to_one=False):
     """Attach nearest target attributes to each source geometry.
 
     Source rows without valid geometry or without a successful nearest-neighbor
@@ -34,6 +35,11 @@ def assign_to_nearest(gdf_source, gdf_target, threshold=None):
     threshold : float | None, default=None
         Optional maximum nearest-neighbor distance in target CRS units.
         When ``None``, behavior is unchanged from the previous implementation.
+    one_to_one : bool, default=False
+        When true, each target is attached to at most one source row - the
+        closest one (ties: the first). The other sources that picked the same
+        target are returned unmatched, so a reference value can never be
+        counted twice in a comparison.
     """
     gdf_source = gdf_source.copy()
     if gdf_source.crs is None or gdf_target.crs is None:
@@ -47,6 +53,19 @@ def assign_to_nearest(gdf_source, gdf_target, threshold=None):
     ]
 
     gdf_source['nearest_index'] = nearest_matches
+    if one_to_one:
+        matched = gdf_source['nearest_index'].notna()
+        if matched.any():
+            target_idx = gdf_source.loc[matched, 'nearest_index'].astype(int).to_numpy()
+            distance = gdf_source.loc[matched].geometry.distance(
+                gpd.GeoSeries(gdf_target.geometry.to_numpy()[target_idx], index=gdf_source.index[matched],
+                              crs=gdf_target.crs)
+            )
+            order = pd.DataFrame({'target': target_idx, 'distance': distance.to_numpy(),
+                                  'pos': np.arange(len(target_idx))}, index=gdf_source.index[matched])
+            keep = order.sort_values(['target', 'distance', 'pos']).drop_duplicates('target').index
+            losers = gdf_source.index[matched].difference(keep)
+            gdf_source.loc[losers, 'nearest_index'] = None
     gdf_source_na = gdf_source[gdf_source['nearest_index'].isna()]
     gdf_source = gdf_source[gdf_source['nearest_index'].notna()].copy()
     gdf_source['nearest_index'] = gdf_source['nearest_index'].astype(int)

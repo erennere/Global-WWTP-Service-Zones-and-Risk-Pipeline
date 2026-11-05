@@ -27,13 +27,13 @@ import seaborn as sns
 
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
+    from ..utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, reported_population_mask, resolve_latest_zonal_sum_column
     from ..geo_utils import load_eu_reference_layer
     from ..pop_validation_scripts.hw_comparison import ndvi, multiples, replace_inf
     from ..data_merge.merge_seg_results import assign_to_nearest
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
+    from src.utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, reported_population_mask, resolve_latest_zonal_sum_column
     from src.geo_utils import load_eu_reference_layer
     from src.pop_validation_scripts.hw_comparison import ndvi, multiples, replace_inf
     from src.data_merge.merge_seg_results import assign_to_nearest
@@ -254,12 +254,10 @@ def _process_single_record(record):
     if year is None or year_col is None:
         return []
 
-    hw_subset = gdf.copy()
-    if "QUAL_POP" in hw_subset.columns:
-        hw_subset = hw_subset[hw_subset["QUAL_POP"] == '1.0'].copy()
+    hw_subset = gdf[reported_population_mask(gdf)].copy()
     hw_metrics = compute_sensitivity_metrics(hw_subset, year_col, "POP_SERVED")
 
-    eu_subset = assign_to_nearest(gdf.copy(), _REF_GDF, _THRESHOLD)
+    eu_subset = assign_to_nearest(gdf.copy(), _REF_GDF, _THRESHOLD, one_to_one=True)
     if "uwwCapacity" in eu_subset.columns:
         eu_subset = eu_subset[eu_subset["uwwCapacity"].notna()].reset_index(drop=True)
     eu_metrics = compute_sensitivity_metrics(eu_subset, year_col, "POP_SERVED_EU")

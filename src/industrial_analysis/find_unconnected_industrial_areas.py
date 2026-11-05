@@ -106,9 +106,13 @@ def filter_industrial_wwtps(cfg: dict, wwtps_gdf: gpd.GeoDataFrame) -> gpd.GeoDa
     industrial_categories = cfg['industrial_category_numbers']
     mix_use_categories = cfg['mix_use_categories']
     if not industrial_categories:
-        logger.warning("No industrial categories configured; using all WTTPs")
-        return wwtps_gdf
-    
+        # An empty list used to mean "all plants", which silently turned the
+        # industrial analysis into a copy of the main Voronoi run.
+        raise ValueError(
+            "industrial_category_numbers is empty; set it (or leave it null to "
+            "inherit the create_voronoi list) before running the industrial analysis."
+        )
+
     logger.info(f"Filtering WTTPs by industrial categories: {industrial_categories}")
     return select_industrial_categories(
         wwtps_gdf, industrial_categories, mix_use_categories, keep=True, logger=logger
@@ -206,6 +210,23 @@ def run_voronoi_for_wwtps(
 
 
 _WEB_MERCATOR = "EPSG:3857"
+
+
+def industrial_output_paths(cfg: dict) -> dict:
+    """Voronoi and buffer paths for the industrial-plant run.
+
+    Same file names as ``create_output_paths`` but under
+    ``paths.industrial_voronoi_dir`` / ``paths.industrial_buffers_dir``, so the
+    industrial run can neither overwrite nor silently reuse the all-plant
+    Voronoi regions and dissolved buffers written by create_voronoi.
+    """
+    paths = dict(cfg['paths'])
+    paths['voronoi_dir'] = paths['industrial_voronoi_dir']
+    paths['buffers_dir'] = paths['industrial_buffers_dir']
+    for key in ('voronoi_dir', 'buffers_dir'):
+        if not paths[key]:
+            raise ValueError(f"paths.industrial_{key} must be set for the industrial analysis")
+    return create_output_paths({**cfg, 'paths': paths})
 
 
 def _sjoin_chunk_unconnected(
@@ -313,8 +334,8 @@ def main():
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="find_unconnected_industrial_areas", **overrides)
     only_round = args.only_round
-    paths_dict = create_output_paths(cfg)
-    
+    paths_dict = industrial_output_paths(cfg)
+
     output_path = cfg['paths']['industrial_unconnected_output']
     overwrite = cfg['overwrite_existing']
     

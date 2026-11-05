@@ -405,3 +405,35 @@ def test_additive_weighting_is_not_in_the_default_sweep():
     default_funcs = {combo[4] for combo in generate_parameter_combinations()}
     assert default_funcs == {"mult", ""}
     assert {combo[4] for combo in generate_parameter_combinations("add")} == {"add"}
+
+
+# --------------------------------------------------------------------------- #
+# R8  reported-population filter and one-to-one reference matching            #
+# --------------------------------------------------------------------------- #
+def test_R8_reported_population_mask_reads_numbers_and_requires_the_column():
+    from src.utils import reported_population_mask
+
+    df = pd.DataFrame({"QUAL_POP": ["1.0", 1, 2.0, None, "2"]})
+    assert reported_population_mask(df).tolist() == [True, True, False, False, False]
+    with pytest.raises(KeyError, match="QUAL_POP"):
+        reported_population_mask(pd.DataFrame({"POP_SERVED": [1]}))
+
+
+def test_R8_one_reference_plant_is_matched_by_at_most_one_cell():
+    from src.data_merge.merge_seg_results import assign_to_nearest
+
+    utm = "EPSG:32632"
+    cells = gpd.GeoDataFrame(
+        {"cell": [1, 2, 3]},
+        geometry=[Point(500_100, 5_500_000), Point(500_000, 5_500_050), Point(510_000, 5_500_000)],
+        crs=utm,
+    )
+    reference = gpd.GeoDataFrame({"POP_SERVED_EU": [1000.0]}, geometry=[Point(500_000, 5_500_000)], crs=utm)
+
+    many = assign_to_nearest(cells, reference, threshold=500)
+    one = assign_to_nearest(cells, reference, threshold=500, one_to_one=True)
+
+    assert many["POP_SERVED_EU"].notna().sum() == 2  # the old behaviour: counted twice
+    matched = one[one["POP_SERVED_EU"].notna()]
+    assert matched["cell"].tolist() == [2]  # the closest cell keeps the match
+    assert sorted(one["cell"]) == [1, 2, 3]

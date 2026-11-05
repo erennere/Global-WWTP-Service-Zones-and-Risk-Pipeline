@@ -291,8 +291,10 @@ def test_eu_comparison_main_assigns_nearest_filters_and_dispatches(monkeypatch, 
     monkeypatch.setattr(eu_comparison.gpd, "read_file", fake_read_file)
     monkeypatch.setattr(eu_comparison, "extract_voronoi_parameters", lambda filepath: {"approach": "2"})
 
-    def fake_assign_to_nearest(gdf, ref_file, threshold):
-        captured["assign"] = {"threshold": threshold, "ref_cols": ref_file.columns.tolist(), "rows": len(gdf)}
+    def fake_assign_to_nearest(gdf, ref_file, threshold, one_to_one=False):
+        captured["assign"] = {
+            "threshold": threshold, "ref_cols": ref_file.columns.tolist(), "rows": len(gdf), "one_to_one": one_to_one,
+        }
         return gdf.assign(uwwCapacity=[1.0, pd.NA], POP_SERVED_EU=[10.0, pd.NA])
 
     monkeypatch.setattr(eu_comparison, "assign_to_nearest", fake_assign_to_nearest)
@@ -314,7 +316,7 @@ def test_eu_comparison_main_assigns_nearest_filters_and_dispatches(monkeypatch, 
 
     eu_comparison.main()
 
-    assert captured["assign"] == {"threshold": 500, "ref_cols": ["uwwCapacity", "geometry", "POP_SERVED_EU"], "rows": 2}
+    assert captured["assign"] == {"threshold": 500, "ref_cols": ["uwwCapacity", "geometry", "POP_SERVED_EU"], "rows": 2, "one_to_one": True}
     assert captured["orchestrate"] == {
         "rows": 1,
         "approach": "2",
@@ -429,7 +431,20 @@ def test_hw_orchestrate_single_skips_2014_and_filters_quality(monkeypatch, tmp_p
     assert captured["calls"][0]["hw_na"] == 1
 
 
-def test_hw_orchestrate_single_defaults_qual_pop_when_missing(monkeypatch, tmp_path):
+def test_hw_orchestrate_single_fails_when_qual_pop_is_missing(tmp_path):
+    """R8: a missing QUAL_POP used to be backfilled with '1.0' - every plant 'reported'."""
+    gdf = gpd.GeoDataFrame(
+        {"POP_SERVED": [100.0], "2018_zonal_sum": [110.0], "geometry": [Point(0, 0)]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    with pytest.raises(KeyError, match="QUAL_POP"):
+        hw_comparison.orchestrate_single(
+            gdf, approach="1", plot_args={}, output_dir=str(tmp_path), filename="x.gpkg", pop_col="POP_SERVED",
+        )
+
+
+def test_hw_orchestrate_single_backfills_qual_pop_only_when_asked(monkeypatch, tmp_path):
     output_dir = str(tmp_path / "plots")
     captured = []
 
@@ -458,6 +473,7 @@ def test_hw_orchestrate_single_defaults_qual_pop_when_missing(monkeypatch, tmp_p
         output_dir=output_dir,
         filename="single_case.gpkg",
         pop_col="POP_SERVED",
+        qual_pop_default="1.0",
     )
 
     assert len(captured) == 2

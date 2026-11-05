@@ -488,7 +488,9 @@ find_unconnected_industrial_areas:
   k_max: null
   detection_confidence_threshold: null
   industrial_min_cells: null
-  industrial_category_numbers: []
+  # null = the same category list create_voronoi uses for remove_industrial,
+  # so the two layers can never disagree. An empty list is rejected.
+  industrial_category_numbers: null
   mix_use_categories: null
   overwrite_existing: false
   scipy_true: null
@@ -515,6 +517,10 @@ find_unconnected_industrial_areas:
     overture: null
     overture_s3_url: null
     industrial_merged_filepath: null
+    # The industrial-plant Voronoi and its buffers get their own directories so
+    # this script never reads or overwrites the all-plant create_voronoi outputs.
+    industrial_voronoi_dir: '{data_dir}/industrial_results/voronoi'
+    industrial_buffers_dir: '{data_dir}/industrial_results/buffers'
     industrial_unconnected_output: '{data_dir}/industrial_results/v{version}/lvl{level}/bf{buffer}/{weight_type}/unconnected_industrial_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}_mp{industrial_min_cells}.gpkg'
 
 verification_script:
