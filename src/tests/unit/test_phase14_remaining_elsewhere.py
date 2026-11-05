@@ -6,6 +6,7 @@ import runpy
 import sys
 import types
 
+import duckdb
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -394,7 +395,7 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
         def close(self):
             return None
 
-    monkeypatch.setattr(dba.duckdb, "connect", lambda *a, **k: _Conn())
+    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: _Conn())
     runpy.run_module("src.annotation_scripts.download_bing_annotate", run_name="__main__")
 
 

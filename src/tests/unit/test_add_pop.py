@@ -654,14 +654,13 @@ def test_add_pop_import_fallback_block_executes(monkeypatch):
     starter_stub.load_config = lambda **kwargs: {}
     starter_stub.parse_config_overrides = lambda args=None: {}
     starter_stub.add_standard_override_arguments = lambda parser: parser
-    create_voronoi_stub = ModuleType("create_voronoi")
-    create_voronoi_stub.ensure_output_dir_for_file = lambda path: None
-    download_pop_stub = ModuleType("download_pop")
-    download_pop_stub.get_iso_codes = lambda: ({}, {}, {}, {})
+    utils_stub = ModuleType("utils")
+    utils_stub.configure_logging = lambda *args, **kwargs: None
+    utils_stub.ensure_output_dir_for_file = lambda path: None
+    utils_stub.get_iso_codes = lambda: ({}, {}, {}, {})
 
     monkeypatch.setitem(sys.modules, "starter", starter_stub)
-    monkeypatch.setitem(sys.modules, "create_voronoi", create_voronoi_stub)
-    monkeypatch.setitem(sys.modules, "download_pop", download_pop_stub)
+    monkeypatch.setitem(sys.modules, "utils", utils_stub)
 
     module_globals = runpy.run_path(str(module_path), run_name="not_main")
 
@@ -677,14 +676,13 @@ def test_add_pop_script_entrypoint_runs_main_guard(monkeypatch):
     starter_stub.load_config = lambda **kwargs: {"paths": {}, "add_pop_max_workers": 1, "overwrite_existing": False}
     starter_stub.parse_config_overrides = lambda args=None: {}
     starter_stub.add_standard_override_arguments = lambda parser: parser
-    create_voronoi_stub = ModuleType("create_voronoi")
-    create_voronoi_stub.ensure_output_dir_for_file = lambda path: None
-    download_pop_stub = ModuleType("download_pop")
-    download_pop_stub.get_iso_codes = lambda: ({}, {}, {}, {})
+    utils_stub = ModuleType("utils")
+    utils_stub.configure_logging = lambda *args, **kwargs: None
+    utils_stub.ensure_output_dir_for_file = lambda path: None
+    utils_stub.get_iso_codes = lambda: ({}, {}, {}, {})
 
     monkeypatch.setitem(sys.modules, "starter", starter_stub)
-    monkeypatch.setitem(sys.modules, "create_voronoi", create_voronoi_stub)
-    monkeypatch.setitem(sys.modules, "download_pop", download_pop_stub)
+    monkeypatch.setitem(sys.modules, "utils", utils_stub)
     monkeypatch.setattr(sys, "argv", [str(module_path), "--index", "0"])
 
     with pytest.raises(KeyError, match="voronoi_dir"):

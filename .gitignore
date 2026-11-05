@@ -27,3 +27,22 @@ tmp_*.json
 
 # DuckDB scratch databases (created and removed by utils.duckdb_connection)
 *.db
+
+# Editor settings
+.vscode/
+
+# Pipeline inputs/outputs: files already tracked under data/ stay tracked;
+# new data is not added by accident (use `git add -f` on purpose).
+data/
+
+# Figure 1 working area: scripts are moved into the package in Phase 3,
+# its data and rendered outputs never belong in git.
+src/maps/
+
+# Run logs written by the shell wrappers
+logs/
+src/logs/
+
+# Generated audit listings (large, regenerable)
+notes/*_issues*.txt
+notes/literal_candidates*.txt

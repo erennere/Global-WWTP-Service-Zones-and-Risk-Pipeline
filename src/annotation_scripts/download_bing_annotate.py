@@ -53,7 +53,7 @@ def safe_wkt_load(wkt_wtr):
     
 # Bundled asset, resolved against the package rather than the working directory.
 FONT_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dejavu-sans.book.ttf"
+    os.path.dirname(os.path.abspath(__file__)), "assets", "dejavu-sans.book.ttf"
 )
 RESOLUTIONS = { 
     1 :	78271.52,   
