@@ -31,6 +31,7 @@ from src.pop_at_risk_river_calculations import create_rasters as cr
 from src.pop_at_risk_river_calculations import find_intersection_river as fir
 from src.pop_at_risk_river_calculations import impact_polygons_pop as ipp
 from src.industrial_analysis import download_and_vectorize as dv
+from src import service_areas as sa
 
 
 pytestmark = pytest.mark.unit
@@ -202,7 +203,7 @@ def test_load_config_expands_relative_paths_and_aliases(write_test_config):
     assert cfg["weight_func"] == "add"
     assert cfg["weight_func_suffix"] == "_add"
     assert cfg["buffer_path_token"] == "1500"
-    assert cfg["distance_fn"] is create_voronoi.default_distance_additive
+    assert cfg["distance_fn"] is sa.default_distance_additive
     assert cfg["paths"]["bboxes"] == str((config_path.parent / "data" / "bboxes.csv").resolve())
     assert "bf1500" in cfg["paths"]["voronoi_dir"]
 
@@ -233,7 +234,7 @@ def test_load_config_dynamic_buffering_uses_size_measure_token_and_empty_weight_
     assert cfg["buffer_path_token"] == "fp"
     assert cfg["dynamic_buffering"] is True
     assert cfg["size_measure"] == "footprint"
-    assert cfg["distance_fn"] is create_voronoi.default_distance_multiplicative
+    assert cfg["distance_fn"] is sa.default_distance_multiplicative
 
 
 SIZE_CONFIG = {
@@ -313,7 +314,7 @@ def test_load_config_normalizes_weight_func_from_yaml(write_test_config):
 
     assert cfg["weight_func"] == "add"
     assert cfg["weight_func_suffix"] == "_add"
-    assert cfg["distance_fn"] is create_voronoi.default_distance_additive
+    assert cfg["distance_fn"] is sa.default_distance_additive
 
 
 def test_load_config_rejects_invalid_weight_method(write_test_config):

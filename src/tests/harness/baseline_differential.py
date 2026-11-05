@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point, Polygon
+from src import service_areas as sa
 
 warnings.filterwarnings("ignore")
 
@@ -90,7 +91,7 @@ def _auto_weight_scale(old_root):
     rng = np.random.default_rng(0)
     # A deliberately skewed spread, so mean and median cannot coincide by luck.
     points = np.vstack([rng.normal(0, 1, (30, 2)), rng.normal(40, 1, (3, 2))]).tolist()
-    return old_cv.auto_weight_scale(points), new_cv.auto_weight_scale(points)
+    return old_cv.auto_weight_scale(points), sa.auto_weight_scale(points)
 
 
 # --------------------------------------------------------------------------
@@ -105,7 +106,7 @@ def _is_valid_polygon_nan(old_root):
     from src import create_voronoi as new_cv
 
     bad = Polygon([(0, 0), (1, 0), (1, float("nan")), (0, 1)])
-    return old_cv.is_valid_geom(bad), new_cv.is_valid_geom(bad)
+    return old_cv.is_valid_geom(bad), sa.is_valid_geom(bad)
 
 
 @case("G6 is_valid_geom / clean polygon", "differ",
@@ -117,7 +118,7 @@ def _is_valid_polygon_clean(old_root):
     from src import create_voronoi as new_cv
 
     good = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-    return old_cv.is_valid_geom(good), new_cv.is_valid_geom(good)
+    return old_cv.is_valid_geom(good), sa.is_valid_geom(good)
 
 
 @case("G6 is_valid_geom / point with NaN", "same",
@@ -127,7 +128,7 @@ def _is_valid_point_nan(old_root):
     from src import create_voronoi as new_cv
 
     bad = Point(float("nan"), 0)
-    return old_cv.is_valid_geom(bad), new_cv.is_valid_geom(bad)
+    return old_cv.is_valid_geom(bad), sa.is_valid_geom(bad)
 
 
 @case("G6 is_valid_geom / None and self-intersecting", "same",
@@ -139,7 +140,7 @@ def _is_valid_other(old_root):
     bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
     return (
         [old_cv.is_valid_geom(None), old_cv.is_valid_geom(bowtie)],
-        [new_cv.is_valid_geom(None), new_cv.is_valid_geom(bowtie)],
+        [sa.is_valid_geom(None), sa.is_valid_geom(bowtie)],
     )
 
 

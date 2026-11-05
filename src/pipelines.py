@@ -225,12 +225,12 @@ def run_voronoi_approach(approach_id, gdf, clipping_gdf, country_df, cfg, distan
         raise ValueError("cfg['max_workers'] must be >= 1")
     
     try:
-        from . import create_voronoi as create_voronoi_module
-        from .create_voronoi import orchestrate_voronoi_weights, drop_duplicates, calculate_area, calculate_buffer
+        from . import service_areas as service_areas_module
+        from .service_areas import orchestrate_voronoi_weights, drop_duplicates, calculate_area, calculate_buffer
         from .utils import ensure_output_dir_for_file, select_industrial_categories
     except ImportError:  # Support running as a top-level script
-        import create_voronoi as create_voronoi_module
-        from create_voronoi import orchestrate_voronoi_weights, drop_duplicates, calculate_area, calculate_buffer
+        from src import service_areas as service_areas_module
+        from src.service_areas import orchestrate_voronoi_weights, drop_duplicates, calculate_area, calculate_buffer
         from utils import ensure_output_dir_for_file, select_industrial_categories
 
     site_country_col = site_country_col or cfg['country_output_column']
@@ -245,14 +245,14 @@ def run_voronoi_approach(approach_id, gdf, clipping_gdf, country_df, cfg, distan
         cfg['calculate_area_fn'],
         calculate_area,
         'calculate_area_fn',
-        create_voronoi_module,
+        service_areas_module,
     )
 
     calculate_buffer_fn = _resolve_configured_callable(
         cfg['calculate_buffer_fn'],
         calculate_buffer,
         'calculate_buffer_fn',
-        create_voronoi_module,
+        service_areas_module,
     )
     
     cfg_area_kwargs = cfg['area_fn_kwargs']
@@ -330,7 +330,7 @@ def prepare_data(cfg):
           Overture parquet cache.
     """
     try:
-        from .create_voronoi import (
+        from .service_areas import (
             drop_duplicates, intersects_with_country_db,
             download_overture_maps, intersect_with_polygon_sindex,
             orchestrate_overlaps,
@@ -338,7 +338,7 @@ def prepare_data(cfg):
         from .geo_utils import buffer_geometry
         from .utils import ensure_output_dir_for_file, select_industrial_categories
     except ImportError:  # Support running as a top-level script
-        from create_voronoi import (
+        from src.service_areas import (
             drop_duplicates, intersects_with_country_db,
             download_overture_maps, intersect_with_polygon_sindex,
             orchestrate_overlaps,

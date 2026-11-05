@@ -16,6 +16,7 @@ from hypothesis import strategies as st
 from shapely.geometry import Point, box
 
 from src import create_voronoi as cv
+from src import service_areas as sa
 
 pytestmark = pytest.mark.unit
 
@@ -33,7 +34,7 @@ def _sites(xy, **cols):
 def _solve(sites, clip, scale_weights=False, size_kwargs=None, size_weights=False):
     kwargs = dict(FAR, **(size_kwargs or {}))
     clipping = gpd.GeoDataFrame(geometry=[clip], crs=UTM)
-    regions, _ = cv.weighted_voronoi(sites, "WASTE_ID", None, scale_weights=scale_weights, clipping=clipping,
+    regions, _ = sa.weighted_voronoi(sites, "WASTE_ID", None, scale_weights=scale_weights, clipping=clipping,
                                      n_points=STEP, buffer_fn_kwargs=kwargs, threshold=1.0, size_weights=size_weights)
     return regions.to_crs(UTM).set_index("WASTE_ID").geometry
 
@@ -99,7 +100,7 @@ def test_translating_every_site_translates_every_cell(dx, dy):
 def test_merging_duplicate_records_never_increases_pop_served(pops, offsets):
     xy = [(offsets[i], 0.0) for i in range(len(pops))]  # all within the 500 m threshold
     df = _sites(xy, POP_SERVED=[np.nan if p is None else float(p) for p in pops])
-    merged = cv.cluster_points(df, threshold=500)
+    merged = sa.cluster_points(df, threshold=500)
     assert len(merged) == 1
     known = [p for p in pops if p is not None]
     if known:

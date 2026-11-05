@@ -49,10 +49,10 @@ import shapely
 from scipy.spatial import cKDTree
 
 try:
-    from ..create_voronoi import calculate_area, plant_size_people, reported_size_people
+    from ..service_areas import calculate_area, plant_size_people, reported_size_people
     from ..starter import load_config
 except ImportError:  # run as a script from src/
-    from create_voronoi import calculate_area, plant_size_people, reported_size_people
+    from src.service_areas import calculate_area, plant_size_people, reported_size_people
     from starter import load_config
 
 US_ALBERS = 5070

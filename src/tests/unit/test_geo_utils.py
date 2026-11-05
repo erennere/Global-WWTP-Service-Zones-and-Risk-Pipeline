@@ -193,4 +193,4 @@ def test_estimate_utm_crs_linestring_and_epsg_failure(monkeypatch):
 
     monkeypatch.setattr(gpd.GeoSeries, "unary_union", property(lambda self: _FakeUnion()))
     monkeypatch.setattr(geo_utils.CRS, "from_epsg", _patched_from_epsg)
-    assert cv.estimate_utm_crs(gdf).to_epsg() == 3857
+    assert geo_utils.estimate_utm_crs(gdf).to_epsg() == 3857

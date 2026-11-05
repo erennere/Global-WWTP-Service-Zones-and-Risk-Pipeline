@@ -6,6 +6,8 @@ import pytest
 from shapely.geometry import Point
 
 from src import create_voronoi
+from src import service_areas as sa
+from src.tests.helpers import patch_service_areas
 
 
 pytestmark = pytest.mark.unit
@@ -44,7 +46,7 @@ def test_create_weights_methods_return_normalized_values(method):
         crs="EPSG:4326",
     )
 
-    result = create_voronoi.create_weights(df, method=method)
+    result = sa.create_weights(df, method=method)
 
     assert result["weights"].between(0, 1).all()
     assert result["weights"].sum() == pytest.approx(1.0)
@@ -60,7 +62,7 @@ def test_create_weights_equal_values_stay_uniform():
         crs="EPSG:4326",
     )
 
-    result = create_voronoi.create_weights(df, method="linear")
+    result = sa.create_weights(df, method="linear")
 
     assert result["weights"].tolist() == pytest.approx([1 / 3, 1 / 3, 1 / 3])
 
@@ -75,7 +77,7 @@ def test_create_weights_zero_values_fall_back_to_equal_distribution():
         crs="EPSG:4326",
     )
 
-    result = create_voronoi.create_weights(df, method="linear")
+    result = sa.create_weights(df, method="linear")
 
     assert result["weights"].tolist() == pytest.approx([1 / 3, 1 / 3, 1 / 3])
 
@@ -90,7 +92,7 @@ def test_create_weights_single_point_returns_one():
         crs="EPSG:4326",
     )
 
-    result = create_voronoi.create_weights(df, method="sigmoid")
+    result = sa.create_weights(df, method="sigmoid")
 
     assert result["weights"].tolist() == pytest.approx([1.0])
 
@@ -109,10 +111,10 @@ def test_orchestrate_voronoi_weights_normalizes_per_basin_independently(monkeypa
         point_df = sub_df[["HYBAS_ID", "WASTE_ID", "geometry"]].copy()
         return region_df, point_df
 
-    monkeypatch.setattr(create_voronoi, "ProcessPoolExecutor", _ImmediateExecutor)
-    monkeypatch.setattr(create_voronoi, "as_completed", lambda futures: futures)
-    monkeypatch.setattr(create_voronoi, "voronoi_worker", fake_worker)
-    monkeypatch.setattr(create_voronoi, "estimate_utm_crs", lambda gdf: "EPSG:3857")
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ImmediateExecutor)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: futures)
+    patch_service_areas(monkeypatch, "voronoi_worker", fake_worker)
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda gdf: "EPSG:3857")
 
     df = gpd.GeoDataFrame(
         {
@@ -126,7 +128,7 @@ def test_orchestrate_voronoi_weights_normalizes_per_basin_independently(monkeypa
         crs="EPSG:4326",
     )
 
-    region_df, point_df = create_voronoi.orchestrate_voronoi_weights(
+    region_df, point_df = sa.orchestrate_voronoi_weights(
         df,
         "HYBAS_ID",
         tiny_country_gdf,
@@ -134,7 +136,7 @@ def test_orchestrate_voronoi_weights_normalizes_per_basin_independently(monkeypa
         scale_weights=False,
         clipping=None,
         n_points=100,
-        distance_fn=create_voronoi.default_distance_multiplicative,
+        distance_fn=sa.default_distance_multiplicative,
         area_fn=lambda sub_df, **kwargs: sub_df,
         method="linear",
         calculate_buffer_fn=lambda sub_df, weights, **kwargs: np.full(len(sub_df), 1000.0),
@@ -198,14 +200,14 @@ def test_orchestrate_voronoi_weights_output_mode_resumes_from_temp_checkpoint(mo
         state["temp_exists"] = False
         state["output_exists"] = True
 
-    monkeypatch.setattr(create_voronoi, "ProcessPoolExecutor", _ImmediateExecutor)
-    monkeypatch.setattr(create_voronoi, "as_completed", lambda futures: futures)
-    monkeypatch.setattr(create_voronoi, "voronoi_worker", fake_worker)
-    monkeypatch.setattr(create_voronoi, "estimate_utm_crs", lambda gdf: "EPSG:3857")
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ImmediateExecutor)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: futures)
+    patch_service_areas(monkeypatch, "voronoi_worker", fake_worker)
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda gdf: "EPSG:3857")
     monkeypatch.setattr(create_voronoi.gpd, "read_file", fake_read_file)
     monkeypatch.setattr(create_voronoi.os.path, "exists", fake_exists)
     monkeypatch.setattr(create_voronoi.os, "replace", fake_replace)
-    monkeypatch.setattr(create_voronoi, "ensure_output_dir_for_file", lambda path: None)
+    patch_service_areas(monkeypatch, "ensure_output_dir_for_file", lambda path: None)
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
 
     df = gpd.GeoDataFrame(
@@ -220,7 +222,7 @@ def test_orchestrate_voronoi_weights_output_mode_resumes_from_temp_checkpoint(mo
         crs="EPSG:4326",
     )
 
-    result = create_voronoi.orchestrate_voronoi_weights(
+    result = sa.orchestrate_voronoi_weights(
         df,
         "HYBAS_ID",
         tiny_country_gdf,
@@ -281,15 +283,15 @@ def test_orchestrate_voronoi_weights_output_mode_overwrite_clears_temp_checkpoin
         state["temp_exists"] = False
         state["output_exists"] = True
 
-    monkeypatch.setattr(create_voronoi, "ProcessPoolExecutor", _ImmediateExecutor)
-    monkeypatch.setattr(create_voronoi, "as_completed", lambda futures: futures)
-    monkeypatch.setattr(create_voronoi, "voronoi_worker", fake_worker)
-    monkeypatch.setattr(create_voronoi, "estimate_utm_crs", lambda gdf: "EPSG:3857")
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ImmediateExecutor)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: futures)
+    patch_service_areas(monkeypatch, "voronoi_worker", fake_worker)
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda gdf: "EPSG:3857")
     monkeypatch.setattr(create_voronoi.gpd, "read_file", fail_read_file)
     monkeypatch.setattr(create_voronoi.os.path, "exists", fake_exists)
     monkeypatch.setattr(create_voronoi.os, "remove", fake_remove)
     monkeypatch.setattr(create_voronoi.os, "replace", fake_replace)
-    monkeypatch.setattr(create_voronoi, "ensure_output_dir_for_file", lambda path: None)
+    patch_service_areas(monkeypatch, "ensure_output_dir_for_file", lambda path: None)
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
 
     df = gpd.GeoDataFrame(
@@ -304,7 +306,7 @@ def test_orchestrate_voronoi_weights_output_mode_overwrite_clears_temp_checkpoin
         crs="EPSG:4326",
     )
 
-    result = create_voronoi.orchestrate_voronoi_weights(
+    result = sa.orchestrate_voronoi_weights(
         df,
         "HYBAS_ID",
         tiny_country_gdf,
@@ -339,9 +341,9 @@ def test_initialize_voronoi_weights_additive_mode_pins_factor_to_one():
         crs="EPSG:4326",
     )
 
-    weights, factor = create_voronoi.initialize_voronoi_weights(
+    weights, factor = sa.initialize_voronoi_weights(
         df,
-        create_voronoi.default_distance_additive,
+        sa.default_distance_additive,
         scale_weights=True,
         points=[(0, 0), (1, 0)],
     )

@@ -6,6 +6,7 @@ import pytest
 from shapely.geometry import Point, box
 
 from src import create_voronoi
+from src import service_areas as sa
 
 
 pytestmark = pytest.mark.integration
@@ -38,15 +39,15 @@ def _tiny_voronoi_inputs():
 @pytest.mark.parametrize(
     ("distance_fn", "scale_weights", "weights"),
     [
-        (create_voronoi.default_distance_multiplicative, True, [0.4, 0.6]),
-        (create_voronoi.default_distance_additive, False, [0.5, 0.5]),
+        (sa.default_distance_multiplicative, True, [0.4, 0.6]),
+        (sa.default_distance_additive, False, [0.5, 0.5]),
     ],
 )
 def test_weighted_voronoi_produces_valid_non_overlapping_regions(distance_fn, scale_weights, weights):
     sites, clip, country = _tiny_voronoi_inputs()
     sites["weights"] = weights
 
-    region_df, point_df = create_voronoi.weighted_voronoi(
+    region_df, point_df = sa.weighted_voronoi(
         sites,
         "HYBAS_ID",
         country,
@@ -70,14 +71,14 @@ def test_weighted_voronoi_produces_valid_non_overlapping_regions(distance_fn, sc
 def test_weighted_voronoi_clips_regions_to_supplied_boundary():
     sites, clip, country = _tiny_voronoi_inputs()
 
-    region_df, _ = create_voronoi.weighted_voronoi(
+    region_df, _ = sa.weighted_voronoi(
         sites,
         "HYBAS_ID",
         country,
         scale_weights=False,
         clipping=clip,
         n_points=200,
-        distance_fn=create_voronoi.default_distance_multiplicative,
+        distance_fn=sa.default_distance_multiplicative,
         threshold=1,
         calculate_buffer_fn=lambda df, weights, **kwargs: np.full(len(df), 1500.0),
         site_id_col="WASTE_ID",

@@ -130,7 +130,7 @@ The repository is organized around one canonical processing chain and several op
 | Main technical index | `src/README.md` | Stage index and cross-stage settings |
 | Merge stage | `src/data_merge/` | Build the canonical WWTP dataset |
 | Annotation stage | `src/annotation_scripts/` | Generate grids, OSM context, and annotation merges |
-| Voronoi stage | `src/create_voronoi.py`, `src/create_voronoi.sh` | Create service areas |
+| Voronoi stage | `src/create_voronoi.py` (command line), `src/service_areas/` (size, weights, solver, contours, joins, overlaps, orchestrate), `src/create_voronoi.sh` | Create service areas |
 | Population stage | `src/add_pop.py`, `src/add_pop.sh` | Attach WorldPOP counts to service areas |
 | Risk stage | `src/pop_at_risk_river_calculations/` | Compute non-served population and downstream risk |
 | Validation stage | `src/pop_validation_scripts/` | Compare outputs against HydroWASTE and Waterbase-UWWTD |

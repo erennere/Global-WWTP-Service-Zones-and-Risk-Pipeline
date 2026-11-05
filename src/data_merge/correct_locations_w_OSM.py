@@ -12,12 +12,12 @@ import numpy as np
 from shapely import Point, Polygon, LineString, MultiPolygon, MultiLineString, to_wkt, from_wkt
 from shapely.geometry.base import BaseGeometry
 try:
-    from ..create_voronoi import intersects_with_country_db, download_overture_maps
+    from ..service_areas import intersects_with_country_db, download_overture_maps
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
     from ..geo_utils import buffer_geometry, estimate_utm_epsg, estimate_utm_epsg_for_geom
     from ..utils import configure_logging, ensure_output_dir_for_file, get_iso_codes
 except ImportError:
-    from src.create_voronoi import intersects_with_country_db, download_overture_maps
+    from src.service_areas import intersects_with_country_db, download_overture_maps
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
     from src.geo_utils import buffer_geometry, estimate_utm_epsg, estimate_utm_epsg_for_geom
     from src.utils import configure_logging, ensure_output_dir_for_file, get_iso_codes

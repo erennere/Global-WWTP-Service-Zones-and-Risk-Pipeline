@@ -17,13 +17,13 @@ import mercantile
 
 try:
     from ..add_pop import intersect_all_files
-    from ..create_voronoi import intersects_with_country_db
+    from ..service_areas import intersects_with_country_db
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
     from .. import provenance
     from ..utils import configure_logging, ensure_output_dir_for_file
 except ImportError:
     from src.add_pop import intersect_all_files
-    from src.create_voronoi import intersects_with_country_db
+    from src.service_areas import intersects_with_country_db
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
     from src import provenance
     from src.utils import configure_logging, ensure_output_dir_for_file

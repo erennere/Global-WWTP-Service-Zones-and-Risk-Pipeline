@@ -36,6 +36,10 @@ except ImportError:
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 from src import create_voronoi
+from src import service_areas as sa
+from src.tests.helpers import patch_service_areas
+import shapely
+from src import utils as utils_module
 
 pytestmark = pytest.mark.unit
 
@@ -87,7 +91,7 @@ def _patch_main_dependencies(monkeypatch, tmp_path, args_namespace, overwrite=Tr
         "country_boundary_column": "country",
         "site_id_column": "WASTE_ID",
         "prepare_data_fn": None,
-        "distance_fn": cv.default_distance_multiplicative,
+        "distance_fn": sa.default_distance_multiplicative,
         "duckdb_cond": False,
         "max_workers": 1,
         "buffer": 200,
@@ -155,7 +159,7 @@ def _patch_main_dependencies(monkeypatch, tmp_path, args_namespace, overwrite=Tr
     monkeypatch.setattr(pipelines, "run_voronoi_approach", lambda *args, **kwargs: True)
 
 def _fake_duckdb_connection(conn):
-    """Build a fake replacement for cv.duckdb_connection yielding ``conn``."""
+    """Build a fake replacement for utils_module.duckdb_connection yielding ``conn``."""
 
     @contextlib.contextmanager
     def _cm(*args, **kwargs):
@@ -190,8 +194,8 @@ BUFFER_KWARGS = {
 }
 
 def _prep_group_with_weights(group_gdf):
-    prepared = create_voronoi.calculate_area(group_gdf.copy(), only_round=False)
-    prepared = create_voronoi.create_weights(prepared, sigma=3, percent_threshold=10, method="linear")
+    prepared = sa.calculate_area(group_gdf.copy(), only_round=False)
+    prepared = sa.create_weights(prepared, sigma=3, percent_threshold=10, method="linear")
     return prepared
 
 class _ImmediateFuture:
@@ -217,7 +221,7 @@ class _ImmediateExecutor:
 
 def test_estimate_utm_epsg_and_crs_fallback_paths(monkeypatch):
     with pytest.raises(ValueError):
-        cv.estimate_utm_epsg(200, 10)
+        geo_utils.estimate_utm_epsg(200, 10)
 
     original_from_epsg = CRS.from_epsg
 
@@ -227,10 +231,10 @@ def test_estimate_utm_epsg_and_crs_fallback_paths(monkeypatch):
         return original_from_epsg(epsg)
 
     monkeypatch.setattr(geo_utils.CRS, "from_epsg", fail_for_utm)
-    assert cv.estimate_utm_epsg(0, 10) == 3857
+    assert geo_utils.estimate_utm_epsg(0, 10) == 3857
 
     empty = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
-    assert cv.estimate_utm_crs(empty).to_epsg() == 3857
+    assert geo_utils.estimate_utm_crs(empty).to_epsg() == 3857
 
 
 def test_estimate_utm_crs_uses_valid_geometry_fallback(monkeypatch):
@@ -246,27 +250,27 @@ def test_estimate_utm_crs_uses_valid_geometry_fallback(monkeypatch):
             return Point(float("nan"), float("nan"))
 
     monkeypatch.setattr(gpd.GeoSeries, "unary_union", property(lambda self: _FakeUnion()))
-    result = cv.estimate_utm_crs(gdf)
+    result = geo_utils.estimate_utm_crs(gdf)
     assert result.to_epsg() == 32631
 
 
 def test_create_weights_error_and_fallback_branches():
     with pytest.raises(KeyError):
-        cv.create_weights(pd.DataFrame({"x": [1, 2]}))
+        sa.create_weights(pd.DataFrame({"x": [1, 2]}))
 
     df = pd.DataFrame({"base_values": [np.nan, np.nan, np.nan]})
-    result = cv.create_weights(df)
+    result = sa.create_weights(df)
     assert math.isclose(result["weights"].sum(), 1.0)
     assert result["weights"].nunique() == 1
 
     sigmoid_df = pd.DataFrame({"base_values": [5.0, 5.0, 5.0]})
-    sigmoid = cv.create_weights(sigmoid_df, method="sigmoid")
+    sigmoid = sa.create_weights(sigmoid_df, method="sigmoid")
     assert math.isclose(sigmoid["weights"].sum(), 1.0)
     assert sigmoid["weights"].nunique() == 1
 
 
 def test_finalize_gdf_and_contours_helpers():
-    empty = cv.finalize_gdf([], cols=["geometry", "x"])
+    empty = sa.finalize_gdf([], cols=["geometry", "x"])
     assert empty.empty
     assert "geometry" in empty.columns
 
@@ -275,24 +279,24 @@ def test_finalize_gdf_and_contours_helpers():
         geometry="geometry",
         crs="EPSG:4326",
     )
-    combined = cv.finalize_gdf([g1], cols=g1.columns)
+    combined = sa.finalize_gdf([g1], cols=g1.columns)
     assert len(combined) == 2
 
     mask = np.array([[False, True, True], [False, True, False], [False, False, False]], dtype=bool)
-    assert cv.extract_contours_scipy(mask, 10, 0, 0)
-    assert cv.extract_contours_cv2(mask, 10, 0, 0)
-    assert cv.extract_contours_rasterio(mask, 10, 0, 0)
+    assert sa.extract_contours_scipy(mask, 10, 0, 0)
+    assert sa.extract_contours_cv2(mask, 10, 0, 0)
+    assert sa.extract_contours_rasterio(mask, 10, 0, 0)
 
 
 def test_intersection_helpers_empty_and_error_paths(monkeypatch):
     empty_df = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
     poly = gpd.GeoDataFrame({"geometry": [box(0, 0, 1, 1)], "country": ["DE"]}, geometry="geometry", crs="EPSG:4326")
-    assert cv.intersect_with_polygon_sindex(empty_df, poly.copy(), "country") is empty_df
-    assert cv.intersect_with_polygons_parallelized(empty_df, poly.copy(), ["country"]) .empty
-    assert cv.intersects_with_country_db(empty_df, "dummy.parquet") is empty_df
+    assert sa.intersect_with_polygon_sindex(empty_df, poly.copy(), "country") is empty_df
+    assert sa.intersect_with_polygons_parallelized(empty_df, poly.copy(), ["country"]) .empty
+    assert sa.intersects_with_country_db(empty_df, "dummy.parquet") is empty_df
 
     with pytest.raises(KeyError):
-        cv.intersect_with_polygons_db(poly.copy(), poly.copy(), ["country"], df_join_col="missing", polygon_join_col="country")
+        sa.intersect_with_polygons_db(poly.copy(), poly.copy(), ["country"], df_join_col="missing", polygon_join_col="country")
 
 
 def test_orchestrate_overlaps_cache_and_missing_column(monkeypatch, tmp_path):
@@ -300,10 +304,10 @@ def test_orchestrate_overlaps_cache_and_missing_column(monkeypatch, tmp_path):
     cache_fp = tmp_path / "buffers.gpkg"
     cached = gpd.GeoDataFrame({"geometry": [Point(1, 1)]}, geometry="geometry", crs="EPSG:4326")
     cached.to_file(cache_fp, driver="GPKG")
-    assert cv.orchestrate_overlaps(df, 2, str(cache_fp), 1000, country_col="ISO_2").equals(gpd.read_file(cache_fp))
+    assert sa.orchestrate_overlaps(df, 2, str(cache_fp), 1000, country_col="ISO_2").equals(gpd.read_file(cache_fp))
 
     with pytest.raises(KeyError):
-        cv.orchestrate_overlaps(df.drop(columns=["ISO_2"]), 2, str(tmp_path / "other.gpkg"), 1000, country_col="ISO_2")
+        sa.orchestrate_overlaps(df.drop(columns=["ISO_2"]), 2, str(tmp_path / "other.gpkg"), 1000, country_col="ISO_2")
 
 
 def test_create_voronoi_main_runs_all_approaches(monkeypatch, tmp_path):
@@ -347,38 +351,6 @@ def test_create_voronoi_main_no_remaining_approaches_exits(monkeypatch, tmp_path
     assert exc.value.code == 0
 
 
-def test_create_voronoi_main_run_path_import_fallback(monkeypatch, tmp_path):
-    import src.pipelines as pipelines
-    import src.starter as starter
-
-    import src.geo_utils as geo_utils_module
-    import src.utils as utils_module
-
-    # Make top-level imports in run_path fallback resolve cleanly.
-    monkeypatch.setitem(sys.modules, "starter", starter)
-    monkeypatch.setitem(sys.modules, "pipelines", pipelines)
-    monkeypatch.setitem(sys.modules, "geo_utils", geo_utils_module)
-    monkeypatch.setitem(sys.modules, "utils", utils_module)
-    provenance_stub = types.ModuleType("provenance")
-    provenance_stub.write_run_manifest = lambda *args, **kwargs: None
-    monkeypatch.setitem(sys.modules, "provenance", provenance_stub)
-
-    args = argparse.Namespace(
-        approach=["0"],
-        only_round=True,
-        verbose=False,
-        level=None,
-        version=None,
-        buffer=None,
-        weight_method=None,
-        weight_func=None,
-        dynamic_buffering=None,
-        size_measure=None,
-    )
-    _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
-
-    module_path = Path(__file__).resolve().parents[2] / "create_voronoi.py"
-    runpy.run_path(str(module_path), run_name="__main__")
 
 
 def test_download_overture_maps_success_and_failure(monkeypatch, tmp_path):
@@ -397,9 +369,9 @@ def test_download_overture_maps_success_and_failure(monkeypatch, tmp_path):
 
             return _Result()
 
-    monkeypatch.setattr(cv, "duckdb_connection", _fake_duckdb_connection(_OkConn()))
+    patch_service_areas(monkeypatch, "duckdb_connection", _fake_duckdb_connection(_OkConn()))
     out_fp = tmp_path / "overture" / "countries.parquet"
-    cv.download_overture_maps("s3://dummy/countries.parquet", str(out_fp))
+    sa.download_overture_maps("s3://dummy/countries.parquet", str(out_fp))
     assert calls
 
     class _FailConn:
@@ -409,8 +381,8 @@ def test_download_overture_maps_success_and_failure(monkeypatch, tmp_path):
         def sql(self, query):
             raise RuntimeError("duckdb fail")
 
-    monkeypatch.setattr(cv, "duckdb_connection", _fake_duckdb_connection(_FailConn()))
-    cv.download_overture_maps("s3://dummy/countries.parquet", str(out_fp))
+    patch_service_areas(monkeypatch, "duckdb_connection", _fake_duckdb_connection(_FailConn()))
+    sa.download_overture_maps("s3://dummy/countries.parquet", str(out_fp))
 
 
 def test_intersects_with_country_db_non_empty(monkeypatch):
@@ -436,8 +408,8 @@ def test_intersects_with_country_db_non_empty(monkeypatch):
                 return _DuckResult(pd.DataFrame({"geometry": [Point(0, 0).wkt], "ISO_2": ["DE"]}))
             return _DuckResult(pd.DataFrame())
 
-    monkeypatch.setattr(cv, "duckdb_connection", _fake_duckdb_connection(_Conn()))
-    out = cv.intersects_with_country_db(gdf, "dummy.parquet", output_country_col="ISO_2")
+    patch_service_areas(monkeypatch, "duckdb_connection", _fake_duckdb_connection(_Conn()))
+    out = sa.intersects_with_country_db(gdf, "dummy.parquet", output_country_col="ISO_2")
     assert "ISO_2" in out.columns
     assert out["ISO_2"].iloc[0] == "DE"
 
@@ -488,9 +460,9 @@ def test_intersect_with_polygons_db_success_path(monkeypatch):
         def close(self):
             return None
 
-    monkeypatch.setattr(cv, "duckdb_connection", _fake_duckdb_connection(_Conn()))
+    patch_service_areas(monkeypatch, "duckdb_connection", _fake_duckdb_connection(_Conn()))
     monkeypatch.setattr(cv.np.random, "randint", lambda low, high: 1)
-    out = cv.intersect_with_polygons_db(df, polygons, ["buffer_id"], df_join_col="ISO_2", polygon_join_col="ISO_2")
+    out = sa.intersect_with_polygons_db(df, polygons, ["buffer_id"], df_join_col="ISO_2", polygon_join_col="ISO_2")
     assert "buffer_id" in out.columns
     assert len(out) == 2
 
@@ -571,7 +543,7 @@ def test_create_voronoi_main_city_country_enrichment_and_failure_exit(monkeypatc
                 return _DuckResult(pd.DataFrame({"geometry": [Point(0, 0).wkt], "ISO_2": ["DE"]}))
             return _DuckResult(pd.DataFrame())
 
-    monkeypatch.setattr(cv, "duckdb_connection", _fake_duckdb_connection(_Conn()))
+    patch_service_areas(monkeypatch, "duckdb_connection", _fake_duckdb_connection(_Conn()))
 
     real_exists = cv.os.path.exists
 
@@ -589,27 +561,27 @@ def test_create_voronoi_main_city_country_enrichment_and_failure_exit(monkeypatc
 
 
 def test_helper_branch_paths_for_remaining_small_functions(monkeypatch):
-    uf = cv.UnionFind(2)
+    uf = geo_utils.UnionFind(2)
     uf.union(0, 0)
 
     points = np.array([[0.0, 0.0], [1.0, 1.0]])
-    monkeypatch.setattr(cv.shapely, "contains_xy", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
-    monkeypatch.setattr(cv.vectorized, "contains", lambda geom, xs, ys: np.array([True, False]))
-    assert cv.geometry_contains_points(box(-1, -1, 2, 2), points).tolist() == [True, False]
+    monkeypatch.setattr(shapely, "contains_xy", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(sa.solver.vectorized, "contains", lambda geom, xs, ys: np.array([True, False]))
+    assert sa.geometry_contains_points(box(-1, -1, 2, 2), points).tolist() == [True, False]
 
-    monkeypatch.setattr(cv.vectorized, "contains", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
-    assert cv.geometry_contains_points(box(-1, -1, 2, 2), points).tolist() == [True, True]
+    monkeypatch.setattr(sa.solver.vectorized, "contains", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("x")))
+    assert sa.geometry_contains_points(box(-1, -1, 2, 2), points).tolist() == [True, True]
 
     class _BadGeom:
         @property
         def is_valid(self):
             raise RuntimeError("boom")
 
-    assert cv.is_valid_geom(_BadGeom()) is False
-    assert cv.buffer_geometry("unknown") == "unknown"
-    assert cv.create_centroid_points(123) is None
+    assert sa.is_valid_geom(_BadGeom()) is False
+    assert geo_utils.buffer_geometry("unknown") == "unknown"
+    assert sa.create_centroid_points(123) is None
 
-    assert np.isfinite(cv.auto_weight_scale([(0, 0), (1, 1), (np.nan, 2), (None, 3)]))
+    assert np.isfinite(sa.auto_weight_scale([(0, 0), (1, 1), (np.nan, 2), (None, 3)]))
 
     bad_centroid_gdf = gpd.GeoDataFrame({"geometry": [GeometryCollection([Point(0, 0)])]}, geometry="geometry", crs="EPSG:4326")
 
@@ -619,15 +591,15 @@ def test_helper_branch_paths_for_remaining_small_functions(monkeypatch):
             return Point(float("nan"), float("nan"))
 
     monkeypatch.setattr(gpd.GeoSeries, "unary_union", property(lambda self: _FakeUnion()))
-    assert cv.estimate_utm_crs(bad_centroid_gdf).to_epsg() == 3857
+    assert geo_utils.estimate_utm_crs(bad_centroid_gdf).to_epsg() == 3857
 
-    calc = cv.calculate_area(pd.DataFrame({"diameters": ["[]"]}))
+    calc = sa.calculate_area(pd.DataFrame({"diameters": ["[]"]}))
     assert (calc["total_area"] == 1).all()
 
 
 def test_orchestrate_voronoi_weights_output_path_branches(monkeypatch, tmp_path):
     with pytest.raises(ValueError):
-        cv.orchestrate_voronoi_weights(
+        sa.orchestrate_voronoi_weights(
             gpd.GeoDataFrame({"geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326"),
             col="grp",
             country_df=gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326"),
@@ -667,9 +639,9 @@ def test_orchestrate_voronoi_weights_output_path_branches(monkeypatch, tmp_path)
         def submit(self, fn, *args):
             return _Future(fn(*args))
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _Exec)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: list(futures))
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _Exec)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: list(futures))
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
 
     def _area_fn(sub_df, **kwargs):
         out = sub_df.copy()
@@ -684,7 +656,7 @@ def test_orchestrate_voronoi_weights_output_path_branches(monkeypatch, tmp_path)
         reg = sub_df[["grp", "ISO_2", "WASTE_ID", "geometry"]].copy()
         return reg, reg.copy()
 
-    monkeypatch.setattr(cv, "voronoi_worker", _fake_worker)
+    patch_service_areas(monkeypatch, "voronoi_worker", _fake_worker)
 
     def _fake_to_file(self, path, *args, **kwargs):
         Path(path).write_text("x", encoding="utf-8")
@@ -692,7 +664,7 @@ def test_orchestrate_voronoi_weights_output_path_branches(monkeypatch, tmp_path)
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", _fake_to_file)
 
     output_path = tmp_path / "voronoi_out.gpkg"
-    ok = cv.orchestrate_voronoi_weights(
+    ok = sa.orchestrate_voronoi_weights(
         df,
         col="grp",
         country_df=country_df,
@@ -709,7 +681,7 @@ def test_orchestrate_voronoi_weights_output_path_branches(monkeypatch, tmp_path)
     assert output_path.exists()
 
     output_path.write_text("already", encoding="utf-8")
-    ok2 = cv.orchestrate_voronoi_weights(
+    ok2 = sa.orchestrate_voronoi_weights(
         df,
         col="grp",
         country_df=country_df,
@@ -736,7 +708,7 @@ def test_orchestrate_voronoi_weights_checkpoint_and_error_branches(monkeypatch, 
     temp_fp = tmp_path / "temp_x.gpkg"
     temp_fp.write_text("not-a-gpkg", encoding="utf-8")
 
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: None)
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: None)
 
     class _Exec:
         def __init__(self, max_workers=None):
@@ -755,8 +727,8 @@ def test_orchestrate_voronoi_weights_checkpoint_and_error_branches(monkeypatch, 
 
             return _Future()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _Exec)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: list(futures))
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _Exec)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: list(futures))
 
     def _area_fn(sub_df, **kwargs):
         out = sub_df.copy()
@@ -767,7 +739,7 @@ def test_orchestrate_voronoi_weights_checkpoint_and_error_branches(monkeypatch, 
         return out
 
     # overwrite=False with invalid temp checkpoint should hit resume-read warning branch.
-    r1 = cv.orchestrate_voronoi_weights(
+    r1 = sa.orchestrate_voronoi_weights(
         df,
         col="grp",
         country_df=country_df,
@@ -783,7 +755,7 @@ def test_orchestrate_voronoi_weights_checkpoint_and_error_branches(monkeypatch, 
 
     # overwrite=True with failing temp removal should hit remove-warning branch.
     monkeypatch.setattr(cv.os, "remove", lambda path: (_ for _ in ()).throw(OSError("no remove")))
-    r2 = cv.orchestrate_voronoi_weights(
+    r2 = sa.orchestrate_voronoi_weights(
         df,
         col="grp",
         country_df=country_df,
@@ -799,7 +771,7 @@ def test_orchestrate_voronoi_weights_checkpoint_and_error_branches(monkeypatch, 
 
 
 def test_remaining_small_helper_branches(monkeypatch):
-    uf = cv.UnionFind(2)
+    uf = geo_utils.UnionFind(2)
     uf.rank[0] = 0
     uf.rank[1] = 1
     uf.union(0, 1)
@@ -810,7 +782,7 @@ def test_remaining_small_helper_branches(monkeypatch):
         geom_type = "LineString"
         coords = [(0.0, 0.0), (float("inf"), 1.0)]
 
-    assert cv.is_valid_geom(_FiniteGeom()) is False
+    assert sa.is_valid_geom(_FiniteGeom()) is False
 
     class _FakeCentroid:
         is_valid = False
@@ -823,15 +795,15 @@ def test_remaining_small_helper_branches(monkeypatch):
         def buffer(self, n):
             raise RuntimeError("buffer fail")
 
-    monkeypatch.setattr(cv, "Polygon", _FakePoly)
+    patch_service_areas(monkeypatch, "Polygon", _FakePoly)
     fp = _FakePoly()
-    assert cv.buffer_geometry(fp) is fp
-    assert cv.create_centroid_points(fp) is None
+    assert geo_utils.buffer_geometry(fp) is fp
+    assert sa.create_centroid_points(fp) is None
 
-    rng = cv.create_ranges(0, 1, step=10, min_step=2)
+    rng = sa.create_ranges(0, 1, step=10, min_step=2)
     assert np.allclose(rng, np.array([0.0, 10.0]))
 
-    area_empty = cv.calculate_area(gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326"))
+    area_empty = sa.calculate_area(gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326"))
     assert area_empty.empty
 
     area_df = pd.DataFrame(
@@ -842,12 +814,12 @@ def test_remaining_small_helper_branches(monkeypatch):
             "num_detection_circle": [0],
         }
     )
-    area_out = cv.calculate_area(area_df, only_round=True)
+    area_out = sa.calculate_area(area_df, only_round=True)
     assert area_out["total_area"].iloc[0] == area_out["round_area"].iloc[0]
 
-    monkeypatch.setattr(cv, "create_centroid_points", lambda geom: geom)
+    patch_service_areas(monkeypatch, "create_centroid_points", lambda geom: geom)
     site_df = gpd.GeoDataFrame({"geometry": [LineString([(0, 0), (1, 1)]), None]}, geometry="geometry", crs="EPSG:4326")
-    pts = cv.extract_site_coordinates(site_df, centroid_points=False)
+    pts = sa.extract_site_coordinates(site_df, centroid_points=False)
     assert pts[0][0] is not None
     assert pts[1] == (None, None)
 
@@ -855,9 +827,9 @@ def test_remaining_small_helper_branches(monkeypatch):
 def test_process_and_intersection_additional_branches(monkeypatch):
     poly = gpd.GeoDataFrame({"v": [1], "geometry": [box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:4326")
     sidx = poly.sindex
-    assert cv.process_centroid((Point(), sidx, poly, "v")) is None
+    assert sa.process_centroid((Point(), sidx, poly, "v")) is None
     monkeypatch.setattr(gpd.GeoDataFrame, "intersects", lambda self, other: (_ for _ in ()).throw(RuntimeError("bad intersects")))
-    assert cv.process_centroid((Point(0.5, 0.5), sidx, poly, "v")) is None
+    assert sa.process_centroid((Point(0.5, 0.5), sidx, poly, "v")) is None
 
     class _ImmediatePool:
         def __enter__(self):
@@ -869,21 +841,21 @@ def test_process_and_intersection_additional_branches(monkeypatch):
         def map(self, fn, args):
             return [fn(a) for a in args]
 
-    monkeypatch.setattr(cv, "ThreadPoolExecutor", lambda: _ImmediatePool())
+    patch_service_areas(monkeypatch, "ThreadPoolExecutor", lambda: _ImmediatePool())
     df = gpd.GeoDataFrame({"geometry": [Point(0.2, 0.2)]}, geometry="geometry", crs="EPSG:4326")
-    out = cv.intersect_with_polygon_sindex(df, poly.rename(columns={"v": "country"}).copy(), "country", concurrency=True)
+    out = sa.intersect_with_polygon_sindex(df, poly.rename(columns={"v": "country"}).copy(), "country", concurrency=True)
     assert "country" in out.columns
 
 
 def test_db_parallel_and_weights_fallback_branches(monkeypatch):
     df_empty = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
     poly_empty = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
-    assert cv.intersect_with_polygons_db(df_empty, poly_empty, "x") is df_empty
+    assert sa.intersect_with_polygons_db(df_empty, poly_empty, "x") is df_empty
 
     df = gpd.GeoDataFrame({"ISO_2": ["DE"], "utm": [32632], "geometry": [Point(10, 50)]}, geometry="geometry", crs="EPSG:4326")
     poly = gpd.GeoDataFrame({"X": [1], "geometry": [box(9, 49, 11, 51)]}, geometry="geometry", crs="EPSG:4326")
     with pytest.raises(KeyError):
-        cv.intersect_with_polygons_db(df.copy(), poly.copy(), ["X"], df_join_col="ISO_2", polygon_join_col="missing")
+        sa.intersect_with_polygons_db(df.copy(), poly.copy(), ["X"], df_join_col="ISO_2", polygon_join_col="missing")
 
     class _ConnFail:
         def execute(self, q):
@@ -892,26 +864,26 @@ def test_db_parallel_and_weights_fallback_branches(monkeypatch):
         def close(self):
             return None
 
-    monkeypatch.setattr(cv, "duckdb_connection", _fake_duckdb_connection(_ConnFail()))
+    patch_service_areas(monkeypatch, "duckdb_connection", _fake_duckdb_connection(_ConnFail()))
     # A failed DuckDB intersection re-raises instead of returning the half-built
     # frame (WKT geometries, dropped null rows, requested columns absent). The
     # scratch database is owned by utils.duckdb_connection, so this module neither
     # names nor removes one.
     with pytest.raises(RuntimeError, match="duckdb boom"):
-        cv.intersect_with_polygons_db(df.copy(), poly.copy(), "X", df_join_col="ISO_2", polygon_join_col="X")
+        sa.intersect_with_polygons_db(df.copy(), poly.copy(), "X", df_join_col="ISO_2", polygon_join_col="X")
 
     par_df = gpd.GeoDataFrame({"geometry": [Point(0, 0), None]}, geometry="geometry", crs="EPSG:4326")
     par_poly = gpd.GeoDataFrame({"geometry": [box(-1, -1, 1, 1)]}, geometry="geometry", crs="EPSG:4326")
-    monkeypatch.setattr(cv, "intersect_with_polygons_db", lambda *args, **kwargs: args[0])
-    res = cv.intersect_with_polygons_parallelized(par_df, par_poly, "foo", use_duckdb=True)
+    patch_service_areas(monkeypatch, "intersect_with_polygons_db", lambda *args, **kwargs: args[0])
+    res = sa.intersect_with_polygons_parallelized(par_df, par_poly, "foo", use_duckdb=True)
     assert isinstance(res, gpd.GeoDataFrame)
 
-    cw = cv.create_weights(pd.DataFrame({"base_values": [-2.0, -3.0]}), method="logarithmic")
+    cw = sa.create_weights(pd.DataFrame({"base_values": [-2.0, -3.0]}), method="logarithmic")
     assert math.isclose(cw["weights"].sum(), 1.0)
 
 
 def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
-    assert cv.dissolve_overlapping_geometries_fast(gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326"), 10) == ([], None)
+    assert sa.dissolve_overlapping_geometries_fast(gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326"), 10) == ([], None)
 
     # orchestrate_overlaps future handling + cache-write warning path.
     # A worker returning None is now counted as an error rather than skipped.
@@ -951,8 +923,8 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
                 return _FutErr()
             return _FutGood()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _Exec)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: list(futures))
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _Exec)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: list(futures))
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, *a, **k: (_ for _ in ()).throw(OSError("no write")))
 
     df2 = gpd.GeoDataFrame(
@@ -963,19 +935,19 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
     # R3: a failed country group now stops the run instead of silently
     # dropping that country's buffers.
     with pytest.raises(RuntimeError, match="2 country group"):
-        cv.orchestrate_overlaps(df2.copy(), 2, str(tmp_path / "no_cache.gpkg"), 10, country_col="ISO_2")
+        sa.orchestrate_overlaps(df2.copy(), 2, str(tmp_path / "no_cache.gpkg"), 10, country_col="ISO_2")
 
     class _ExecGood(_Exec):
         def submit(self, fn, *args):
             return _FutGood()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _ExecGood)
-    dissolved = cv.orchestrate_overlaps(df2.iloc[[2]].copy(), 2, str(tmp_path / "no_cache.gpkg"), 10, country_col="ISO_2")
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ExecGood)
+    dissolved = sa.orchestrate_overlaps(df2.iloc[[2]].copy(), 2, str(tmp_path / "no_cache.gpkg"), 10, country_col="ISO_2")
     assert isinstance(dissolved, gpd.GeoDataFrame)
 
     # resolve_polygon_overlaps None-geometry skip
     rp = gpd.GeoDataFrame({"geometry": [None, box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:4326")
-    out = cv.resolve_polygon_overlaps(rp)
+    out = sa.resolve_polygon_overlaps(rp)
     assert len(out) == 2
 
     # main: args.approach default (None), disabled approach logging path, and bad prepare_data type
@@ -1003,7 +975,7 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
         "country_boundary_column": "country",
         "site_id_column": "WASTE_ID",
         "prepare_data_fn": None,
-        "distance_fn": cv.default_distance_multiplicative,
+        "distance_fn": sa.default_distance_multiplicative,
         "duckdb_cond": False,
         "max_workers": 1,
         "buffer": 200,
@@ -1059,8 +1031,8 @@ def test_remaining_cluster_and_db_crs_branches(monkeypatch):
         geometry="geometry",
         crs="EPSG:4326",
     )
-    monkeypatch.setattr(cv, "cluster_point_indices", lambda geoms, threshold: [{0, 1}])
-    c = cv.cluster_points(df, threshold=1)
+    patch_service_areas(monkeypatch, "cluster_point_indices", lambda geoms, threshold: [{0, 1}])
+    c = sa.cluster_points(df, threshold=1)
     assert len(c) == 1
     # Merged duplicates keep the larger reported population; never the sum.
     assert c["POP_SERVED"].iloc[0] == 20
@@ -1081,11 +1053,11 @@ def test_remaining_cluster_and_db_crs_branches(monkeypatch):
         def close(self):
             return None
 
-    monkeypatch.setattr(cv, "duckdb_connection", _fake_duckdb_connection(_Conn()))
+    patch_service_areas(monkeypatch, "duckdb_connection", _fake_duckdb_connection(_Conn()))
     monkeypatch.setattr(cv.np.random, "randint", lambda low, high: 3)
     monkeypatch.setattr(gpd.GeoDataFrame, "to_crs", lambda self, crs: self)
     monkeypatch.setattr(cv.os.path, "exists", lambda p: False)
-    out = cv.intersect_with_polygons_db(df2, poly2, ["x"], df_join_col="ISO_2", polygon_join_col="ISO_2")
+    out = sa.intersect_with_polygons_db(df2, poly2, ["x"], df_join_col="ISO_2", polygon_join_col="ISO_2")
     assert "x" in out.columns
 
 
@@ -1099,24 +1071,24 @@ def test_remaining_weighted_voronoi_and_worker_branches(monkeypatch):
     clipping = gpd.GeoDataFrame({"grp": [1], "geometry": [box(-1, -1, 1, 1)]}, geometry="geometry", crs=None)
     country = gpd.GeoDataFrame({"country": ["DE"], "geometry": [box(-1, -1, 1, 1)]}, geometry="geometry", crs=None)
 
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
-    monkeypatch.setattr(cv, "cluster_points", lambda df, threshold: df)
-    monkeypatch.setattr(cv, "extract_site_coordinates", lambda df, cp: [(0.0, 0.0)])
-    monkeypatch.setattr(cv, "initialize_voronoi_weights", lambda df, distance_fn, scale_weights, points: (np.array([1.0]), 1.0))
-    monkeypatch.setattr(cv, "create_ranges", lambda x, y, n: np.array([0.0, 1.0]))
-    monkeypatch.setattr(cv, "geometry_contains_points", lambda geom, pts: np.array([True, False, False, False]))
-    monkeypatch.setattr(cv, "assign_sites_streaming", lambda vp, p, w, d, f: np.array([0]))
-    monkeypatch.setattr(cv, "extract_contours_scipy", lambda *args, **kwargs: [])
-    monkeypatch.setattr(cv, "extract_contours_cv2", lambda *args, **kwargs: [])
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    patch_service_areas(monkeypatch, "cluster_points", lambda df, threshold: df)
+    patch_service_areas(monkeypatch, "extract_site_coordinates", lambda df, cp: [(0.0, 0.0)])
+    patch_service_areas(monkeypatch, "initialize_voronoi_weights", lambda df, distance_fn, scale_weights, points: (np.array([1.0]), 1.0))
+    patch_service_areas(monkeypatch, "create_ranges", lambda x, y, n: np.array([0.0, 1.0]))
+    patch_service_areas(monkeypatch, "geometry_contains_points", lambda geom, pts: np.array([True, False, False, False]))
+    patch_service_areas(monkeypatch, "assign_sites_streaming", lambda vp, p, w, d, f: np.array([0]))
+    patch_service_areas(monkeypatch, "extract_contours_scipy", lambda *args, **kwargs: [])
+    patch_service_areas(monkeypatch, "extract_contours_cv2", lambda *args, **kwargs: [])
 
-    r1, p1 = cv.weighted_voronoi(
+    r1, p1 = sa.weighted_voronoi(
         base_df.copy(),
         "grp",
         country.copy(),
         False,
         clipping.copy(),
         10,
-        cv.default_distance_multiplicative,
+        sa.default_distance_multiplicative,
         scipy_true=True,
         cv2_true=False,
         centroid_points=False,
@@ -1134,19 +1106,19 @@ def test_remaining_weighted_voronoi_and_worker_branches(monkeypatch):
         geometry="geometry",
         crs="EPSG:4326",
     )
-    monkeypatch.setattr(cv, "cluster_points", lambda df, threshold: df)
-    monkeypatch.setattr(cv, "extract_site_coordinates", lambda df, cp: [(0.0, 0.0), (1.0, 1.0)])
-    monkeypatch.setattr(cv, "initialize_voronoi_weights", lambda df, distance_fn, scale_weights, points: (np.array([0.5, 0.5]), 1.0))
-    monkeypatch.setattr(cv, "geometry_contains_points", lambda geom, pts: np.array([True, True, False, False]))
-    monkeypatch.setattr(cv, "assign_sites_streaming", lambda vp, p, w, d, f: np.array([0, 0]))
-    r2, _ = cv.weighted_voronoi(
+    patch_service_areas(monkeypatch, "cluster_points", lambda df, threshold: df)
+    patch_service_areas(monkeypatch, "extract_site_coordinates", lambda df, cp: [(0.0, 0.0), (1.0, 1.0)])
+    patch_service_areas(monkeypatch, "initialize_voronoi_weights", lambda df, distance_fn, scale_weights, points: (np.array([0.5, 0.5]), 1.0))
+    patch_service_areas(monkeypatch, "geometry_contains_points", lambda geom, pts: np.array([True, True, False, False]))
+    patch_service_areas(monkeypatch, "assign_sites_streaming", lambda vp, p, w, d, f: np.array([0, 0]))
+    r2, _ = sa.weighted_voronoi(
         df2,
         "grp",
         None,
         False,
         None,
         10,
-        cv.default_distance_multiplicative,
+        sa.default_distance_multiplicative,
         scipy_true=False,
         cv2_true=True,
         centroid_points=False,
@@ -1159,7 +1131,7 @@ def test_remaining_weighted_voronoi_and_worker_branches(monkeypatch):
     assert isinstance(r2, gpd.GeoDataFrame)
 
     with pytest.raises(Exception):
-        cv.voronoi_worker(("bad",))
+        sa.voronoi_worker(("bad",))
 
 
 def test_remaining_orchestrate_voronoi_weights_branches(monkeypatch, tmp_path):
@@ -1192,7 +1164,7 @@ def test_remaining_orchestrate_voronoi_weights_branches(monkeypatch, tmp_path):
         return out
 
     # First pass: utm=None skip path.
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: None)
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: None)
 
     class _FutNone:
         def result(self):
@@ -1211,9 +1183,9 @@ def test_remaining_orchestrate_voronoi_weights_branches(monkeypatch, tmp_path):
         def submit(self, fn, *args):
             return _FutNone()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _Exec)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: list(futures))
-    r = cv.orchestrate_voronoi_weights(
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _Exec)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: list(futures))
+    r = sa.orchestrate_voronoi_weights(
         df,
         col="grp",
         country_df=country_df,
@@ -1230,7 +1202,7 @@ def test_remaining_orchestrate_voronoi_weights_branches(monkeypatch, tmp_path):
     assert r in {True, False}
 
     # Second pass: generate task, then exception in future handling and finalize replace failure.
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
     monkeypatch.setattr(pd.Series, "unique", lambda self: np.array(["DE", "XX"]))
 
     class _FutErr:
@@ -1241,9 +1213,9 @@ def test_remaining_orchestrate_voronoi_weights_branches(monkeypatch, tmp_path):
         def submit(self, fn, *args):
             return _FutErr()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _ExecErr)
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ExecErr)
     monkeypatch.setattr(cv.os, "replace", lambda a, b: (_ for _ in ()).throw(OSError("replace fail")))
-    r2 = cv.orchestrate_voronoi_weights(
+    r2 = sa.orchestrate_voronoi_weights(
         df,
         col="grp",
         country_df=country_df,
@@ -1261,8 +1233,7 @@ def test_remaining_orchestrate_voronoi_weights_branches(monkeypatch, tmp_path):
 
 
 def test_residual_dissolve_and_overlap_orchestration_lines(monkeypatch, tmp_path):
-    monkeypatch.setattr(cv, "tqdm", lambda it, **kwargs: it)
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
 
     class _ExecNone:
         def __init__(self, max_workers=None):
@@ -1277,11 +1248,11 @@ def test_residual_dissolve_and_overlap_orchestration_lines(monkeypatch, tmp_path
         def submit(self, fn, *args):
             return None
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _ExecNone)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: futures)
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ExecNone)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: futures)
     df = gpd.GeoDataFrame({"ISO_2": ["DE"], "some_id": [1], "geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
     with pytest.raises(KeyError):
-        cv.orchestrate_overlaps(df, 1, str(tmp_path / "a.gpkg"), 10, country_col="ISO_2")
+        sa.orchestrate_overlaps(df, 1, str(tmp_path / "a.gpkg"), 10, country_col="ISO_2")
 
     class _FutGood:
         def result(self):
@@ -1296,10 +1267,10 @@ def test_residual_dissolve_and_overlap_orchestration_lines(monkeypatch, tmp_path
         def submit(self, fn, *args):
             return _FutGood()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _ExecGood)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: list(futures))
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ExecGood)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: list(futures))
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, *a, **k: None)
-    r = cv.orchestrate_overlaps(df, 1, str(tmp_path / "b.gpkg"), 10, country_col="ISO_2")
+    r = sa.orchestrate_overlaps(df, 1, str(tmp_path / "b.gpkg"), 10, country_col="ISO_2")
     assert isinstance(r, gpd.GeoDataFrame)
     assert "centroid" not in r.columns
 
@@ -1310,21 +1281,21 @@ def test_residual_weighted_voronoi_scipy_branch(monkeypatch):
         geometry="geometry",
         crs="EPSG:4326",
     )
-    monkeypatch.setattr(cv, "cluster_points", lambda d, t: d)
-    monkeypatch.setattr(cv, "extract_site_coordinates", lambda d, cp: [(0.0, 0.0), (1.0, 1.0)])
-    monkeypatch.setattr(cv, "initialize_voronoi_weights", lambda d, f, s, p: (np.array([0.5, 0.5]), 1.0))
-    monkeypatch.setattr(cv, "create_ranges", lambda x, y, n: np.array([0.0, 1.0]))
-    monkeypatch.setattr(cv, "geometry_contains_points", lambda geom, pts: np.array([True, True, False, False]))
-    monkeypatch.setattr(cv, "assign_sites_streaming", lambda vp, p, w, d, f: np.array([0, 1]))
-    monkeypatch.setattr(cv, "extract_contours_scipy", lambda *a, **k: [])
-    out, _ = cv.weighted_voronoi(
+    patch_service_areas(monkeypatch, "cluster_points", lambda d, t: d)
+    patch_service_areas(monkeypatch, "extract_site_coordinates", lambda d, cp: [(0.0, 0.0), (1.0, 1.0)])
+    patch_service_areas(monkeypatch, "initialize_voronoi_weights", lambda d, f, s, p: (np.array([0.5, 0.5]), 1.0))
+    patch_service_areas(monkeypatch, "create_ranges", lambda x, y, n: np.array([0.0, 1.0]))
+    patch_service_areas(monkeypatch, "geometry_contains_points", lambda geom, pts: np.array([True, True, False, False]))
+    patch_service_areas(monkeypatch, "assign_sites_streaming", lambda vp, p, w, d, f: np.array([0, 1]))
+    patch_service_areas(monkeypatch, "extract_contours_scipy", lambda *a, **k: [])
+    out, _ = sa.weighted_voronoi(
         df,
         "grp",
         None,
         False,
         None,
         10,
-        cv.default_distance_multiplicative,
+        sa.default_distance_multiplicative,
         scipy_true=True,
         cv2_true=False,
         centroid_points=False,
@@ -1350,7 +1321,7 @@ def test_residual_orchestrate_voronoi_weights_lines(monkeypatch, tmp_path):
 
     # Hit sub_df-empty-after-to_crs branch.
     df_empty_after = gpd.GeoDataFrame({"grp": ["1"], "ISO_2": ["DE"], "WASTE_ID": [999], "geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
 
     original_to_crs = gpd.GeoDataFrame.to_crs
 
@@ -1378,9 +1349,9 @@ def test_residual_orchestrate_voronoi_weights_lines(monkeypatch, tmp_path):
 
             return _F()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _Exec)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: list(futures))
-    cv.orchestrate_voronoi_weights(
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _Exec)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: list(futures))
+    sa.orchestrate_voronoi_weights(
         df_empty_after,
         col="grp",
         country_df=country_df,
@@ -1395,7 +1366,7 @@ def test_residual_orchestrate_voronoi_weights_lines(monkeypatch, tmp_path):
     # Hit no-country-clip task generation, flush early return, and result None continue.
     df_no_iso = gpd.GeoDataFrame({"grp": ["1"], "ISO_2": [np.nan], "WASTE_ID": [1], "geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
     monkeypatch.setattr(gpd.GeoDataFrame, "to_crs", original_to_crs)
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
     monkeypatch.setattr(cv.os.path, "exists", lambda p: False)
 
     class _FutRes:
@@ -1417,9 +1388,9 @@ def test_residual_orchestrate_voronoi_weights_lines(monkeypatch, tmp_path):
                 return _FutRes((reg, reg.copy()))
             return _FutRes(None)
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _ExecMix)
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ExecMix)
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, *a, **k: None)
-    ok = cv.orchestrate_voronoi_weights(
+    ok = sa.orchestrate_voronoi_weights(
         df_no_iso,
         col="grp",
         country_df=country_df,
@@ -1436,8 +1407,7 @@ def test_residual_orchestrate_voronoi_weights_lines(monkeypatch, tmp_path):
 
 
 def test_final_residual_dissolve_and_orchestrate_none_result(monkeypatch):
-    monkeypatch.setattr(cv, "tqdm", lambda it, **kwargs: it)
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
 
     # Explicitly drive `if result is None: continue` in orchestration worker loop.
     df = gpd.GeoDataFrame(
@@ -1472,10 +1442,10 @@ def test_final_residual_dissolve_and_orchestrate_none_result(monkeypatch):
         def submit(self, fn, *args):
             return _FutNone()
 
-    monkeypatch.setattr(cv, "ProcessPoolExecutor", _Exec)
-    monkeypatch.setattr(cv, "as_completed", lambda futures: list(futures))
-    monkeypatch.setattr(cv, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
-    out2 = cv.orchestrate_voronoi_weights(
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _Exec)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: list(futures))
+    patch_service_areas(monkeypatch, "estimate_utm_crs", lambda g: CRS.from_epsg(32632))
+    out2 = sa.orchestrate_voronoi_weights(
         df,
         col="grp",
         country_df=country_df,
@@ -1497,7 +1467,7 @@ class TestWeightedVoronoiDistanceFunctions:
         a = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 0.0]])
         b = (0.5, 0.5)
         
-        dist = cv.default_distance_additive(a, b, weight=1.0, factor=1.0)
+        dist = sa.default_distance_additive(a, b, weight=1.0, factor=1.0)
         assert isinstance(dist, np.ndarray)
         assert len(dist) == 3
 
@@ -1507,8 +1477,8 @@ class TestWeightedVoronoiDistanceFunctions:
         b = (2.0, 0.0)
         
         # Increasing weight should monotonically scale distance
-        dist_w1 = cv.default_distance_multiplicative(a, b, weight=1.0, factor=1.0)
-        dist_w2 = cv.default_distance_multiplicative(a, b, weight=2.0, factor=1.0)
+        dist_w1 = sa.default_distance_multiplicative(a, b, weight=1.0, factor=1.0)
+        dist_w2 = sa.default_distance_multiplicative(a, b, weight=2.0, factor=1.0)
         
         # Check that results are comparable
         assert len(dist_w1) == len(dist_w2) == 2
@@ -1519,7 +1489,7 @@ class TestWeightedVoronoiDistanceFunctions:
         b = (0.0, 0.0)
         
         # Should not crash
-        dist = cv.default_distance_additive(a, b, weight=1.0, factor=1.0)
+        dist = sa.default_distance_additive(a, b, weight=1.0, factor=1.0)
         assert len(dist) == 0
 
     def test_distance_functions_single_point(self):
@@ -1527,7 +1497,7 @@ class TestWeightedVoronoiDistanceFunctions:
         a = np.array([[1.0, 1.0]])
         b = (0.0, 0.0)
         
-        dist = cv.default_distance_additive(a, b, weight=1.0, factor=1.0)
+        dist = sa.default_distance_additive(a, b, weight=1.0, factor=1.0)
         assert len(dist) == 1
         assert dist[0] > 0  # Should be > 0
 
@@ -1562,8 +1532,8 @@ class TestVoronoiWeightInitialization:
         """Verify distance function options."""
         # Valid distance functions
         dist_fns = [
-            cv.default_distance_multiplicative,
-            cv.default_distance_additive,
+            sa.default_distance_multiplicative,
+            sa.default_distance_additive,
         ]
         
         assert all(callable(fn) for fn in dist_fns)
@@ -1965,36 +1935,36 @@ class TestGeometryValidation:
     def test_is_valid_geom_with_valid_point(self):
         """Test validation of valid point."""
         point = Point(0, 0)
-        assert cv.is_valid_geom(point) is True
+        assert sa.is_valid_geom(point) is True
     
     def test_is_valid_geom_with_valid_polygon(self):
         """Test validation of valid polygon."""
         polygon = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
         # is_valid_geom checks topology; may return False if geom check fails
-        result = cv.is_valid_geom(polygon)
+        result = sa.is_valid_geom(polygon)
         assert isinstance(result, bool)
     
     def test_is_valid_geom_with_none(self):
         """Test validation of None."""
-        assert cv.is_valid_geom(None) is False
+        assert sa.is_valid_geom(None) is False
     
     def test_is_valid_geom_with_invalid_geometry(self):
         """Test validation of invalid geometry."""
         # Self-intersecting polygon
         invalid_poly = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
-        result = cv.is_valid_geom(invalid_poly)
+        result = sa.is_valid_geom(invalid_poly)
         # May be True or False depending on shapely validation
         assert isinstance(result, bool)
     
     def test_is_valid_geom_with_non_finite_coordinates(self):
         """Test validation with NaN coordinates."""
         point = Point(np.inf, 0)
-        assert cv.is_valid_geom(point) is False
+        assert sa.is_valid_geom(point) is False
     
     def test_is_valid_geom_with_linestring(self):
         """Test validation of linestring."""
         line = LineString([(0, 0), (1, 1)])
-        assert cv.is_valid_geom(line) is True
+        assert sa.is_valid_geom(line) is True
 
 
 class TestBufferGeometry:
@@ -2003,26 +1973,26 @@ class TestBufferGeometry:
     def test_buffer_geometry_point_unchanged(self):
         """Test that points are returned unchanged."""
         point = Point(0, 0)
-        result = cv.buffer_geometry(point)
+        result = geo_utils.buffer_geometry(point)
         assert result.equals(point)
     
     def test_buffer_geometry_linestring_unchanged(self):
         """Test that linestrings are returned unchanged."""
         line = LineString([(0, 0), (1, 1)])
-        result = cv.buffer_geometry(line)
+        result = geo_utils.buffer_geometry(line)
         assert result.equals(line)
     
     def test_buffer_geometry_polygon_buffered(self):
         """Test that polygon is processed."""
         polygon = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-        result = cv.buffer_geometry(polygon)
+        result = geo_utils.buffer_geometry(polygon)
         assert result is not None
     
     def test_buffer_geometry_invalid_polygon(self):
         """Test handling of invalid polygon."""
         # Create self-intersecting polygon
         invalid_poly = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
-        result = cv.buffer_geometry(invalid_poly)
+        result = geo_utils.buffer_geometry(invalid_poly)
         assert result is not None
         assert result.is_valid
 
@@ -2033,30 +2003,30 @@ class TestCentroidExtraction:
     def test_create_centroid_points_from_point(self):
         """Test centroid extraction from point."""
         point = Point(5, 10)
-        result = cv.create_centroid_points(point)
+        result = sa.create_centroid_points(point)
         assert result.equals(point)
     
     def test_create_centroid_points_from_polygon(self):
         """Test centroid extraction from polygon."""
         polygon = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        result = cv.create_centroid_points(polygon)
+        result = sa.create_centroid_points(polygon)
         assert result is not None
         assert isinstance(result, Point)
     
     def test_create_centroid_points_from_linestring(self):
         """Test centroid extraction from linestring."""
         line = LineString([(0, 0), (10, 10)])
-        result = cv.create_centroid_points(line)
+        result = sa.create_centroid_points(line)
         assert result is not None
     
     def test_create_centroid_points_from_none(self):
         """Test centroid extraction from None."""
-        result = cv.create_centroid_points(None)
+        result = sa.create_centroid_points(None)
         assert result is None
     
     def test_create_centroid_points_from_nan(self):
         """Test centroid extraction from NaN."""
-        result = cv.create_centroid_points(pd.NA)
+        result = sa.create_centroid_points(pd.NA)
         assert result is None
 
 
@@ -2068,7 +2038,7 @@ class TestNormalizePlane:
         a = np.array([[0, 0], [10, 10]])
         b = (5, 5)
         
-        a_norm, b_norm = cv.normalize_plane(a, b)
+        a_norm, b_norm = sa.normalize_plane(a, b)
         
         assert a_norm.shape == (2, 2)
         assert b_norm.shape == (2,)
@@ -2081,7 +2051,7 @@ class TestNormalizePlane:
         a = np.array([[5, 5]])
         b = (5, 5)
         
-        a_norm, b_norm = cv.normalize_plane(a, b)
+        a_norm, b_norm = sa.normalize_plane(a, b)
         
         # When min == max, should clamp to avoid division by zero
         assert a_norm is not None
@@ -2092,7 +2062,7 @@ class TestNormalizePlane:
         a = np.array([[0, 5], [10, 5]])  # Horizontal line
         b = (5, 5)
         
-        a_norm, b_norm = cv.normalize_plane(a, b)
+        a_norm, b_norm = sa.normalize_plane(a, b)
         
         # Y-axis should be 0 (all same y-value)
         assert np.allclose(a_norm[:, 1], 0)
@@ -2102,7 +2072,7 @@ class TestNormalizePlane:
         a = np.array([[-10, -10], [10, 10]])
         b = (0, 0)
         
-        a_norm, b_norm = cv.normalize_plane(a, b)
+        a_norm, b_norm = sa.normalize_plane(a, b)
         
         # Should shift to [0, 1]
         assert np.all(a_norm >= 0) and np.all(a_norm <= 1)
@@ -2115,7 +2085,7 @@ class TestClusterPointIndices:
         """Test clustering of nearby points."""
         geoms = [Point(0, 0), Point(1, 0), Point(0, 1)]
         
-        clusters = cv.cluster_point_indices(geoms, threshold=2.0)
+        clusters = geo_utils.cluster_point_indices(geoms, threshold=2.0)
         
         assert len(clusters) >= 1
         assert all(isinstance(c, set) for c in clusters)
@@ -2124,7 +2094,7 @@ class TestClusterPointIndices:
         """Test points far apart."""
         geoms = [Point(0, 0), Point(1000, 1000)]
         
-        clusters = cv.cluster_point_indices(geoms, threshold=1.0)
+        clusters = geo_utils.cluster_point_indices(geoms, threshold=1.0)
         
         # Should have 2 clusters (no points within threshold)
         assert len(clusters) == 2
@@ -2133,7 +2103,7 @@ class TestClusterPointIndices:
         """Test clustering of identical points."""
         geoms = [Point(5, 5) for _ in range(5)]
         
-        clusters = cv.cluster_point_indices(geoms, threshold=0.1)
+        clusters = geo_utils.cluster_point_indices(geoms, threshold=0.1)
         
         # All should be in one cluster
         assert len(clusters) == 1
@@ -2147,7 +2117,7 @@ class TestClusterPointIndices:
         # current behaviour, which is identical in the frozen baseline tree;
         # callers are expected to pre-filter. See notes/BASELINE_DIFF_AUDIT.md.
         with pytest.raises(ValueError):
-            cv.cluster_point_indices(geoms, threshold=1.0)
+            geo_utils.cluster_point_indices(geoms, threshold=1.0)
 
 
 class TestClusterPoints:
@@ -2163,7 +2133,7 @@ class TestClusterPoints:
             crs='EPSG:4326'
         )
         
-        result = cv.cluster_points(gdf, threshold=2.0)
+        result = sa.cluster_points(gdf, threshold=2.0)
 
         # cluster_points concatenates GeoDataFrame slices with plain DataFrames
         # built from single rows, so the result degrades to a plain DataFrame
@@ -2185,7 +2155,7 @@ class TestClusterPoints:
             crs='EPSG:4326'
         )
         
-        result = cv.cluster_points(gdf, threshold=1.0)
+        result = sa.cluster_points(gdf, threshold=1.0)
 
         # Total weight should be preserved
         assert result['weights'].sum() == 30.0
@@ -2201,7 +2171,7 @@ class TestClusterPoints:
             crs='EPSG:4326'
         )
         
-        result = cv.cluster_points(gdf, threshold=2.0)
+        result = sa.cluster_points(gdf, threshold=2.0)
 
         assert len(result) > 0
 
@@ -2211,7 +2181,7 @@ class TestCreateRanges:
     
     def test_create_ranges_basic(self):
         """Test basic range creation."""
-        result = cv.create_ranges(0, 10, step=1)
+        result = sa.create_ranges(0, 10, step=1)
 
         assert isinstance(result, np.ndarray)
         assert len(result) > 0
@@ -2219,20 +2189,20 @@ class TestCreateRanges:
     
     def test_create_ranges_single_value(self):
         """Test range with same start and end."""
-        result = cv.create_ranges(5, 5, step=1)
+        result = sa.create_ranges(5, 5, step=1)
 
         assert isinstance(result, np.ndarray)
     
     def test_create_ranges_negative_bounds(self):
         """Test range with negative bounds."""
-        result = cv.create_ranges(-10, 10, step=5)
+        result = sa.create_ranges(-10, 10, step=5)
 
         assert result[0] >= -10
         assert result[-1] <= 10
     
     def test_create_ranges_small_step(self):
         """Test range with very small step."""
-        result = cv.create_ranges(0, 1, step=0.01, min_step=0.001)
+        result = sa.create_ranges(0, 1, step=0.01, min_step=0.001)
 
         assert len(result) > 1
 
@@ -2247,7 +2217,7 @@ class TestDropDuplicates:
             'value': [10, 10, 20]
         })
         
-        result = cv.drop_duplicates(df, 'id')
+        result = sa.drop_duplicates(df, 'id')
         
         # Should have 2 rows (one of id=1 removed)
         assert len(result) <= len(df)
@@ -2259,7 +2229,7 @@ class TestDropDuplicates:
             'value': [10, 20, 30, 40]
         })
         
-        result = cv.drop_duplicates(df, 'id')
+        result = sa.drop_duplicates(df, 'id')
         
         # Should preserve both NaN rows
         nan_count = result['id'].isna().sum()
@@ -2269,13 +2239,13 @@ class TestDropDuplicates:
         """Test with empty DataFrame."""
         df = pd.DataFrame()
         
-        result = cv.drop_duplicates(df, 'id')
+        result = sa.drop_duplicates(df, 'id')
         
         assert result is not None
     
     def test_drop_duplicates_none_input(self):
         """Test with None input."""
-        result = cv.drop_duplicates(None, 'id')
+        result = sa.drop_duplicates(None, 'id')
         
         assert result is None
 
@@ -2288,7 +2258,7 @@ class TestEnsureOutputDir:
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "subdir" / "output.txt"
             
-            cv.ensure_output_dir_for_file(str(filepath))
+            utils_module.ensure_output_dir_for_file(str(filepath))
             
             assert filepath.parent.exists()
     
@@ -2297,7 +2267,7 @@ class TestEnsureOutputDir:
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "output.txt"
             
-            cv.ensure_output_dir_for_file(str(filepath))
+            utils_module.ensure_output_dir_for_file(str(filepath))
             
             assert Path(tmpdir).exists()
     
@@ -2305,7 +2275,7 @@ class TestEnsureOutputDir:
         """Test with empty/current path."""
         # A bare filename has no directory component; this must be a no-op
         # rather than an error.
-        cv.ensure_output_dir_for_file("output.txt")
+        utils_module.ensure_output_dir_for_file("output.txt")
 
 
 class TestGeometryContainsPoints:
@@ -2316,7 +2286,7 @@ class TestGeometryContainsPoints:
         polygon = box(0, 0, 10, 10)
         points = np.array([[5, 5], [7, 7]])
         
-        result = cv.geometry_contains_points(polygon, points)
+        result = sa.geometry_contains_points(polygon, points)
         
         assert isinstance(result, np.ndarray)
         assert result.dtype == bool
@@ -2327,7 +2297,7 @@ class TestGeometryContainsPoints:
         polygon = box(0, 0, 10, 10)
         points = np.array([[50, 50], [100, 100]])
         
-        result = cv.geometry_contains_points(polygon, points)
+        result = sa.geometry_contains_points(polygon, points)
         
         assert not any(result)  # No points should be inside
     
@@ -2336,7 +2306,7 @@ class TestGeometryContainsPoints:
         polygon = box(0, 0, 10, 10)
         points = np.array([]).reshape(0, 2)
         
-        result = cv.geometry_contains_points(polygon, points)
+        result = sa.geometry_contains_points(polygon, points)
         
         assert len(result) == 0
     
@@ -2345,7 +2315,7 @@ class TestGeometryContainsPoints:
         polygon = box(0, 0, 10, 10)
         points = np.array([[5, 5], [50, 50], [3, 7]])
         
-        result = cv.geometry_contains_points(polygon, points)
+        result = sa.geometry_contains_points(polygon, points)
         
         # Use == instead of is for numpy booleans
         assert result[0] == True  # Inside
@@ -2358,20 +2328,20 @@ class TestUnionFind:
     
     def test_union_find_initialization(self):
         """Test UnionFind initialization."""
-        uf = cv.UnionFind(5)
+        uf = geo_utils.UnionFind(5)
         
         assert uf.parent == [0, 1, 2, 3, 4]
     
     def test_union_find_find(self):
         """Test find operation."""
-        uf = cv.UnionFind(5)
+        uf = geo_utils.UnionFind(5)
         
         assert uf.find(0) == 0
         assert uf.find(4) == 4
     
     def test_union_find_union(self):
         """Test union operation."""
-        uf = cv.UnionFind(5)
+        uf = geo_utils.UnionFind(5)
         
         uf.union(0, 1)
         
@@ -2380,7 +2350,7 @@ class TestUnionFind:
     
     def test_union_find_transitive(self):
         """Test transitive property after unions."""
-        uf = cv.UnionFind(5)
+        uf = geo_utils.UnionFind(5)
         
         uf.union(0, 1)
         uf.union(1, 2)
@@ -2408,11 +2378,11 @@ class TestVoronoiIntegration:
         )
         
         # Validate geometries
-        valid_count = sum(1 for g in gdf.geometry if cv.is_valid_geom(g))
+        valid_count = sum(1 for g in gdf.geometry if sa.is_valid_geom(g))
         assert valid_count == 4
         
         # Cluster
-        result = cv.cluster_points(gdf, threshold=20.0)
+        result = sa.cluster_points(gdf, threshold=20.0)
         assert len(result) > 0
     
     def test_geometry_validation_pipeline(self):
@@ -2424,7 +2394,7 @@ class TestVoronoiIntegration:
             None
         ]
         
-        valid_geoms = [g for g in geoms if cv.is_valid_geom(g)]
+        valid_geoms = [g for g in geoms if sa.is_valid_geom(g)]
         
         # Should filter out None; polygon may fail validation depending on implementation
         assert len(valid_geoms) >= 2  # At least Point and LineString
@@ -2447,25 +2417,25 @@ def test_weighted_voronoi_runs_on_sample_group():
     group = sites[sites["HYBAS_ID"] == 9001].copy().reset_index(drop=True)
     group = _prep_group_with_weights(group)
 
-    utm = create_voronoi.estimate_utm_crs(group)
+    utm = geo_utils.estimate_utm_crs(group)
     group_utm = group.to_crs(utm)
     clip_utm = watersheds[watersheds["HYBAS_ID"] == 9001].to_crs(utm)
     country_utm = countries[countries["country"] == "DE"].to_crs(utm)
 
-    region_df, point_df = create_voronoi.weighted_voronoi(
+    region_df, point_df = sa.weighted_voronoi(
         group_utm,
         col="HYBAS_ID",
         country_clip=country_utm,
         scale_weights=True,
         clipping=clip_utm,
         n_points=80,
-        distance_fn=create_voronoi.default_distance_multiplicative,
+        distance_fn=sa.default_distance_multiplicative,
         scipy_true=False,
         cv2_true=False,
         centroid_points=True,
         buffering=True,
         threshold=150,
-        calculate_buffer_fn=create_voronoi.calculate_buffer,
+        calculate_buffer_fn=sa.calculate_buffer,
         buffer_fn_kwargs=BUFFER_KWARGS,
         site_id_col="WASTE_ID",
     )
@@ -2480,10 +2450,10 @@ def test_weighted_voronoi_runs_on_sample_group():
 def test_orchestrate_voronoi_runs_on_sample_data(monkeypatch):
     sites, watersheds, countries = _load_sample_layers()
 
-    monkeypatch.setattr(create_voronoi, "ProcessPoolExecutor", _ImmediateExecutor)
-    monkeypatch.setattr(create_voronoi, "as_completed", lambda futures: futures)
+    patch_service_areas(monkeypatch, "ProcessPoolExecutor", _ImmediateExecutor)
+    patch_service_areas(monkeypatch, "as_completed", lambda futures: futures)
 
-    region_df, point_df = create_voronoi.orchestrate_voronoi_weights(
+    region_df, point_df = sa.orchestrate_voronoi_weights(
         sites,
         "HYBAS_ID",
         countries,
@@ -2491,7 +2461,7 @@ def test_orchestrate_voronoi_runs_on_sample_data(monkeypatch):
         scale_weights=True,
         clipping=watersheds,
         n_points=70,
-        distance_fn=create_voronoi.default_distance_multiplicative,
+        distance_fn=sa.default_distance_multiplicative,
         scipy_true=False,
         cv2_true=False,
         centroid_points=True,
@@ -2499,13 +2469,13 @@ def test_orchestrate_voronoi_runs_on_sample_data(monkeypatch):
         threshold=150,
         sigma=3,
         percent_threshold=10,
-        area_fn=create_voronoi.calculate_area,
+        area_fn=sa.calculate_area,
         area_fn_kwargs={"only_round": False},
         method="linear",
         output_path=None,
         overwrite=False,
         flush_size=1,
-        calculate_buffer_fn=create_voronoi.calculate_buffer,
+        calculate_buffer_fn=sa.calculate_buffer,
         buffer_fn_kwargs=BUFFER_KWARGS,
         site_country_col="ISO_2",
         country_boundary_col="country",
@@ -2522,7 +2492,7 @@ def test_orchestrate_voronoi_runs_on_sample_data(monkeypatch):
 def test_intersection_and_dissolve_backbone_steps():
     sites, watersheds, _ = _load_sample_layers()
 
-    joined = create_voronoi.intersect_with_polygons_parallelized(
+    joined = sa.intersect_with_polygons_parallelized(
         sites.copy(),
         watersheds.copy(),
         cols=["HYBAS_ID", "country"],
@@ -2546,7 +2516,7 @@ def test_intersection_and_dissolve_backbone_steps():
         crs=watersheds.crs,
     )
 
-    dissolve_result = create_voronoi.dissolve_overlapping_geometries_fast(overlap, radius=0.01, convex=False)
+    dissolve_result = sa.dissolve_overlapping_geometries_fast(overlap, radius=0.01, convex=False)
 
     if isinstance(dissolve_result, tuple):
         _, dissolved_gdf = dissolve_result
@@ -2561,7 +2531,7 @@ def test_calculate_buffer_with_sample_weights():
     sites, _, _ = _load_sample_layers()
     prepared = _prep_group_with_weights(sites.copy())
 
-    buffers = create_voronoi.calculate_buffer(prepared, prepared["weights"].to_numpy(), **BUFFER_KWARGS)
+    buffers = sa.calculate_buffer(prepared, prepared["weights"].to_numpy(), **BUFFER_KWARGS)
 
     assert isinstance(buffers, np.ndarray)
     assert len(buffers) == len(prepared)

@@ -31,7 +31,7 @@ try:
     from ..add_pop import find_newest_country_tif_files
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
     from .. import provenance
-    from ..create_voronoi import download_overture_maps, intersects_with_country_db
+    from ..service_areas import download_overture_maps, intersects_with_country_db
     from ..pipelines import create_pop_output_paths
     from ..utils import configure_logging, ensure_output_dir_for_file
     from ..geo_utils import repair_geometry
@@ -40,7 +40,7 @@ except ImportError:
     from src.add_pop import find_newest_country_tif_files
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
     from src import provenance
-    from src.create_voronoi import download_overture_maps, intersects_with_country_db
+    from src.service_areas import download_overture_maps, intersects_with_country_db
     from src.pipelines import create_pop_output_paths
     from src.utils import configure_logging, ensure_output_dir_for_file
     from src.geo_utils import repair_geometry

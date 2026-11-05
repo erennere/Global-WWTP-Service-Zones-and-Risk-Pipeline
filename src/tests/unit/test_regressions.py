@@ -25,6 +25,7 @@ from src.data_merge import final_data_merge
 from src.industrial_analysis.find_unconnected_industrial_areas import find_unconnected_areas
 from src.pop_at_risk_river_calculations.create_rasters import polygon_raster_sign_from_gdf
 from src.pop_at_risk_river_calculations.find_unserved_pop import add_buffers_to_WWTP
+from src import service_areas as sa
 
 
 pytestmark = pytest.mark.unit
@@ -54,7 +55,7 @@ def test_B1_equal_weights_reproduce_euclidean_voronoi_on_a_non_square_grid():
     xs, ys = np.meshgrid(np.arange(0, 10001, 50.0), np.arange(0, 2001, 50.0))
     grid = np.column_stack([xs.ravel(), ys.ravel()])
 
-    got = cv.assign_sites_streaming(grid, sites, np.ones(2), cv.default_distance_multiplicative, 0)
+    got = sa.assign_sites_streaming(grid, sites, np.ones(2), sa.default_distance_multiplicative, 0)
 
     d = np.sqrt(((grid[:, None, :] - sites[None]) ** 2).sum(-1))
     expected = d.argmin(axis=1)
@@ -64,7 +65,7 @@ def test_B1_equal_weights_reproduce_euclidean_voronoi_on_a_non_square_grid():
 
 def test_B1_normalisation_is_isotropic():
     a = np.array([[0.0, 0.0], [10.0, 2.0]])
-    a_norm, _ = cv.normalize_plane(a, (0.0, 0.0))
+    a_norm, _ = sa.normalize_plane(a, (0.0, 0.0))
     # x and y are divided by the same scalar (the larger extent, 10)
     assert a_norm[1] == pytest.approx([1.0, 0.2])
 
@@ -75,7 +76,7 @@ def test_B1_normalisation_is_isotropic():
 def test_B2_additive_distance_is_monotonic_in_true_distance():
     xs = np.linspace(0.0, 100.0, 401)
     a = np.column_stack([xs, np.zeros_like(xs)])
-    d = cv.default_distance_additive(a, (0.0, 0.0), weight=0.5, factor=0)
+    d = sa.default_distance_additive(a, (0.0, 0.0), weight=0.5, factor=0)
     assert np.all(np.diff(d) >= 0)
     # the site itself is closer than any point just outside its disc
     assert d[0] < d[np.searchsorted(xs, 50.25)]
@@ -85,7 +86,7 @@ def test_B2_additive_distance_is_monotonic_in_true_distance():
 # B3  grid spacing and cell placement                                         #
 # --------------------------------------------------------------------------- #
 def test_B3_grid_spacing_equals_the_step_used_to_scale_contours():
-    r = cv.create_ranges(0.0, 250.0, 100.0)
+    r = sa.create_ranges(0.0, 250.0, 100.0)
     assert np.allclose(np.diff(r), 100.0)
     assert r[0] == 0.0 and r[-1] >= 250.0
 
@@ -93,7 +94,7 @@ def test_B3_grid_spacing_equals_the_step_used_to_scale_contours():
 def test_B3_rasterio_cells_are_centred_on_their_grid_node():
     mask = np.zeros((5, 5), dtype=bool)
     mask[2, 2] = True  # node (200, 200) with step 100 and origin (0, 0)
-    (poly,) = cv.extract_contours_rasterio(mask, 100, 0.0, 0.0)
+    (poly,) = sa.extract_contours_rasterio(mask, 100, 0.0, 0.0)
     assert poly.bounds == pytest.approx((150.0, 150.0, 250.0, 250.0))
 
 
@@ -102,7 +103,7 @@ def test_B3_rasterio_cells_are_centred_on_their_grid_node():
 # --------------------------------------------------------------------------- #
 def test_B4_overlap_is_removed_from_the_smaller_polygon():
     big, small = box(0, 0, 10, 10), box(8, 0, 12, 4)
-    out = cv.resolve_polygon_overlaps(gpd.GeoDataFrame(geometry=[big, small]))
+    out = sa.resolve_polygon_overlaps(gpd.GeoDataFrame(geometry=[big, small]))
     assert out[0].area == pytest.approx(100.0)
     assert out[1].area == pytest.approx(8.0)
     assert out[0].intersection(out[1]).area == pytest.approx(0.0)
@@ -131,7 +132,7 @@ def test_B6_create_voronoi_cluster_points_never_sums_population():
         geometry=[Point(0, 0), Point(100, 0)],
         crs=32632,
     )
-    out = cv.cluster_points(df, 500)
+    out = sa.cluster_points(df, 500)
     assert out["POP_SERVED"].tolist() == [50_000.0]
     assert out["n_merged_records"].tolist() == [2]
 
@@ -199,8 +200,8 @@ def _plants(xs, footprint, lagoon=False, **columns):
 
 
 def test_radius_grows_with_people_as_calibrated():
-    small = cv.calculate_buffer(_plants([0], 1_000, POP_SERVED=10_000), None, **RADIUS_KW)[0]
-    large = cv.calculate_buffer(_plants([0], 1_000, POP_SERVED=1_000_000), None, **RADIUS_KW)[0]
+    small = sa.calculate_buffer(_plants([0], 1_000, POP_SERVED=10_000), None, **RADIUS_KW)[0]
+    large = sa.calculate_buffer(_plants([0], 1_000, POP_SERVED=1_000_000), None, **RADIUS_KW)[0]
     assert small == pytest.approx(3750)
     assert large / small == pytest.approx(100 ** 0.35)  # 100x people -> 5x radius
 
@@ -208,38 +209,38 @@ def test_radius_grows_with_people_as_calibrated():
 def test_reported_size_wins_and_footprint_fills_the_gaps():
     plants = _plants([0, 1, 2, 3], 10_000, POP_SERVED=[50_000, None, 7_000, None],
                      **{"EPA POP 2022": [None, 20_000, 1, None]})
-    people = cv.plant_size_people(plants, **RADIUS_KW)
+    people = sa.plant_size_people(plants, **RADIUS_KW)
     from_footprint = 10 ** (1.369 + 0.738 * 4)
     assert people == pytest.approx([50_000, 20_000, 7_000, from_footprint])
-    only_footprint = cv.plant_size_people(plants, **{**RADIUS_KW, "size_measure": "footprint"})
+    only_footprint = sa.plant_size_people(plants, **{**RADIUS_KW, "size_measure": "footprint"})
     assert only_footprint == pytest.approx([from_footprint] * 4)
 
 
 def test_hydrowaste_11km_estimates_are_not_used_as_size():
     plants = _plants([0, 1], 10_000, POP_SERVED=900_000, QUAL_POP=[4, 2])
-    people = cv.plant_size_people(plants, **RADIUS_KW)
+    people = sa.plant_size_people(plants, **RADIUS_KW)
     assert people[0] == pytest.approx(10 ** (1.369 + 0.738 * 4)) and people[1] == 900_000
 
 
 def test_radius_does_not_depend_on_neighbours():
-    alone = cv.calculate_buffer(_plants([0], 5_000), None, **RADIUS_KW)
-    crowded = cv.calculate_buffer(_plants([0, 300, 600, 900], 5_000), None, **RADIUS_KW)
+    alone = sa.calculate_buffer(_plants([0], 5_000), None, **RADIUS_KW)
+    crowded = sa.calculate_buffer(_plants([0, 300, 600, 900], 5_000), None, **RADIUS_KW)
     assert np.allclose(crowded, alone[0])
 
 
 def test_lagoons_and_undetected_plants_get_the_size_free_people():
-    lagoon = cv.calculate_buffer(_plants([0], 400_000, lagoon=True), None, **RADIUS_KW)[0]
-    undetected = cv.calculate_buffer(_plants([0], 0), None, **RADIUS_KW)[0]
+    lagoon = sa.calculate_buffer(_plants([0], 400_000, lagoon=True), None, **RADIUS_KW)[0]
+    undetected = sa.calculate_buffer(_plants([0], 0), None, **RADIUS_KW)[0]
     assert lagoon == undetected == pytest.approx(3750 * (2014 / 1e4) ** 0.35)
 
 
 def test_radius_never_exceeds_max_buffer():
-    assert cv.calculate_buffer(_plants([0], 1e9), None, **RADIUS_KW)[0] == 50000
+    assert sa.calculate_buffer(_plants([0], 1e9), None, **RADIUS_KW)[0] == 50000
 
 
 def test_unknown_size_measure_is_rejected():
     with pytest.raises(ValueError, match="size_measure"):
-        cv.plant_size_people(_plants([0], 1), **{**RADIUS_KW, "size_measure": "capacity"})
+        sa.plant_size_people(_plants([0], 1), **{**RADIUS_KW, "size_measure": "capacity"})
 
 
 def test_size_weights_give_large_plants_proportionally_more_area():
@@ -249,12 +250,12 @@ def test_size_weights_give_large_plants_proportionally_more_area():
     plants["WASTE_ID"] = [1, 2]
     plants["weights"] = 0.5
     kw = {**RADIUS_KW, "max_buffer": 40_000, "radius_at_10k_people_km": 40.0}  # both circles reach past the other plant
-    regions, _ = cv.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, n_points=200, buffering=True,
+    regions, _ = sa.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, n_points=200, buffering=True,
                                      buffer_fn_kwargs=kw, size_weights=True)
     regions = regions.to_crs(32632).set_index("WASTE_ID")
     # on the axis between the plants: the point at d/1000 = (20000-d)/100 -> d = 18182 m
     assert regions.geometry[1].contains(Point(17_500, 0)) and regions.geometry[2].contains(Point(19_000, 0))
-    unweighted, _ = cv.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=False, n_points=200,
+    unweighted, _ = sa.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=False, n_points=200,
                                         buffering=True, buffer_fn_kwargs=kw)
     assert unweighted.to_crs(32632).set_index("WASTE_ID").geometry[2].contains(Point(11_000, 0))
 
@@ -264,7 +265,7 @@ def test_size_weights_need_the_multiplicative_distance():
     plants["WASTE_ID"] = [1, 2]
     plants["weights"] = 0.5
     with pytest.raises(ValueError, match="multiplicative"):
-        cv.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, distance_fn=cv.default_distance_additive,
+        sa.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, distance_fn=sa.default_distance_additive,
                             buffer_fn_kwargs=RADIUS_KW, size_weights=True)
 
 
@@ -351,7 +352,7 @@ def test_R4_country_join_returns_one_row_per_feature(tmp_path):
         geometry=[Point(10, 50), box(4, 48, 9, 49), Point(-30, 0)],  # inside DE; mostly DE; in the sea
         crs=4326,
     )
-    out = cv.intersects_with_country_db(features.copy(), str(path), polygon_country_col="country", output_country_col="ISO_2")
+    out = sa.intersects_with_country_db(features.copy(), str(path), polygon_country_col="country", output_country_col="ISO_2")
 
     assert out["WASTE_ID"].tolist() == [1, 2, 3]
     assert out["ISO_2"].tolist()[:2] == ["DE", "DE"]
@@ -410,7 +411,7 @@ def test_R5_area_and_points_describe_the_clipped_regions():
     # The country boundary only covers the first site's cell
     country = gpd.GeoDataFrame({"country": ["XX"]}, geometry=[box(490_000, 5_490_000, 504_000, 5_510_000)], crs=utm)
 
-    regions, points = cv.weighted_voronoi(
+    regions, points = sa.weighted_voronoi(
         sites,
         "HYBAS_ID",
         country,
@@ -618,7 +619,7 @@ def test_R3_buffer_squares_keep_their_size_far_from_the_country_centre():
     )
     radius = 10_000.0
 
-    groups, boxes = cv.dissolve_overlapping_geometries_fast(sites, radius)
+    groups, boxes = sa.dissolve_overlapping_geometries_fast(sites, radius)
 
     side_m = np.sqrt(boxes.to_crs(6933).area.to_numpy())  # equal-area CRS
     np.testing.assert_allclose(side_m, 2 * radius, rtol=0.01)  # one central UTM zone: off by > 2x at the edges

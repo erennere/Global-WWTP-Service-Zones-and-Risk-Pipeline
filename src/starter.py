@@ -580,9 +580,9 @@ def load_config(
 ):
     """Load and resolve the per-script configuration section for a workflow."""
     try:
-        from .create_voronoi import default_distance_additive, default_distance_multiplicative
+        from .service_areas import default_distance_additive, default_distance_multiplicative
     except ImportError:
-        from create_voronoi import default_distance_additive, default_distance_multiplicative
+        from src.service_areas import default_distance_additive, default_distance_multiplicative
 
     config_path = resolve_config_path(config)
     config_dir = os.path.dirname(config_path)

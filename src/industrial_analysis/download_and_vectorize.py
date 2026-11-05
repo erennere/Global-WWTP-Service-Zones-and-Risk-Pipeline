@@ -30,7 +30,7 @@ import pandas as pd
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
     from .. import provenance
-    from ..create_voronoi import (
+    from ..service_areas import (
         dissolve_overlapping_geometries_fast,
         download_overture_maps,
         intersects_with_country_db,
@@ -46,7 +46,7 @@ try:
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
     from src import provenance
-    from src.create_voronoi import (
+    from src.service_areas import (
         dissolve_overlapping_geometries_fast,
         download_overture_maps,
         intersects_with_country_db,
@@ -197,7 +197,7 @@ def _repair_geometry(geom):
 
 
 def _dissolve_by_overlap_groups(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Dissolve original geometries using fast overlap groups from create_voronoi."""
+    """Dissolve original geometries using fast overlap groups from service_areas."""
     if gdf is None or gdf.empty:
         return gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs=getattr(gdf, "crs", None))
 
@@ -556,7 +556,7 @@ def add_boundary_info(
     enriched["__row_id"] = enriched.index.astype(int)
     original_geometry = enriched[["__row_id", "geometry"]].rename(columns={"geometry": "_original_geometry"})
 
-    logger.info("Adding %s via create_voronoi.intersects_with_country_db...", country_output_col)
+    logger.info("Adding %s via service_areas.intersects_with_country_db...", country_output_col)
     enriched = intersects_with_country_db(
         enriched,
         overture_path,
@@ -564,7 +564,7 @@ def add_boundary_info(
         output_country_col=country_output_col,
     )
 
-    logger.info(f"Adding basin info via create_voronoi.intersect_with_polygon_sindex ({basin_col})...")
+    logger.info(f"Adding basin info via service_areas.intersect_with_polygon_sindex ({basin_col})...")
     if enriched.crs is not None and enriched.crs != watershed_gdf.crs:
         watershed_gdf = watershed_gdf.to_crs(enriched.crs)
     enriched = intersect_with_polygon_sindex(

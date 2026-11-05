@@ -20,7 +20,7 @@ from ..geo_utils import buffer_geometry, ensure_duckdb_spatial, estimate_utm_eps
 from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
 from ..add_pop import intersect_all_files
 from ..pipelines import create_pop_output_paths
-from ..create_voronoi import intersects_with_country_db
+from ..service_areas import intersects_with_country_db
 
 logger = logging.getLogger(__name__)
 

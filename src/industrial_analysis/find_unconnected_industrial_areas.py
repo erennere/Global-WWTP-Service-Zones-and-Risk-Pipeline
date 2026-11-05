@@ -37,7 +37,7 @@ try:
         create_output_paths,
         _resolve_configured_callable,
     )
-    from ..create_voronoi import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
+    from ..service_areas import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
     from src import provenance
@@ -49,7 +49,7 @@ except ImportError:
         create_output_paths,
         _resolve_configured_callable,
     )
-    from src.create_voronoi import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
+    from src.service_areas import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
 
 logger = logging.getLogger(__name__)
 
