@@ -40,7 +40,7 @@ def test_create_output_paths_and_pop_output_paths_use_config_tokens(tmp_path):
     cfg = {
         "version": "2",
         "level": "7",
-        "buffer_path_token": "k0_75",
+        "buffer_path_token": "q0_6",
         "weight_func": "",
         "weight_func_suffix": "",
         "weight_type": "log",
@@ -54,18 +54,9 @@ def test_create_output_paths_and_pop_output_paths_use_config_tokens(tmp_path):
     output_paths = pipelines.create_output_paths(cfg)
     pop_output_paths = pipelines.create_pop_output_paths(cfg)
 
-    assert Path(output_paths["buffers"]["WWTP"]).name == "dissolved_wwtp_buffers_v2_lvl7_bfk0_75.gpkg"
-    assert Path(output_paths["voronoi"]["1"]).name == "appr_1_v2_lvl7_bfk0_75_log.gpkg"
-    assert Path(pop_output_paths["voronoi"]["1"]).name == "pop_added_appr_1_v2_lvl7_bfk0_75_log.gpkg"
-
-
-def test_compute_mean_2_nnd_m_assigns_positive_distances(sample_sites_gdf):
-    result = pipelines._compute_mean_2_nnd_m(sample_sites_gdf.copy())
-
-    assert result["mean_2_nnd"].notna().all()
-    assert (result["mean_2_nnd"] > 0).all()
-    assert result.loc[1, "mean_2_nnd"] < result.loc[0, "mean_2_nnd"]
-    assert result.loc[1, "mean_2_nnd"] < result.loc[2, "mean_2_nnd"]
+    assert Path(output_paths["buffers"]["WWTP"]).name == "dissolved_wwtp_buffers_v2_lvl7_bfq0_6.gpkg"
+    assert Path(output_paths["voronoi"]["1"]).name == "appr_1_v2_lvl7_bfq0_6_log.gpkg"
+    assert Path(pop_output_paths["voronoi"]["1"]).name == "pop_added_appr_1_v2_lvl7_bfq0_6_log.gpkg"
 
 
 def _minimal_run_cfg(**overrides):
@@ -345,11 +336,6 @@ def test_prepare_data_uses_final_geometry_and_filters_industrial_sites(monkeypat
     assert gdf_bbox["old_WASTE_ID"].tolist() == [10, 30]
     assert gdf_bbox["WASTE_ID"].tolist() == expected.loc[[10, 30], "WASTE_ID"].tolist()
     assert gdf_bbox["SITE_UID"].tolist() == expected.loc[[10, 30], "SITE_UID"].tolist()
-    # Neighbour distances only count plants that stay in the map: with two
-    # plants left, each one's distance is to the other kept plant.
-    kept = gpd.GeoDataFrame(geometry=[final_points[0], final_points[2]], crs="EPSG:4326")
-    expected_nnd = pipelines._compute_mean_2_nnd_m(kept)["mean_2_nnd"].tolist()
-    assert gdf_bbox["mean_2_nnd"].tolist() == pytest.approx(expected_nnd)
     assert gdf_bbox["geometry"].tolist() == [final_points[0], final_points[2]]
     assert gdf_bbox["ISO_2"].tolist() == ["DE", "DE"]
     assert "final_geometry" not in gdf_bbox.columns

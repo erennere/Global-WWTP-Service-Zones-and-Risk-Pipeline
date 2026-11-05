@@ -20,13 +20,10 @@ COUNTRIES_PATH = SAMPLE_DIR / "backbone_countries.geojson"
 BUFFER_KWARGS = {
     "buffer": 10000,
     "dynamic_buffering": True,
-    "min_buffer": 1500,
     "max_buffer": 50000,
-    "area_ceiling": False,
-    "k_min": 0.40,
-    "k_max": 0.90,
-    "detection_confidence_threshold": 3,
-    "k_value": 0.5,
+    "radius_exponent": 0.286,
+    "radius_coefficient_km": 1.025,
+    "radius_unsized_km": 9.85,
 }
 
 
@@ -201,4 +198,4 @@ def test_calculate_buffer_with_sample_weights():
     assert isinstance(buffers, np.ndarray)
     assert len(buffers) == len(prepared)
     assert np.isfinite(buffers).all()
-    assert (buffers >= BUFFER_KWARGS["min_buffer"]).all()
+    assert (buffers > 0).all() and (buffers <= BUFFER_KWARGS["max_buffer"]).all()

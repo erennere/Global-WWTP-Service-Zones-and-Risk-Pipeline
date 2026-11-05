@@ -35,7 +35,7 @@ log "  - Buffer: ${BUFFER:-default}"
 log "  - Weight method: ${WEIGHT_METHOD:-default}"
 log "  - Weight func: ${WEIGHT_FUNC:-default}"
 log "  - Dynamic buffering: ${DYNAMIC_BUFFERING:-default}"
-log "  - Dynamic buffer k: ${DYNAMIC_BUFFER_K:-default}"
+log "  - Dynamic buffer k: ${RADIUS_QUANTILE:-default}"
 
 # Step 1: Download and vectorize industrial land rasters
 log "=========================================="

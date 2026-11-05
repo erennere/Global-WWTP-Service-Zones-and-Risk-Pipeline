@@ -38,6 +38,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+calibration = [
+  "pyreadr",
+]
 test = [
   "pytest>=8",
   "pytest-cov>=5",
@@ -47,6 +50,7 @@ test = [
 [tool.setuptools]
 packages = [
   "src",
+  "src.calibration",
   "src.annotation_scripts",
   "src.data_merge",
   "src.figures_scripts",

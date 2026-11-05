@@ -86,7 +86,7 @@ The full parameter tables now live in the relevant module READMEs. This file kee
 | `create_voronoi.weight_method` | `logarithmic` | Global weighting transform for Voronoi stages |
 | `create_voronoi.weight_func` | `mult` | Global weighted-distance mode for Voronoi stages |
 | `create_voronoi.dynamic_buffering` | `true` | Enables per-site dynamic buffers |
-| `create_voronoi.dynamic_buffer_k` | `0.5` | Dynamic-buffer scaling factor |
+| `create_voronoi.radius_quantile` | `0.5` | Dynamic-buffer scaling factor |
 | `create_voronoi.execution.mode` | `sequential` | Launcher mode for the Voronoi stage |
 | `create_rasters.annotations.default_mode` | `sequential` | Launcher mode for raster preparation |
 | `create_rasters.zoom_level` | `8` | Tile zoom used in raster/risk stages |
@@ -107,7 +107,7 @@ Every entry point accepts the same seven named override flags, added by
 `starter.parse_config_overrides`:
 
 ```bash
---level --version --buffer --weight-method --weight-func --dynamic-buffering --dynamic-buffer-k
+--level --version --buffer --weight-method --weight-func --dynamic-buffering --radius-quantile
 ```
 
 The shell wrappers collect whatever subset you pass and forward it verbatim as
@@ -115,7 +115,7 @@ The shell wrappers collect whatever subset you pass and forward it verbatim as
 
 ```bash
 cd src
-bash create_voronoi.sh --level 8 --buffer 9000 --dynamic-buffer-k 0.7
+bash create_voronoi.sh --level 8 --buffer 9000 --radius-quantile 0.7
 ```
 
 The older positional form (`level version buffer …`) has been removed: a stray
@@ -190,7 +190,7 @@ Key controls:
 - `create_voronoi.weight_method`
 - `create_voronoi.weight_func`
 - `create_voronoi.dynamic_buffering`
-- `create_voronoi.dynamic_buffer_k`
+- `create_voronoi.radius_quantile`
 - `create_voronoi.execution.mode`
 - `create_voronoi.n_points`
 - `create_voronoi.threshold`

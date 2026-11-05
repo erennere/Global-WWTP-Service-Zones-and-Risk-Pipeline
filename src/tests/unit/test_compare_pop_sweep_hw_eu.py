@@ -93,3 +93,11 @@ def test_build_alias_order_can_prioritize_hw_source():
     assert hw_weighted_order[0] == "A"
     assert score_table["hw_weight_used"].iloc[0] == pytest.approx(0.8)
     assert score_table["eu_weight_used"].iloc[0] == pytest.approx(0.2)
+
+
+
+def test_parse_pop_output_path_accepts_radius_quantile_buffer_token():
+    parsed = parse_pop_output_path(
+        "/tmp/pop_voronoi_layers/v2/lvl8/bfq0_6/log/pop_added_appr_1_v2_lvl8_bfq0_6_log_mult.gpkg"
+    )
+    assert parsed is not None and parsed["buffer"] == "q0_6"

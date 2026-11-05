@@ -8,7 +8,7 @@
 #SBATCH --output=logs/compare_pop_sweep_hw_eu_%j.out
 #SBATCH --error=logs/compare_pop_sweep_hw_eu_%j.err
 # Usage:
-#   bash src/sensitivity_analysis_scripts/compare_pop_sweep_hw_eu.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [dynamic_buffer_k]
+#   bash src/sensitivity_analysis_scripts/compare_pop_sweep_hw_eu.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [radius_quantile]
 
 set -Eeuo pipefail
 

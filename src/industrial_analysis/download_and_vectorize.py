@@ -7,7 +7,7 @@ vectorizes them (converts rasters to polygons), merges all geometries, clips
 to watershed and country boundaries, and saves the result as a GeoPackage.
 
 Usage:
-    python -m src.industrial_analysis.download_and_vectorize [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [dynamic_buffer_k]
+    python -m src.industrial_analysis.download_and_vectorize [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [radius_quantile]
 """
 
 import argparse

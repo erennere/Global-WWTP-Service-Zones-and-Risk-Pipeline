@@ -5,7 +5,7 @@
 # Can run locally by specifying file index, or in SLURM job array mode
 #
 # Usage:
-#   ./add_pop.sh --index <index> [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--weight-func <func>] [--dynamic-buffering <true|false>] [--dynamic-buffer-k <k>]
+#   ./add_pop.sh --index <index> [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--weight-func <func>] [--dynamic-buffering <true|false>] [--radius-quantile <q>]
 #   sbatch add_pop.sh              (SLURM array job - uses SLURM_ARRAY_TASK_ID)
 #
 # SLURM Configuration
@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
             INDEX_ARG="$2"
             shift 2
             ;;
-        --level|--version|--buffer|--weight-method|--weight-func|--dynamic-buffering|--dynamic-buffer-k)
+        --level|--version|--buffer|--weight-method|--weight-func|--dynamic-buffering|--radius-quantile)
             if [[ $# -lt 2 ]]; then
                 log "ERROR: $1 requires a value"
                 exit 1
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             log "ERROR: Unknown argument '$1'"
-            log "Usage: $0 --index <file_index> [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--weight-func <func>] [--dynamic-buffering <true|false>] [--dynamic-buffer-k <k>]"
+            log "Usage: $0 --index <file_index> [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--weight-func <func>] [--dynamic-buffering <true|false>] [--radius-quantile <q>]"
             exit 1
             ;;
     esac
@@ -83,7 +83,7 @@ elif [[ -n "${INDEX_ARG}" ]]; then
 else
     # No task ID provided
     log "ERROR: Task ID not provided"
-    log "Usage: $0 --index <file_index> [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--weight-func <func>] [--dynamic-buffering <true|false>] [--dynamic-buffer-k <k>]"
+    log "Usage: $0 --index <file_index> [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--weight-func <func>] [--dynamic-buffering <true|false>] [--radius-quantile <q>]"
     log "   or: sbatch $0 (SLURM mode)"
     exit 1
 fi

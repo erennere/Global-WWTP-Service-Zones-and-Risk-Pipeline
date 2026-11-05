@@ -49,9 +49,9 @@ _THRESHOLD = None
 def parse_pop_output_path(filepath):
     """Extract sensitivity parameters encoded in a pop-output filepath."""
     normalized = str(filepath).replace("\\", "/")
-    # Buffer token supports both static integer (e.g., bf2500) and
-    # dynamic-k form (e.g., bfk0_75 or bfk0.75).
-    buffer_token_pattern = r"(?:\d+|k\d+(?:[._]\d+)*)"
+    # Buffer token: fixed radius in metres (bf2500), service-radius quantile
+    # (bfq0_6 or bfq0.6), or the k form older outputs carry (bfk0_75).
+    buffer_token_pattern = r"(?:\d+|[kq]\d+(?:[._]\d+)*)"
     path_pattern = (
         r"/pop_voronoi_layers/v(?P<version>[^/]+)/lvl(?P<level>\d+)/"
         rf"bf(?P<buffer>{buffer_token_pattern})(?:/(?P<weight_type>[^/]+))?/(?P<filename>[^/]+)$"

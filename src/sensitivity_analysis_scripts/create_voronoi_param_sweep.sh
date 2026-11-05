@@ -56,21 +56,21 @@ print_task_combinations(int(sys.argv[1]), int(sys.argv[2]))
 )
 
 for combo in "${ASSIGNED_COMBOS[@]}"; do
-    IFS=$'\t' read -r level buffer weight_method weight_func dynamic_buffering dynamic_buffer_k <<< "${combo}"
+    IFS=$'\t' read -r level buffer weight_method weight_func dynamic_buffering radius_quantile <<< "${combo}"
     level="${level//$'\r'/}"
     buffer="${buffer//$'\r'/}"
     weight_method="${weight_method//$'\r'/}"
     weight_func="${weight_func//$'\r'/}"
     dynamic_buffering="${dynamic_buffering//$'\r'/}"
-    dynamic_buffer_k="${dynamic_buffer_k//$'\r'/}"
+    radius_quantile="${radius_quantile//$'\r'/}"
     if [[ "${weight_func}" == "__EMPTY__" ]]; then
         weight_func=""
     fi
-    if [[ "${dynamic_buffer_k}" == "__EMPTY__" ]]; then
-        dynamic_buffer_k=""
+    if [[ "${radius_quantile}" == "__EMPTY__" ]]; then
+        radius_quantile=""
     fi
     run_count=$((run_count + 1))
-    log "Run ${run_count}: level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} dynamic_buffer_k=${dynamic_buffer_k}"
+    log "Run ${run_count}: level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} radius_quantile=${radius_quantile}"
     cmd=(
         "${PYTHON_CMD}" -m "${PYTHON_SCRIPT}"
         --level "${level}"
@@ -81,8 +81,8 @@ for combo in "${ASSIGNED_COMBOS[@]}"; do
         --dynamic-buffering "${dynamic_buffering}"
         --approach "${APPROACH}"
     )
-    if [[ -n "${dynamic_buffer_k}" ]]; then
-        cmd+=(--dynamic-buffer-k "${dynamic_buffer_k}")
+    if [[ -n "${radius_quantile}" ]]; then
+        cmd+=(--radius-quantile "${radius_quantile}")
     fi
     "${cmd[@]}" 2>&1 | tee -a "${LOG_FILE}"
 done

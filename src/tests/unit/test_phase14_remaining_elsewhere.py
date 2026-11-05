@@ -317,7 +317,7 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: args)
 

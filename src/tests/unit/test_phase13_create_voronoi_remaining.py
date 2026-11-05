@@ -248,7 +248,7 @@ def test_create_voronoi_main_runs_all_approaches(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
     runpy.run_module("src.create_voronoi", run_name="__main__")
@@ -265,7 +265,7 @@ def test_create_voronoi_main_no_remaining_approaches_exits(monkeypatch, tmp_path
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=False)
 
@@ -301,7 +301,7 @@ def test_create_voronoi_main_run_path_import_fallback(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
 
@@ -435,7 +435,7 @@ def test_create_voronoi_main_invalid_approach_and_override_errors(monkeypatch, t
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: bad_args)
     with pytest.raises(SystemExit):
@@ -451,7 +451,7 @@ def test_create_voronoi_main_invalid_approach_and_override_errors(monkeypatch, t
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
 
@@ -475,7 +475,7 @@ def test_create_voronoi_main_city_country_enrichment_and_failure_exit(monkeypatc
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
 
@@ -536,11 +536,6 @@ def test_helper_branch_paths_for_remaining_small_functions(monkeypatch):
     assert cv.is_valid_geom(_BadGeom()) is False
     assert cv.buffer_geometry("unknown") == "unknown"
     assert cv.create_centroid_points(123) is None
-
-    df_one = gpd.GeoDataFrame({"geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
-    nn, med = cv.nearest_neighbor_distances_and_median(df_one)
-    assert np.isnan(nn[0])
-    assert np.isnan(med)
 
     assert np.isfinite(cv.auto_weight_scale([(0, 0), (1, 1), (np.nan, 2), (None, 3)]))
 
@@ -784,24 +779,6 @@ def test_remaining_small_helper_branches(monkeypatch):
     rng = cv.create_ranges(0, 1, step=10, min_step=2)
     assert np.allclose(rng, np.array([0.0, 10.0]))
 
-    empty_dist, empty_med = cv.nearest_neighbor_distances_and_median(None)
-    assert empty_dist.size == 0
-    assert np.isnan(empty_med)
-
-    gdf_emptyish = gpd.GeoDataFrame({"geometry": [None, Point()]}, geometry="geometry", crs="EPSG:4326")
-    d0, m0 = cv.nearest_neighbor_distances_and_median(gdf_emptyish)
-    assert d0.size == 0
-    assert np.isnan(m0)
-
-    gdf_two = gpd.GeoDataFrame(
-        {"geometry": [LineString([(0, 0), (1, 1)]), Point(2, 2)]},
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    d2, m2 = cv.nearest_neighbor_distances_and_median(gdf_two)
-    assert len(d2) == 2
-    assert np.isfinite(m2)
-
     area_empty = cv.calculate_area(gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326"))
     assert area_empty.empty
 
@@ -960,7 +937,7 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=False)
     import src.starter as starter
@@ -1012,7 +989,7 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        dynamic_buffer_k=None,
+        radius_quantile=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args2, overwrite=True)
     monkeypatch.setattr(pipelines, "prepare_data", lambda cfg_in: "not-dict")
@@ -1058,34 +1035,6 @@ def test_remaining_cluster_and_db_crs_branches(monkeypatch):
     monkeypatch.setattr(cv.os.path, "exists", lambda p: False)
     out = cv.intersect_with_polygons_db(df2, poly2, ["x"], df_join_col="ISO_2", polygon_join_col="ISO_2")
     assert "x" in out.columns
-
-
-def test_remaining_calculate_buffer_size_ceiling_branches():
-    kwargs = {
-        "buffer": 10_000,
-        "dynamic_buffering": True,
-        "min_buffer": 500,
-        "max_buffer": None,
-        "area_ceiling": True,
-        "k_min": 0.4,
-        "k_max": 0.9,
-        "detection_confidence_threshold": 3,
-        "k_value": 0.5,
-    }
-    for area in [100, 1_000, 10_000, 50_000, 200_000]:
-        df = gpd.GeoDataFrame(
-            {
-                "geometry": [Point(0, 0)],
-                "basin_area": [area],
-                "num_detection_circle": [0],
-                "num_detection_rect": [0],
-                "mean_2_nnd": [np.nan],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-        out = cv.calculate_buffer(df, np.array([1.0]), **kwargs)
-        assert len(out) == 1
 
 
 def test_remaining_weighted_voronoi_and_worker_branches(monkeypatch):

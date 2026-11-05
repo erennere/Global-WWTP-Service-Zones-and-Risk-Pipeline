@@ -4,7 +4,6 @@ Pipeline orchestration for Voronoi-based spatial analysis.
 Functions are grouped by purpose:
 
 **Internal helpers**
-  - ``_compute_mean_2_nnd_m`` — per-site nearest-neighbour spacing in metres
   - ``_resolve_configured_callable``    — resolve a config string or callable
     to an actual function in a given module
 
@@ -37,11 +36,6 @@ import geopandas as gpd
 from shapely import from_wkt, to_wkt, from_wkb
 import shapely
 import logging
-
-try:
-    from .geo_utils import nearest_distances_m
-except ImportError:  # Support running/importing as a top-level module
-    from geo_utils import nearest_distances_m
 
 logger = logging.getLogger(__name__)
 
@@ -76,29 +70,6 @@ def assign_stable_site_ids(gdf, site_id_col, old_site_id_col, wkt_col='WKT_WWTP'
     ids = np.empty(len(gdf), dtype=np.int64)
     ids[order] = np.arange(len(gdf))
     gdf[site_id_col] = ids
-    return gdf
-
-
-def _compute_mean_2_nnd_m(gdf):
-    """Mean great-circle distance (metres) from each site to its two nearest sites.
-
-    Values are written to ``mean_2_nnd``; rows with missing/empty geometry,
-    or without a neighbour, stay ``NaN``. The previous version measured in
-    EPSG:3857, which inflates distances by 1/cos(latitude) (x1.56 at 50 deg N,
-    x2 at 60 deg N), and those distances set the dynamic buffer sizes.
-    """
-    if gdf is None or gdf.empty:
-        return gdf
-    gdf['mean_2_nnd'] = np.nan
-    valid_mask = gdf['geometry'].notna() & gdf['geometry'].is_valid & (~gdf['geometry'].is_empty)
-    valid_idx = gdf.index[valid_mask]
-    if len(valid_idx) < 2:
-        return gdf
-
-    sites = gpd.GeoDataFrame(geometry=gdf.loc[valid_idx, 'geometry'], crs=gdf.crs or 'epsg:4326')
-    k = min(3, len(sites))  # the site itself plus up to two neighbours
-    distances, _ = nearest_distances_m(sites, sites, k=k)
-    gdf.loc[valid_idx, 'mean_2_nnd'] = np.nanmean(np.where(np.isfinite(distances[:, 1:k]), distances[:, 1:k], np.nan), axis=1)
     return gdf
 
 
@@ -417,11 +388,6 @@ def prepare_data(cfg):
             keep=False,
             logger=logger,
         )
-
-    # Neighbour distances (for the dynamic buffers) are measured on the plants
-    # that stay in the map, so a removed industrial plant cannot shrink the
-    # buffers of the plants around it.
-    gdf_bbox = _compute_mean_2_nnd_m(gdf_bbox)
 
     # Add country codes. Rejoining is the default: an inherited country column
     # from an upstream layer can disagree with the boundary layer in use.

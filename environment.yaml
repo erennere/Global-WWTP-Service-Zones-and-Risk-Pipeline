@@ -18,6 +18,7 @@ dependencies:
   - networkx
   - duckdb
   - pyarrow  # pd.read_parquet / to_parquet (Overture countries, risk outputs)
+  - pyreadr  # src/calibration/service_radius.py reads the census block-group .rda
   - joblib
   - tqdm
   - requests

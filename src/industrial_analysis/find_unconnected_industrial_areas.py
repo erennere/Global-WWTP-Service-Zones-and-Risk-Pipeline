@@ -10,7 +10,7 @@ This script:
 5. Saves unconnected areas to GeoPackage.
 
 Usage:
-    python -m src.industrial_analysis.find_unconnected_industrial_areas [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [dynamic_buffer_k]
+    python -m src.industrial_analysis.find_unconnected_industrial_areas [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [radius_quantile]
 """
 
 import argparse

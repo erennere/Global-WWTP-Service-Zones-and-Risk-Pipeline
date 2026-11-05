@@ -16,7 +16,7 @@ init_log "interactive_unconnected_industrial_map"
 enable_err_trap
 
 # Usage:
-#   ./figures_scripts/interactive_unconnected_industrial_map.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [dynamic_buffer_k]
+#   ./figures_scripts/interactive_unconnected_industrial_map.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [radius_quantile]
 #
 # Works in both:
 #   1) plain bash: bash figures_scripts/interactive_unconnected_industrial_map.sh

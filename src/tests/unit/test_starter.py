@@ -21,7 +21,7 @@ def test_parse_config_overrides_from_argv_parses_all_supported_types():
             "prog",
             "--level", "9", "--version", "3", "--buffer", "12000",
             "--weight-method", "square_root", "--weight-func=",
-            "--dynamic-buffering", "yes", "--dynamic-buffer-k", "0.75",
+            "--dynamic-buffering", "yes", "--radius-quantile", "0.75",
         ]
     )
 
@@ -32,7 +32,7 @@ def test_parse_config_overrides_from_argv_parses_all_supported_types():
         "weight_method": "square_root",
         "weight_func": "",
         "dynamic_buffering": True,
-        "dynamic_buffer_k": 0.75,
+        "radius_quantile": 0.75,
     }
 
 
@@ -44,7 +44,7 @@ def test_parse_config_overrides_from_namespace_normalizes_optional_values():
         weight_method="logarithmic",
         weight_func="add",
         dynamic_buffering="false",
-        dynamic_buffer_k="1.25",
+        radius_quantile="1.25",
     )
 
     overrides = starter.parse_config_overrides(args=args)
@@ -56,7 +56,7 @@ def test_parse_config_overrides_from_namespace_normalizes_optional_values():
         "weight_method": "logarithmic",
         "weight_func": "add",
         "dynamic_buffering": False,
-        "dynamic_buffer_k": 1.25,
+        "radius_quantile": 1.25,
     }
 
 
@@ -70,7 +70,7 @@ def test_add_standard_override_arguments_parses_named_flags():
         "--weight-method", "logarithmic",
         "--weight-func", "mult",
         "--dynamic-buffering", "true",
-        "--dynamic-buffer-k", "0.75",
+        "--radius-quantile", "0.75",
     ])
 
     overrides = starter.parse_config_overrides(args=args)
@@ -82,7 +82,7 @@ def test_add_standard_override_arguments_parses_named_flags():
         "weight_method": "logarithmic",
         "weight_func": "mult",
         "dynamic_buffering": True,
-        "dynamic_buffer_k": 0.75,
+        "radius_quantile": 0.75,
     }
 
 
@@ -99,7 +99,7 @@ def test_parse_config_overrides_ignores_positional_tokens():
         "weight_method": None,
         "weight_func": None,
         "dynamic_buffering": None,
-        "dynamic_buffer_k": None,
+        "radius_quantile": None,
     }
 
 
@@ -109,7 +109,7 @@ def test_parse_config_overrides_reads_named_flags_from_argv():
             "prog", "positional-arg",
             "--level", "8", "--version", "4", "--buffer", "1500",
             "--weight-method", "linear", "--weight-func", "mult",
-            "--dynamic-buffering", "0", "--dynamic-buffer-k", "1.5",
+            "--dynamic-buffering", "0", "--radius-quantile", "1.5",
         ],
     )
 
@@ -120,7 +120,7 @@ def test_parse_config_overrides_reads_named_flags_from_argv():
         "weight_method": "linear",
         "weight_func": "mult",
         "dynamic_buffering": False,
-        "dynamic_buffer_k": 1.5,
+        "radius_quantile": 1.5,
     }
 
 
@@ -130,7 +130,7 @@ def test_parse_config_overrides_reads_named_flags_from_argv():
         (["prog", "--buffer", "not-an-int"], "Invalid buffer"),
         (["prog", "--weight-func", "bad-mode"], "Invalid weight_func"),
         (["prog", "--dynamic-buffering", "maybe"], "Invalid dynamic_buffering"),
-        (["prog", "--dynamic-buffer-k", "nanmeters"], "Invalid dynamic_buffer_k"),
+        (["prog", "--radius-quantile", "nanmeters"], "Invalid radius_quantile"),
     ],
 )
 def test_parse_config_overrides_rejects_invalid_optional_values(argv, message):
@@ -182,7 +182,7 @@ def test_load_config_expands_relative_paths_and_aliases(write_test_config):
     assert "bf1500" in cfg["paths"]["voronoi_dir"]
 
 
-def test_load_config_dynamic_buffering_uses_k_token_and_empty_weight_func(write_test_config):
+def test_load_config_dynamic_buffering_uses_quantile_token_and_empty_weight_func(write_test_config):
     config_path = write_test_config(
         {
             "create_voronoi": {
@@ -190,7 +190,7 @@ def test_load_config_dynamic_buffering_uses_k_token_and_empty_weight_func(write_
                 "weight_method": "logarithmic",
                 "weight_func": "mult",
                 "dynamic_buffering": True,
-                "dynamic_buffer_k": 0.5,
+                "radius_quantile": 0.5,
             },
         }
     )
@@ -200,14 +200,14 @@ def test_load_config_dynamic_buffering_uses_k_token_and_empty_weight_func(write_
         config=str(config_path),
         weight_func="",
         dynamic_buffering=True,
-        dynamic_buffer_k=0.75,
+        radius_quantile=0.7,
     )
 
     assert cfg["weight_func"] == ""
     assert cfg["weight_func_suffix"] == ""
-    assert cfg["buffer_path_token"] == "k0_75"
+    assert cfg["buffer_path_token"] == "q0_7"
     assert cfg["dynamic_buffering"] is True
-    assert cfg["dynamic_buffer_k"] == pytest.approx(0.75)
+    assert cfg["radius_quantile"] == pytest.approx(0.7)
     assert cfg["distance_fn"] is create_voronoi.default_distance_multiplicative
 
 
@@ -219,13 +219,10 @@ def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_te
                 "weight_method": "logarithmic",
                 "weight_func": "mult",
                 "dynamic_buffering": True,
-                "dynamic_buffer_k": 0.5,
-                "min_buffer": 2000,
+                "radius_quantile": 0.5,
                 "max_buffer": 50000,
-                "area_ceiling": True,
-                "k_min": 0.32,
-                "k_max": 0.92,
-                "detection_confidence_threshold": 3,
+                "radius_exponent": 0.3,
+                "radius_calibration": {0.5: {"coefficient_km": 0.4, "unsized_km": 3.0}},
             },
         }
     )
@@ -235,14 +232,20 @@ def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_te
     assert cfg["calculate_buffer_kwargs"] == {
         "buffer": 9000,
         "dynamic_buffering": True,
-        "min_buffer": 2000,
         "max_buffer": 50000,
-        "area_ceiling": True,
-        "k_min": 0.32,
-        "k_max": 0.92,
-        "detection_confidence_threshold": 3,
-        "k_value": 0.5,
+        "radius_exponent": 0.3,
+        "radius_coefficient_km": 0.4,
+        "radius_unsized_km": 3.0,
     }
+
+
+def test_fixed_buffering_needs_no_radius_calibration(write_test_config):
+    config_path = write_test_config(
+        {"create_voronoi": {"buffer": 9000, "dynamic_buffering": False, "max_buffer": 50000}}
+    )
+    cfg = starter.load_config(script_name="create_voronoi", config=str(config_path))
+    assert cfg["calculate_buffer_kwargs"] == {"buffer": 9000, "dynamic_buffering": False, "max_buffer": 50000}
+    assert cfg["buffer_path_token"] == "9000"
 
 
 def test_load_config_normalizes_weight_func_from_yaml(write_test_config):

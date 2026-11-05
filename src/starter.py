@@ -28,7 +28,7 @@ _OVERRIDE_FIELDS = (
     ("weight_method", 3, False),
     ("weight_func", 4, True),
     ("dynamic_buffering", 5, False),
-    ("dynamic_buffer_k", 6, False),
+    ("radius_quantile", 6, False),
 )
 _OVERRIDE_FLAG_TO_FIELD = {
     "--level": "level",
@@ -37,7 +37,7 @@ _OVERRIDE_FLAG_TO_FIELD = {
     "--weight-method": "weight_method",
     "--weight-func": "weight_func",
     "--dynamic-buffering": "dynamic_buffering",
-    "--dynamic-buffer-k": "dynamic_buffer_k",
+    "--radius-quantile": "radius_quantile",
 }
 
 
@@ -49,7 +49,7 @@ def add_standard_override_arguments(parser):
     parser.add_argument("--weight-method", dest="weight_method", default=None, help="Optional config weight_method override")
     parser.add_argument("--weight-func", dest="weight_func", default=None, help="Optional config weight_func override: 'mult', 'add', or ''")
     parser.add_argument("--dynamic-buffering", dest="dynamic_buffering", default=None, help="Optional dynamic buffering override (true/false)")
-    parser.add_argument("--dynamic-buffer-k", dest="dynamic_buffer_k", default=None, help="Optional dynamic buffer scaling override")
+    parser.add_argument("--radius-quantile", dest="radius_quantile", default=None, help="Optional service-radius quantile override (one of the calibrated values in radius_calibration)")
     return parser
 
 
@@ -201,7 +201,7 @@ def parse_config_overrides(args: Any = None, argv: list[str] | None = None):
         "weight_method": raw_overrides["weight_method"],
         "weight_func": _parse_optional_weight_func(raw_overrides["weight_func"], "weight_func"),
         "dynamic_buffering": _parse_optional_bool(raw_overrides["dynamic_buffering"], "dynamic_buffering"),
-        "dynamic_buffer_k": _parse_optional_float(raw_overrides["dynamic_buffer_k"], "dynamic_buffer_k"),
+        "radius_quantile": _parse_optional_float(raw_overrides["radius_quantile"], "radius_quantile"),
     }
 
 
@@ -347,7 +347,7 @@ def _apply_runtime_overrides(
     weight_method=None,
     weight_func=None,
     dynamic_buffering=None,
-    dynamic_buffer_k=None,
+    radius_quantile=None,
 ) -> dict:
     cfg = deepcopy(resolved_cfg)
     _apply_optional_override(cfg, "level", level)
@@ -361,7 +361,7 @@ def _apply_runtime_overrides(
         _normalize_weight_func,
     )
     _apply_optional_override(cfg, "dynamic_buffering", dynamic_buffering, _parse_optional_bool)
-    _apply_optional_override(cfg, "dynamic_buffer_k", dynamic_buffer_k, _parse_optional_float)
+    _apply_optional_override(cfg, "radius_quantile", radius_quantile, _parse_optional_float)
     return cfg
 
 
@@ -395,39 +395,46 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         )
 
     if "buffer" in cfg and "dynamic_buffering" in cfg:
-        if cfg["dynamic_buffering"] and cfg["dynamic_buffer_k"] is None:
-            raise ValueError("dynamic_buffer_k must be configured when dynamic_buffering is true")
+        if cfg["dynamic_buffering"] and cfg["radius_quantile"] is None:
+            raise ValueError("radius_quantile must be configured when dynamic_buffering is true")
 
         if cfg["dynamic_buffering"]:
-            derived["buffer_path_token"] = f"k{str(cfg['dynamic_buffer_k']).replace('.', '_')}"
+            derived["buffer_path_token"] = f"q{str(cfg['radius_quantile']).replace('.', '_')}"
         else:
             derived["buffer_path_token"] = str(int(cfg["buffer"]))
 
-    calculate_buffer_keys = {
-        "buffer",
-        "dynamic_buffering",
-        "min_buffer",
-        "max_buffer",
-        "area_ceiling",
-        "k_min",
-        "k_max",
-        "detection_confidence_threshold",
-        "dynamic_buffer_k",
-    }
+    calculate_buffer_keys = {"buffer", "dynamic_buffering", "max_buffer", "radius_quantile",
+                             "radius_exponent", "radius_calibration"}
     if calculate_buffer_keys.issubset(cfg):
-        derived["calculate_buffer_kwargs"] = {
+        kwargs = {
             "buffer": cfg["buffer"],
             "dynamic_buffering": cfg["dynamic_buffering"],
-            "min_buffer": cfg["min_buffer"],
             "max_buffer": cfg["max_buffer"],
-            "area_ceiling": cfg["area_ceiling"],
-            "k_min": cfg["k_min"],
-            "k_max": cfg["k_max"],
-            "detection_confidence_threshold": cfg["detection_confidence_threshold"],
-            "k_value": cfg["dynamic_buffer_k"],
         }
+        if cfg["dynamic_buffering"]:
+            row = _calibration_row(cfg["radius_calibration"], cfg["radius_quantile"])
+            kwargs.update({
+                "radius_exponent": float(cfg["radius_exponent"]),
+                "radius_coefficient_km": float(row["coefficient_km"]),
+                "radius_unsized_km": float(row["unsized_km"]),
+            })
+        derived["calculate_buffer_kwargs"] = kwargs
 
     return derived
+
+
+def _calibration_row(table, quantile):
+    """The radius_calibration entry for ``quantile`` (keys compared to 4 decimals)."""
+    if not isinstance(table, dict) or not table:
+        raise ValueError("radius_calibration must map quantiles to {coefficient_km, unsized_km}")
+    rows = {round(float(key), 4): value for key, value in table.items()}
+    key = round(float(quantile), 4)
+    if key not in rows:
+        raise ValueError(
+            f"radius_quantile {quantile} is not calibrated; choose one of {sorted(rows)} "
+            "or add it with src.calibration.service_radius"
+        )
+    return rows[key]
 
 
 ################################################################################
@@ -544,7 +551,7 @@ def load_config(
     weight_method=None,
     weight_func=None,
     dynamic_buffering=None,
-    dynamic_buffer_k=None,
+    radius_quantile=None,
 ):
     """Load and resolve the per-script configuration section for a workflow."""
     try:
@@ -568,7 +575,7 @@ def load_config(
         weight_method=weight_method,
         weight_func=weight_func,
         dynamic_buffering=dynamic_buffering,
-        dynamic_buffer_k=dynamic_buffer_k,
+        radius_quantile=radius_quantile,
     )
 
     # Derive helper values and expand any templated output/input paths last.

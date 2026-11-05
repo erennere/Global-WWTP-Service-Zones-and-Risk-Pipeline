@@ -75,96 +75,10 @@ def test_calculate_buffer_fixed_branch_clips_requested_buffer():
         weights=np.array([0.5, 0.5]),
         buffer=9000,
         dynamic_buffering=False,
-        min_buffer=2000,
         max_buffer=5000,
-        area_ceiling=False,
-        k_min=0.32,
-        k_max=0.92,
-        detection_confidence_threshold=3,
     )
 
     assert result.tolist() == [5000.0, 5000.0]
-
-
-def test_calculate_buffer_single_site_dynamic_uses_buffer_fallback(monkeypatch):
-    df = gpd.GeoDataFrame(
-        {
-            "geometry": [Point(0, 0)],
-            "num_detection_circle": [0],
-            "num_detection_rect": [0],
-            "basin_area": [1000.0],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-
-    monkeypatch.setattr(
-        create_voronoi,
-        "nearest_neighbor_distances_and_median",
-        lambda input_df: (np.array([np.nan]), np.nan),
-    )
-
-    result = create_voronoi.calculate_buffer(
-        df,
-        weights=np.array([1.0]),
-        buffer=10000,
-        dynamic_buffering=True,
-        min_buffer=2000,
-        max_buffer=20000,
-        area_ceiling=False,
-        k_min=0.32,
-        k_max=0.92,
-        detection_confidence_threshold=3,
-        k_value=0.5,
-    )
-
-    expected_k_density = np.log1p(10000) / np.log1p(60000)
-    expected_k = 0.32 + expected_k_density * (0.92 - 0.32)
-    expected_buffer = 10000 * expected_k
-
-    assert result == pytest.approx(np.array([expected_buffer]))
-
-
-def test_calculate_buffer_uses_mean_2_nnd_when_nnd_length_mismatches(monkeypatch):
-    df = gpd.GeoDataFrame(
-        {
-            "geometry": [Point(0, 0), Point(1, 1)],
-            "mean_2_nnd": [4000.0, 9000.0],
-            "num_detection_circle": [0, 0],
-            "num_detection_rect": [0, 0],
-            "basin_area": [1000.0, 1000.0],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-
-    monkeypatch.setattr(
-        create_voronoi,
-        "nearest_neighbor_distances_and_median",
-        lambda input_df: (np.array([1.0]), 1.0),
-    )
-
-    result = create_voronoi.calculate_buffer(
-        df,
-        weights=np.array([0.5, 0.5]),
-        buffer=7000,
-        dynamic_buffering=True,
-        min_buffer=1000,
-        max_buffer=20000,
-        area_ceiling=False,
-        k_min=0.32,
-        k_max=0.92,
-        detection_confidence_threshold=3,
-        k_value=0.5,
-    )
-
-    expected = []
-    for nnd in [4000.0, 9000.0]:
-        k_density = np.log1p(nnd) / np.log1p(60000)
-        k = 0.32 + k_density * (0.92 - 0.32)
-        expected.append(nnd * k)
-
-    assert result == pytest.approx(np.array(expected))
 
 
 def test_filter_requested_approaches_skips_city_when_disabled(monkeypatch):

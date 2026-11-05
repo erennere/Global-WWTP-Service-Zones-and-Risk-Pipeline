@@ -110,7 +110,7 @@ def main():
     for level in levels:
         # Reuse the parsed overrides wholesale so no field can be dropped here -
         # the hand-rolled dict this replaced silently discarded dynamic_buffering
-        # and dynamic_buffer_k.
+        # and radius_quantile.
         cfg = load_config(
             script_name="combine_watersheds",
             **{**overrides, "level": level},

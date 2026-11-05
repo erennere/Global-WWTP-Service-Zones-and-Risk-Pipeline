@@ -181,42 +181,54 @@ def test_B8_straddling_industrial_area_is_connected():
 
 
 # --------------------------------------------------------------------------- #
-# B9  one buffer formula for every site; area ceiling applies                 #
+# Service radius: from plant size only, calibrated on real catchments         #
+# (replaces B9's NND x k rule and its area ceiling)                           #
 # --------------------------------------------------------------------------- #
-BUFFER_KW = dict(
-    buffer=9000, dynamic_buffering=True, min_buffer=2000, max_buffer=50000, area_ceiling=True,
-    k_min=0.32, k_max=0.92, detection_confidence_threshold=3, k_value=0.8,
-)
+RADIUS_KW = dict(buffer=9000, dynamic_buffering=True, max_buffer=50000,
+                 radius_exponent=0.286, radius_coefficient_km=0.568, radius_unsized_km=4.04)
 
 
-def _plants(xs, total_area, mean_2_nnd=np.nan):
+def _plants(xs, footprint, lagoon=False):
     return gpd.GeoDataFrame(
-        {
-            "total_area": [total_area] * len(xs),
-            "num_detection_circle": [0] * len(xs),
-            "num_detection_rect": [0] * len(xs),
-            "mean_2_nnd": [mean_2_nnd] * len(xs),
-        },
+        {"footprint_m2": [footprint] * len(xs), "lagoon_detected": [lagoon] * len(xs)},
         geometry=[Point(x, 0) for x in xs],
         crs=32632,
     )
 
 
-def test_B9_area_ceiling_caps_small_plants():
-    out = cv.calculate_buffer(_plants([0, 40_000], total_area=50_000), None, **BUFFER_KW)
-    assert out.tolist() == [8000.0, 8000.0]  # < 100,000 m2 detected -> 8 km cap
+def test_radius_grows_with_footprint_as_calibrated():
+    small = cv.calculate_buffer(_plants([0], 1_000), None, **RADIUS_KW)[0]
+    large = cv.calculate_buffer(_plants([0], 100_000), None, **RADIUS_KW)[0]
+    assert small == pytest.approx(568 * 1_000 ** 0.286)  # ~4.1 km
+    assert large / small == pytest.approx(100 ** 0.286)  # 100x footprint -> 3.7x radius
 
 
-def test_B9_area_ceiling_can_be_switched_off():
-    kw = dict(BUFFER_KW, area_ceiling=False)
-    out = cv.calculate_buffer(_plants([0, 40_000], total_area=50_000), None, **kw)
-    assert out.min() > 8000.0
+def test_radius_does_not_depend_on_neighbours():
+    alone = cv.calculate_buffer(_plants([0], 5_000), None, **RADIUS_KW)
+    crowded = cv.calculate_buffer(_plants([0, 300, 600, 900], 5_000), None, **RADIUS_KW)
+    assert np.allclose(crowded, alone[0])
 
 
-def test_B9_single_site_uses_its_neighbour_distance_like_any_other_site():
-    alone = cv.calculate_buffer(_plants([0], total_area=500_000, mean_2_nnd=20_000), None, **BUFFER_KW)
-    pair = cv.calculate_buffer(_plants([0, 20_000], total_area=500_000), None, **BUFFER_KW)
-    assert alone[0] == pytest.approx(pair[0])
+def test_lagoons_and_undetected_plants_get_the_size_free_radius():
+    lagoon = cv.calculate_buffer(_plants([0], 400_000, lagoon=True), None, **RADIUS_KW)[0]
+    undetected = cv.calculate_buffer(_plants([0], 0), None, **RADIUS_KW)[0]
+    assert lagoon == undetected == pytest.approx(4040)
+
+
+def test_radius_never_exceeds_max_buffer():
+    assert cv.calculate_buffer(_plants([0], 1e9), None, **RADIUS_KW)[0] == 50000
+
+
+def test_starter_reads_the_radius_for_the_configured_quantile():
+    from src.starter import load_config
+
+    kw = load_config(script_name="create_voronoi")["calculate_buffer_kwargs"]
+    assert kw["radius_coefficient_km"] == pytest.approx(0.568) and kw["radius_unsized_km"] == pytest.approx(4.04)
+    other = load_config(script_name="create_voronoi", radius_quantile=0.5)
+    assert other["calculate_buffer_kwargs"]["radius_coefficient_km"] == pytest.approx(0.492)
+    assert other["buffer_path_token"] == "q0_5"
+    with pytest.raises(ValueError, match="not calibrated"):
+        load_config(script_name="create_voronoi", radius_quantile=0.65)
 
 
 # --------------------------------------------------------------------------- #
@@ -265,17 +277,6 @@ def test_R2_buffer_meters_is_metres_at_every_latitude(lat):
     buf = gpd.GeoSeries(geo_utils.buffer_meters(gdf, 1000.0), crs=4326)
     area = buf.to_crs(f"+proj=laea +lat_0={lat} +lon_0=10").area.iloc[0]
     assert area == pytest.approx(np.pi * 1000.0 ** 2, rel=0.01)
-
-
-def test_R2_mean_2_nnd_is_in_metres():
-    sites = gpd.GeoDataFrame(
-        geometry=[Point(8.0, 60.0), Point(8.0 + 2 * KM_LON_50N * np.cos(np.radians(50)) / np.cos(np.radians(60)), 60.0),
-                  Point(8.0, 60.0 + 2 / 111.195)],
-        crs=4326,
-    )
-    out = pipelines._compute_mean_2_nnd_m(sites.copy())
-    # every site has its two neighbours at ~2 km and ~2.8 km; EPSG:3857 would report ~2x
-    assert out["mean_2_nnd"].between(2000, 2900).all()
 
 
 # --------------------------------------------------------------------------- #
