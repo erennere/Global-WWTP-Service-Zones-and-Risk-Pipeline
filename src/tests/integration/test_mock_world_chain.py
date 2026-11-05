@@ -9,6 +9,9 @@ import os
 import shutil
 import sys
 
+import json
+from pathlib import Path
+
 import geopandas as gpd
 import numpy as np
 import pytest
@@ -40,7 +43,9 @@ def chain(tmp_path_factory):
             status[name] = next((r for r in runs if r["returncode"]), runs[0] if runs else {"returncode": 1, "error": "no input"})
         else:
             status[name] = harness.run_module(harness.REPO, cfg_path, args, logs, name)
-    yield {"status": status, "paths": paths, "data_dir": data_dir}
+    sites = len(gpd.read_file(data_dir / "all_annotated_v2.gpkg"))
+    metrics = harness.collect(harness.REPO, cfg_path, paths, str(data_dir), sites, {"before": None, "after": None})
+    yield {"status": status, "paths": paths, "data_dir": data_dir, "metrics": metrics}
     shutil.rmtree(work, ignore_errors=True)
 
 
@@ -86,3 +91,24 @@ def test_non_served_areas_stay_outside_the_service_areas(chain):
     served = _service_areas(chain, approach).geometry.union_all()
     overlap = non_served.geometry.intersection(served).area.sum()
     assert overlap <= 0.01 * non_served.geometry.area.sum()
+
+
+GOLDEN = Path(__file__).resolve().parents[1] / "golden" / "mock_world_chain.json"
+
+
+def _flat(metrics):
+    return {f"{out}|{key}": value for out, values in metrics.items() if isinstance(values, dict)
+            for key, value in values.items() if isinstance(value, (int, float)) and not isinstance(value, bool)}
+
+
+def test_outputs_match_the_golden_run(chain):
+    """Restructuring must not change any output. After an intended change in results,
+    regenerate with WWTP_UPDATE_GOLDEN=1 and say why in the commit."""
+    current = _flat(chain["metrics"])
+    if os.environ.get("WWTP_UPDATE_GOLDEN") == "1":
+        GOLDEN.parent.mkdir(exist_ok=True)
+        GOLDEN.write_text(json.dumps(dict(sorted(current.items())), indent=1) + "\n")
+    golden = json.loads(GOLDEN.read_text())
+    assert sorted(current) == sorted(golden), set(current) ^ set(golden)
+    for key, value in golden.items():
+        assert current[key] == pytest.approx(value, rel=1e-6, abs=1e-6), key
