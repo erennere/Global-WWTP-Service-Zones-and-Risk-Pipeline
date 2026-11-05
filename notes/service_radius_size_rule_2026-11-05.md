@@ -51,11 +51,19 @@ catchments hold 52.1 M).
 - Footprint alone cannot size the largest plants: GB catchments >500k people have a median footprint of
   52k m2 against 43k m2 for 100k-500k (people per footprint varies 10x). Reported sizes fix this.
 - Still missed for >500k (reported): 30 % of their people lie in another level-8 basin, 9 % go to another
-  plant, 2 % outside every circle. Coarser basins or none did not raise capture (tested level 5-7 and no
-  basins): the cells then go to neighbouring plants. Shares between large neighbours (London's
+  plant, 2 % outside every circle. Without the basin constraint most of those cells go to neighbouring
+  plants instead. Grid stand-in of approach 1 on GB (matches the pipeline to 0.01): level-6 basins raise
+  capture to 0.70 (100k-500k) and 0.63 (>500k), typical error x1.56; no basins 0.69 / 0.63. Not adopted:
+  that would be tuned on the test set; worth a check on NL. Shares between large neighbours (London's
   Beckton/Crossness/Mogden/Long Reach) are set by sewer history, not by distance.
 - "Beyond" (share of catchments whose area misses more than 5 % of their people) stays high for large
   catchments (0.79 and 0.89); no point-based split of a multi-plant city reaches 95 %.
+
+## Checks
+- 704 unit tests pass; the whole chain (13 stages) runs on the mock world with this rule
+  (`src/tests/harness/mock_before_after.py`).
+- The plant data must carry `POP_SERVED`, `QUAL_POP`, `EPA POP 2022` and `uwwLoadEnteringUWWTP` (all in
+  all_merged_v2); a missing column is logged once and those plants use the footprint estimate.
 
 ## Consequence for validation (pop_served_validation_plan, rule 2)
 With `size_measure: reported` HydroWASTE POP_SERVED, CWNS and UWWTD loads are inputs. Plant-level
