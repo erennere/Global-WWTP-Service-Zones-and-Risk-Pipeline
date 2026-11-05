@@ -1,83 +1,177 @@
-from __future__ import annotations
-
-import io
+"""Tests for create_rasters (moved from the coverage-campaign files)."""
+import argparse
+import os
 import runpy
-from unittest.mock import mock_open, patch
-
+import sys
+import types
+import duckdb
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pytest
+from shapely.geometry import LineString, Point, box
+from src import download_pop as dp
+from src.annotation_scripts import NEW_01_GENERATEGRIDS as n1
+from src.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
+from src.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
+from src.annotation_scripts import download_bing_annotate as dba
+from src.figures_scripts import piechart_figure as pf
+from src import starter
+from src.pop_at_risk_river_calculations import create_rasters as cr
+from src.pop_at_risk_river_calculations import find_intersection_river as fir
+from src.pop_at_risk_river_calculations import impact_polygons_pop as ipp
+from src.industrial_analysis import download_and_vectorize as dv
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock
+from shapely.geometry import Point
+try:
+    from src import download_pop as dp
+    from src.pop_at_risk_river_calculations import create_rasters as cr
+    from src.industrial_analysis import download_and_vectorize as dv
+except ImportError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    import download_pop as dp
+    from pop_at_risk_river_calculations import create_rasters as cr
+    from industrial_analysis import download_and_vectorize as dv
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])
+import io
+from unittest.mock import mock_open, patch
 from shapely.geometry import Point, Polygon, box
-
 from src.pop_at_risk_river_calculations import create_rasters
-
 
 pytestmark = pytest.mark.unit
 
 
-def test_new04_exportgeotiff_script_executes_with_dummy_data(monkeypatch):
-    grid = gpd.GeoDataFrame(
-        {"idx": [1], "geometry": [box(0, 0, 10, 10)]},
+def test_create_rasters_main_smoke(monkeypatch, tmp_path):
+    args = argparse.Namespace(job_index=0, total_jobs=1)
+    monkeypatch.setattr(cr, "parse_args", lambda: args)
+    monkeypatch.setattr(cr, "parse_config_overrides", lambda args=None: {})
+
+    output_tif_dir = tmp_path / "out_tifs"
+    watershed_path = tmp_path / "watershed.geojson"
+    overture_path = tmp_path / "overture.parquet"
+
+    cfg = {
+        "annotations": {"max_workers": 2, "random_seed": 11},
+        "min_pixels": 3,
+        "served_all_touched": False,
+        "zoom_level": 8,
+        "figures": {"approach": "1"},
+        "paths": {
+            "pop_tif_dir": str(tmp_path / "pop_tifs"),
+            "WWTP_tif_dir": str(output_tif_dir),
+            "non_served_outpath": str(tmp_path / "non_served.gpkg"),
+            "csv_output_filepath": str(tmp_path / "stats.gpkg"),
+            "watershed": str(watershed_path),
+            "watershed_with_countries": str(tmp_path / "watershed_with_countries.gpkg"),
+            "overture": str(overture_path),
+            "overture_s3_url": "s3://dummy/overture",
+        },
+        "country_output_column": "iso3",
+        "country_boundary_column": "country_name",
+        "basin_column_name": "HYBAS_ID",
+    }
+    monkeypatch.setattr(cr, "load_config", lambda **kwargs: cfg)
+    monkeypatch.setattr(cr, "create_pop_output_paths", lambda cfg_: {"voronoi": {"1": str(tmp_path / "voronoi.gpkg")}})
+
+    voronoi = gpd.GeoDataFrame(
+        {"iso3": ["DEU"], "geometry": [box(0, 0, 1, 1)]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    watershed = gpd.GeoDataFrame(
+        {"HYBAS_ID": [1], "country_name": ["Germany"], "geometry": [box(0, 0, 2, 2)]},
         geometry="geometry",
         crs="EPSG:4326",
     )
 
-    class _Layer:
-        def plot(self, ax=None, color=None, edgecolor=None):
-            return ax
+    def _read_file(path, crs=None):
+        if str(path).endswith("voronoi.gpkg"):
+            return voronoi.copy()
+        return watershed.copy()
 
-    calls = {"n": 0}
+    monkeypatch.setattr(cr.gpd, "read_file", _read_file)
+    monkeypatch.setattr(cr, "find_newest_country_tif_files", lambda countries, tif_dir: {"DEU": str(tmp_path / "deu.tif")})
+    monkeypatch.setattr(cr.os, "chdir", lambda path: None)
+    monkeypatch.setattr(cr.os.path, "exists", lambda p: False)
+    monkeypatch.setattr(cr.os, "makedirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cr, "download_overture_maps", lambda s3, out: None)
+    monkeypatch.setattr(
+        cr,
+        "intersects_with_country_db",
+        lambda gdf, overture, polygon_country_col, output_country_col: gdf.assign(**{output_country_col: ["DEU"]}),
+    )
+    monkeypatch.setattr(cr, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, *args, **kwargs: None)
 
-    def fake_read_file(path):
-        calls["n"] += 1
-        return grid.copy() if calls["n"] == 1 else _Layer()
-
-    class _Ax:
-        def set_xlim(self, a, b):
-            return None
-
-        def set_ylim(self, a, b):
-            return None
-
-        def axis(self, value):
-            return None
-
-    class _Fig:
-        def savefig(self, *args, **kwargs):
-            return None
-
-    monkeypatch.setattr("src.utils.ensure_output_dir_for_file", lambda path: None)
-    monkeypatch.setattr("geopandas.read_file", fake_read_file)
-    monkeypatch.setattr("matplotlib.pyplot.subplots", lambda *args, **kwargs: (_Fig(), _Ax()))
-    monkeypatch.setattr("matplotlib.pyplot.close", lambda fig: None)
-    monkeypatch.setattr("os.makedirs", lambda *args, **kwargs: None)
-
-    with patch("builtins.open", mock_open()):
-        runpy.run_module("src.annotation_scripts.NEW_04_EXPORTGEOTIFF", run_name="__main__")
-
-
-def test_new04_exportgeotiff_raises_when_id_field_missing(monkeypatch):
-    grid = gpd.GeoDataFrame(
-        {"wrong_id": [1], "geometry": [box(0, 0, 10, 10)]},
-        geometry="geometry",
-        crs="EPSG:4326",
+    seen = {}
+    monkeypatch.setattr(
+        cr,
+        "orchestrate_intersections",
+        lambda tif_dict, gdf, watershed_gdf, output_tif_dir, csv_output_filepath, non_served_outpath, max_workers, **kwargs: seen.update(
+            {
+                "tif_count": len(tif_dict),
+                "gdf_rows": len(gdf),
+                "watershed_rows": len(watershed_gdf),
+                "max_workers": max_workers,
+            }
+        ),
     )
 
-    class _Layer:
-        def plot(self, ax=None, color=None, edgecolor=None):
-            return ax
+    cr.main()
+    assert seen["tif_count"] == 1
+    assert seen["gdf_rows"] == 1
+    assert seen["watershed_rows"] == 1
+    assert seen["max_workers"] == 2
 
-    calls = {"n": 0}
 
-    def fake_read_file(path):
-        calls["n"] += 1
-        return grid.copy() if calls["n"] == 1 else _Layer()
+class TestCreateRastersUtilities:
+    """Test utility functions in create_rasters."""
+    
+    def test_extract_worldpop_with_minimal_data(self):
+        """Test extract_worldpop_universal with minimal test data."""
+        # Create minimal test data
+        hybas_gdf = gpd.GeoDataFrame(
+            {'geometry': [Point(0, 0).buffer(1)], 'HYBAS_ID': [1]},
+            crs='EPSG:4326'
+        )
+        exclude_gdf = gpd.GeoDataFrame(
+            columns=['geometry'],
+            crs='EPSG:4326'
+        )
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a minimal valid raster
+            import rasterio
+            from rasterio.transform import from_bounds
+            
+            raster_path = Path(tmpdir) / "test.tif"
+            
+            # Create test raster
+            data = np.ones((10, 10), dtype=np.float32) * 100
+            transform = from_bounds(0, 0, 1, 1, 10, 10)
+            
+            with rasterio.open(
+                str(raster_path), 'w',
+                driver='GTiff',
+                height=10, width=10,
+                count=1, dtype=np.float32,
+                crs='EPSG:4326',
+                transform=transform
+            ) as dst:
+                dst.write(data, 1)
+            
+            result = cr.extract_worldpop_universal(
+                str(raster_path),
+                hybas_gdf,
+                exclude_gdf,
+                min_pixels=1
+            )
 
-    monkeypatch.setattr("geopandas.read_file", fake_read_file)
-    monkeypatch.setattr("os.makedirs", lambda *args, **kwargs: None)
-
-    with pytest.raises(Exception, match="field 'idx'"):
-        runpy.run_module("src.annotation_scripts.NEW_04_EXPORTGEOTIFF", run_name="__main__")
+            assert isinstance(result, gpd.GeoDataFrame)
 
 
 def test_orchestrate_country_intersection_wraps_sign_and_extract(monkeypatch):

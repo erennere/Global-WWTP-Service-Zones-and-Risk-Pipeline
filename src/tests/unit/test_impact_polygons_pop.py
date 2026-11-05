@@ -11,6 +11,20 @@ import pytest
 from shapely.geometry import LineString, Point, box
 
 from src.pop_at_risk_river_calculations import impact_polygons_pop as ipp
+import argparse
+import os
+import types
+import duckdb
+from src import download_pop as dp
+from src.annotation_scripts import NEW_01_GENERATEGRIDS as n1
+from src.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
+from src.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
+from src.annotation_scripts import download_bing_annotate as dba
+from src.figures_scripts import piechart_figure as pf
+from src import starter
+from src.pop_at_risk_river_calculations import create_rasters as cr
+from src.pop_at_risk_river_calculations import find_intersection_river as fir
+from src.industrial_analysis import download_and_vectorize as dv
 
 
 pytestmark = pytest.mark.unit
@@ -567,3 +581,137 @@ def test_impact_polygons_script_entrypoint_runs_main_guard(monkeypatch):
 
     with pytest.raises(KeyError, match="non_served_nxt_river_outpath"):
         runpy.run_path(str(module_path), run_name="__main__")
+
+
+# --- moved from the coverage-campaign files ---
+
+def test_impact_polygons_main_smoke_writes_outputs(monkeypatch, tmp_path):
+    cfg = {
+        "paths": {
+            "non_served_nxt_river_outpath": str(tmp_path / "non_served.gpkg"),
+            "rivershed_output_path": str(tmp_path / "rivers.gpkg"),
+            "impact_pop_polygons_outpath": str(tmp_path / "impact.gpkg"),
+        },
+        "impact_polygons_pop_params": {
+            "width": 12,
+            "c_limit": 5,
+            "org_per_pop": 60,
+            "base_k": 0.23,
+            "theta": 1.047,
+            "step_m": 100,
+            "least_discharge_cms": 0.269,
+            "velocity_m_s": 1.0,
+            "water_temp_equator_c": 28.0,
+            "impact_radii": [1000, 2000],
+        },
+    }
+
+    pop_gdf = gpd.GeoDataFrame(
+        {
+            "NXT_DIS": [1],
+            "pop_sum": [20],
+            "country": ["DE"],
+            "utm": [32632],
+            "geometry": [Point(10, 50)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    river_gdf = gpd.GeoDataFrame(
+        {
+            "HYRIV_ID": [1],
+            "NEXT_DOWN": [0],
+            "MAIN_RIV": [1],
+            "DIS_AV_CMS": [1.0],
+            "geometry": [LineString([(10, 50), (10.1, 50.1)])],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    monkeypatch.setattr(ipp.os, "chdir", lambda path: None)
+    monkeypatch.setattr(ipp, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(ipp, "load_config", lambda **kwargs: cfg)
+
+    def _read_file(path, columns=None, **kwargs):
+        if str(path).endswith("non_served.gpkg"):
+            return pop_gdf.copy()
+        return river_gdf.copy()
+
+    monkeypatch.setattr(ipp.gpd, "read_file", _read_file)
+    monkeypatch.setattr(ipp, "batch_estimate_utm_epsg", lambda gdf: (np.array([32632]), np.array([50.0])))
+    monkeypatch.setattr(ipp, "create_dicts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        ipp,
+        "orchestrate_logic",
+        lambda *args, **kwargs: {
+            1000.0: gpd.GeoDataFrame({"geometry": [box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:4326"),
+            2000.0: gpd.GeoDataFrame({"geometry": [box(0, 0, 2, 2)]}, geometry="geometry", crs="EPSG:4326"),
+        },
+    )
+    monkeypatch.setattr(ipp, "ensure_output_dir_for_file", lambda path: None)
+
+    written = []
+    monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, path, driver="GPKG": written.append(str(path)))
+    monkeypatch.setattr(sys, "argv", ["prog", "--max-workers", "8"])
+
+    ipp.main()
+    assert len(written) == 2
+    assert any(p.endswith("impact_1000.gpkg") for p in written)
+    assert any(p.endswith("impact_2000.gpkg") for p in written)
+
+
+def test_impact_polygons_main_no_output_branch(monkeypatch, tmp_path):
+    cfg = {
+        "paths": {
+            "non_served_nxt_river_outpath": str(tmp_path / "non_served.gpkg"),
+            "rivershed_output_path": str(tmp_path / "rivers.gpkg"),
+            "impact_pop_polygons_outpath": str(tmp_path / "impact.gpkg"),
+        },
+        "impact_polygons_pop_params": {
+            "org_per_pop": 60,
+            "width": 12,
+            "c_limit": 5,
+            "base_k": 0.23,
+            "theta": 1.047,
+            "step_m": 100,
+            "least_discharge_cms": 0.269,
+            "velocity_m_s": 1.0,
+            "water_temp_equator_c": 28.0,
+            "impact_radii": [1000, 2000],
+        },
+    }
+
+    pop_gdf = gpd.GeoDataFrame(
+        {
+            "NXT_DIS": [1],
+            "pop_sum": [10],
+            "country": ["DE"],
+            "utm": [32632],
+            "geometry": [Point(10, 50)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    river_gdf = gpd.GeoDataFrame(
+        {
+            "HYRIV_ID": [1],
+            "NEXT_DOWN": [0],
+            "MAIN_RIV": [1],
+            "DIS_AV_CMS": [1.0],
+            "geometry": [LineString([(10, 50), (10.1, 50.1)])],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    monkeypatch.setattr(ipp.os, "chdir", lambda path: None)
+    monkeypatch.setattr(ipp, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(ipp, "load_config", lambda **kwargs: cfg)
+    monkeypatch.setattr(ipp.gpd, "read_file", lambda path, columns=None, **kwargs: pop_gdf.copy() if str(path).endswith("non_served.gpkg") else river_gdf.copy())
+    monkeypatch.setattr(ipp, "batch_estimate_utm_epsg", lambda gdf: (np.array([32632]), np.array([50.0])))
+    monkeypatch.setattr(ipp, "create_dicts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ipp, "orchestrate_logic", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["prog"])
+
+    ipp.main()

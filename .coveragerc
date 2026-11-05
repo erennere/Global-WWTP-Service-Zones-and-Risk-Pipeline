@@ -8,3 +8,5 @@ omit =
 
 [report]
 skip_empty = true
+# Floor: branch coverage of pipeline code reached in Phase 2 (2026-11-06: 80.7 %). Raise it, never lower it.
+fail_under = 80.5

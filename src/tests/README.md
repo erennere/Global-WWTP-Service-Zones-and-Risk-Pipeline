@@ -25,6 +25,26 @@ Run only integration tests:
 pytest -m integration --tb=short -q
 ```
 
+## Layout
+
+One file per pipeline module (`test_<module>.py`), plus:
+
+| layer | files | checks |
+|---|---|---|
+| oracle | `test_*_oracle.py` | results against answers computed another way: exact Euclidean Voronoi, the Apollonius circle, raster totals, 499/501 m at 0/50/70 deg, plume decay, flux at confluences |
+| property | `hypothesis` cases inside the oracle files | invariants over random inputs (translation, duplicates, scalar = vectorized) |
+| regression | `test_regressions.py` | one test per audit finding (B1-B9, R1-R15) and the service-area rule |
+| config | `test_config.py` | every section resolves; bad values fail at load |
+| integration | `integration/test_mock_world_chain.py` | all 13 stages through their CLIs on the mock world (`fixtures/mock_world.py`), with hand-off invariants (about 30 s) |
+
+Coverage is measured on pipeline code only (`.coveragerc`: no tests, no `src/maps`), with branches, and fails below the floor:
+
+```bash
+pytest --cov --cov-report=term-missing
+```
+
+The before/after harness (`harness/mock_before_after.py`) runs two git revisions on the same mock world and tabulates their outputs.
+
 ## Shared fixtures
 
 - `tiny_points_gdf`: six synthetic WWTP points with IDs, basin IDs, country codes, served-population values, and detection metadata.

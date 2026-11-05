@@ -6,6 +6,31 @@ import pytest
 import yaml
 
 from src import create_voronoi, starter
+import concurrent.futures
+import os
+import runpy
+import geopandas as gpd
+import pandas as pd
+from shapely import to_wkb
+from shapely.geometry import Point, Polygon
+import src.create_voronoi as create_voronoi
+import src.starter as starter
+from src.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
+import sys
+import types
+import duckdb
+import numpy as np
+from shapely.geometry import LineString, Point, box
+from src import download_pop as dp
+from src.annotation_scripts import NEW_01_GENERATEGRIDS as n1
+from src.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
+from src.annotation_scripts import download_bing_annotate as dba
+from src.figures_scripts import piechart_figure as pf
+from src import starter
+from src.pop_at_risk_river_calculations import create_rasters as cr
+from src.pop_at_risk_river_calculations import find_intersection_river as fir
+from src.pop_at_risk_river_calculations import impact_polygons_pop as ipp
+from src.industrial_analysis import download_and_vectorize as dv
 
 
 pytestmark = pytest.mark.unit
@@ -415,3 +440,132 @@ def test_resolve_config_limits_nested_inheritance_to_declared_keys():
         "data_dir": "./data",
         "watershed": "{data_dir}/watershed.gpkg",
     }
+
+
+# --- moved from the coverage-campaign files ---
+
+class _Future:
+    def __init__(self, fn=None, args=(), kwargs=None, value=None):
+        self._fn = fn
+        self._args = args
+        self._kwargs = kwargs or {}
+        self._value = value
+
+    def result(self):
+        if self._fn is None:
+            return self._value
+        return self._fn(*self._args, **self._kwargs)
+
+class _Executor:
+    def __init__(self, max_workers=None, eager_results=True):
+        self.max_workers = max_workers
+        self.eager_results = eager_results
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def submit(self, fn, *args, **kwargs):
+        if self.eager_results:
+            return _Future(fn, args, kwargs)
+        return _Future(value=None)
+
+
+def test_new03_script_entrypoint_runs_merge_tasks_and_calls_main(monkeypatch, tmp_path):
+    cfg = {
+        "overwrite_existing": False,
+        "paths": {
+            "corrected_all_filepath": str(tmp_path / "points.gpkg"),
+            "annotations_grid_dir": str(tmp_path / "grids"),
+            "annotations_by_osm_dir": str(tmp_path / "osm"),
+            "annotations_temp_parquet_dir": str(tmp_path / "tmp_parquets"),
+        },
+    }
+    os.makedirs(cfg["paths"]["annotations_grid_dir"], exist_ok=True)
+    os.makedirs(cfg["paths"]["annotations_by_osm_dir"], exist_ok=True)
+
+    output_dir = os.path.join(os.path.abspath(os.path.join(cfg["paths"]["annotations_grid_dir"], "..")), "data")
+    output_filepath = os.path.join(output_dir, "merged_polygons.parquet")
+    lines_filepath = output_filepath.replace("polygons", "lines")
+    output_geojson = os.path.join(output_dir, "wastewater_plant.geojson")
+    original_exists = os.path.exists
+    checks = {"polygons": 0}
+    captured = {}
+
+    def fake_exists(path):
+        abs_path = os.path.abspath(str(path))
+        if abs_path == os.path.abspath(output_filepath):
+            checks["polygons"] += 1
+            return checks["polygons"] >= 2
+        if abs_path == os.path.abspath(lines_filepath):
+            return False
+        return original_exists(path)
+
+    def fake_to_file(self, path, driver="GeoJSON"):
+        captured["written"] = {"path": str(path), "driver": driver, "rows": len(self)}
+
+    df = pd.DataFrame(
+        {
+            "geometry": [
+                to_wkb(Polygon([(0, 0), (1, 0), (0, 1), (0, 0)])),
+                to_wkb(Polygon([(3, 3), (4, 3), (3, 4), (3, 3)])),
+            ]
+        }
+    )
+
+    monkeypatch.setattr(os, "chdir", lambda path: None)
+    monkeypatch.setattr(os.path, "exists", fake_exists)
+    monkeypatch.setattr(starter, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
+    monkeypatch.setattr("src.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
+    monkeypatch.setattr(pd, "read_parquet", lambda path: df.copy())
+    monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", lambda max_workers=None: _Executor(max_workers=max_workers, eager_results=False))
+
+    runpy.run_path(str(Path(ww3.__file__).resolve()), run_name="__main__")
+
+    assert captured["ensured"] == output_geojson
+    assert captured["written"]["path"] == output_geojson
+    assert captured["written"]["rows"] == 2
+
+
+def test_new03_script_skips_main_when_output_file_missing(monkeypatch, tmp_path):
+    # FIX [D-1]: script entrypoint should skip clustering if merged parquet is absent.
+    cfg = {
+        "overwrite_existing": False,
+        "paths": {
+            "corrected_all_filepath": str(tmp_path / "points.gpkg"),
+            "annotations_grid_dir": str(tmp_path / "grids"),
+            "annotations_by_osm_dir": str(tmp_path / "osm"),
+            "annotations_temp_parquet_dir": str(tmp_path / "tmp_parquets"),
+        },
+    }
+
+    os.makedirs(cfg["paths"]["annotations_grid_dir"], exist_ok=True)
+    os.makedirs(cfg["paths"]["annotations_by_osm_dir"], exist_ok=True)
+
+    merged_path = os.path.join(os.path.abspath(os.path.join(cfg["paths"]["annotations_grid_dir"], "..")), "data", "merged_polygons.parquet")
+    merged_lines_path = merged_path.replace("polygons", "lines")
+    original_exists = os.path.exists
+    seen = {"merged_checks": 0, "lines_checks": 0}
+
+    def _exists(path):
+        abs_path = os.path.abspath(str(path))
+        if abs_path == os.path.abspath(merged_path):
+            seen["merged_checks"] += 1
+            # First check: appear present to skip merge task creation.
+            # Second check: appear absent so guarded main call is skipped.
+            return seen["merged_checks"] == 1
+        if abs_path == os.path.abspath(merged_lines_path):
+            seen["lines_checks"] += 1
+            # Keep lines output present to avoid creating any merge task.
+            return True
+        return original_exists(path)
+
+    monkeypatch.setattr(starter, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
+    monkeypatch.setattr(os.path, "exists", _exists)
+
+    runpy.run_path(str(ww3.__file__), run_name="__main__")

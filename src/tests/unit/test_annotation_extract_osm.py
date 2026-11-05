@@ -1,57 +1,35 @@
-from __future__ import annotations
-
+"""Tests for annotation_extract_osm (moved from the coverage-campaign files)."""
 import json
 from pathlib import Path
-
 import geopandas as gpd
 import pandas as pd
 import pytest
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
-
 from src.annotation_scripts import NEW_01_GENERATEGRIDS as gen_grids
 from src.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as osm_extract
 from src.figures_scripts import piechart_figure, piechart_interactive
 from src.figures_scripts import pop_at_risk_figures
-
+import argparse
+import os
+import runpy
+import sys
+import types
+import duckdb
+import numpy as np
+from shapely.geometry import LineString, Point, box
+from src import download_pop as dp
+from src.annotation_scripts import NEW_01_GENERATEGRIDS as n1
+from src.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
+from src.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
+from src.annotation_scripts import download_bing_annotate as dba
+from src.figures_scripts import piechart_figure as pf
+from src import starter
+from src.pop_at_risk_river_calculations import create_rasters as cr
+from src.pop_at_risk_river_calculations import find_intersection_river as fir
+from src.pop_at_risk_river_calculations import impact_polygons_pop as ipp
+from src.industrial_analysis import download_and_vectorize as dv
 
 pytestmark = pytest.mark.unit
-
-
-def test_point_to_square_handles_none_and_builds_bounds():
-    assert gen_grids.point_to_square(None, 5) is None
-    square = gen_grids.point_to_square(Point(10, 20), 2)
-    assert square.bounds == pytest.approx((8, 18, 12, 22))
-
-
-def test_generategrids_main_filters_points_and_writes(monkeypatch, tmp_path):
-    src = gpd.GeoDataFrame(
-        {
-            "geometry": [Point(0, 0), Point(1, 1), LineString([(0, 0), (1, 1)])],
-            "id": [1, 2, 3],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    captured = {}
-    original_to_file = gpd.GeoDataFrame.to_file
-
-    def fake_to_file(self, path, driver=None, **kwargs):
-        captured["rows"] = len(self)
-        captured["path"] = path
-        captured["driver"] = driver
-        captured["geom_type"] = self.geometry.iloc[0].geom_type
-
-    monkeypatch.setattr(gen_grids.gpd, "read_file", lambda path: src.copy())
-    monkeypatch.setattr(gen_grids, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
-    try:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
-        gen_grids.main(100.0, 50.0, "in.gpkg", str(tmp_path / "out.gpkg"))
-    finally:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", original_to_file)
-
-    assert captured["rows"] == 2
-    assert captured["driver"] == "GPKG"
-    assert captured["geom_type"] == "Polygon"
 
 
 def test_clean_columns_normalizes_names_and_values():
@@ -177,91 +155,105 @@ def test_row_operation_skips_none_bbox_and_writes_outputs(monkeypatch, tmp_path)
     assert captured["writes"] == 2
 
 
-def test_piechart_interactive_helpers_cover_branches():
-    df = pd.DataFrame(
-        {
-            "country": ["DE", "DE", "FR"],
-            "val": [1.0, 2.0, 3.0],
-            "ind": [True, False, False],
-            "population_served": [50.0, 100.0, 75.0],
-            "population_total": [100.0, 200.0, 100.0],
-        }
-    )
+def test_new02_elements_timer_and_find_bbox_branches(monkeypatch):
+    # elements_to_gdf: empty/no-elements branch
+    l0, p0 = n2.elements_to_gdf(None)
+    assert l0.empty and p0.empty
 
-    out_pop = piechart_interactive.aggregate_by_country(df, "country", "val", is_pop=True)
-    out_mix = piechart_interactive.aggregate_by_country(df, "country", "val", industrial_column="ind", is_pop=False)
-    assert set(out_pop["country"]) == {"DE", "FR"}
-    assert "IND_val_sum" in out_mix.columns
+    # elements_to_gdf: relation-with-outer polygon branch
+    data = {
+        "elements": [
+            {"type": "node", "id": 1, "lon": 0.0, "lat": 0.0},
+            {"type": "node", "id": 2, "lon": 1.0, "lat": 0.0},
+            {"type": "node", "id": 3, "lon": 1.0, "lat": 1.0},
+            {"type": "node", "id": 4, "lon": 0.0, "lat": 1.0},
+            {"type": "way", "id": 10, "nodes": [1, 2, 3, 4, 1], "tags": {}},
+            {
+                "type": "relation",
+                "id": 20,
+                "members": [{"type": "way", "role": "outer", "ref": 10}],
+                "tags": {"landuse": "industrial"},
+            },
+        ]
+    }
+    l1, p1 = n2.elements_to_gdf(data)
+    assert l1.empty
+    assert len(p1) >= 1
 
-    assert piechart_interactive.calculate_size(0, 1, 10, 5, 15) == 5
+    # find_bbox: invalid that stays invalid after buffer => None branch
+    class _BadGeom:
+        is_empty = False
+        is_valid = False
 
-    c1 = df.copy()
-    assert piechart_interactive.ensure_population_percentage_column(c1, preferred_col="ratio") == "ratio"
-    assert "ratio" in c1.columns
+        def buffer(self, _):
+            return self
 
-    c2 = pd.DataFrame({"population_total": [100], "2024_zonal_sum_sum": [80]})
-    assert piechart_interactive.ensure_population_percentage_column(c2, preferred_col="ratio", zonal_sum_col="2024_zonal_sum") == "ratio"
+    assert n2.find_bbox(_BadGeom()) is None
 
-    assert piechart_interactive.resolve_zonal_sum_column(pd.DataFrame({"2019_zonal_sum": [1], "2024_zonal_sum": [2]}), "missing") == "2024_zonal_sum"
-
-    svg = piechart_interactive.get_pie_svg([1, 2], [3, 4], 32)
-    assert "<svg" in svg and "path" in svg
-
-
-def test_piechart_figure_helpers_cover_branches():
-    poly = Polygon([(0, 0), (1, 0), (0, 1), (0, 0)])
-    mpoly = MultiPolygon([poly, Polygon([(10, 10), (12, 10), (10, 12), (10, 10)])])
-
-    x1, y1 = piechart_figure.get_pos(poly)
-    x2, y2 = piechart_figure.get_pos(mpoly)
-    assert isinstance(x1, float) and isinstance(y1, float)
-    assert isinstance(x2, float) and isinstance(y2, float)
-
-    assert piechart_figure.calculate_size(10, 1, 100, 1, 5, scale="linear") > 1
-    assert piechart_figure.calculate_size(10, 1, 100, 1, 5, scale="log") > 1
-    with pytest.raises(ValueError):
-        piechart_figure.calculate_size(10, 1, 100, 1, 5, scale="bad")
-
-    rounded = piechart_figure.round_numbers([100, 1000, 10000], [1, 2, 3])
-    assert len(rounded) == 3
-
-    pref = piechart_figure.resolve_zonal_sum_columns(pd.DataFrame({"2020_zonal_sum": [1]}), "2020_zonal_sum")
-    assert pref == "2020_zonal_sum"
+    # timer decorator branch
+    wrapped = n2.timer("demo")(lambda x: x + 1)
+    assert wrapped(2) == 3
 
 
-def test_pop_at_risk_helpers_with_dummy_data(monkeypatch, tmp_path):
-    low, high = pop_at_risk_figures._robust_bounds([1, 2, 3, 4, 1000], positive_only=False)
-    assert high > low
-
-    with pytest.raises(ValueError):
-        pop_at_risk_figures._robust_bounds([None, float("nan")], positive_only=True)
-
-    tiles = gpd.GeoDataFrame(
-        {
-            "tile": ["t1", "t2"],
-            "geometry": [Polygon([(0, 0), (1, 0), (0, 1), (0, 0)]), Polygon([(1, 1), (2, 1), (1, 2), (1, 1)])],
+def test_new02_main_smoke_paths(monkeypatch, tmp_path):
+    cfg = {
+        "overwrite_existing": False,
+        "annotations": {
+            "retries": 1,
+            "max_workers": 1,
+            "overpass_urls": [
+                "https://overpass.kumi.systems/api/interpreter",
+            ],
+            "overpass_pause_seconds": 0.1,
         },
+        "paths": {
+            "corrected_all_filepath": str(tmp_path / "all.gpkg"),
+            "annotations_grid_dir": str(tmp_path / "grid"),
+            "annotations_by_osm_dir": str(tmp_path / "osm"),
+        },
+    }
+
+    grid = gpd.GeoDataFrame(
+        {"idx": [1, 2], "geometry": [box(0, 0, 1, 1), box(1, 1, 2, 2)]},
         geometry="geometry",
         crs="EPSG:4326",
     )
-    pop = gpd.GeoDataFrame(
-        {
-            "tile": ["t1", "t2"],
-            "500_2020_zonal_sum": [10.0, 20.0],
-            "bad_col": [1, 2],
-            "geometry": [Point(0, 0), Point(1, 1)],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    called = []
 
-    monkeypatch.setattr(
-        pop_at_risk_figures,
-        "create_single_plot",
-        lambda **kwargs: called.append(kwargs["column"]),
-    )
+    monkeypatch.setattr(n2.os, "chdir", lambda path: None)
+    monkeypatch.setattr(n2, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(n2, "load_config", lambda **kwargs: cfg)
+    monkeypatch.setattr(n2.gpd, "read_file", lambda path: grid.copy())
+    monkeypatch.setattr(n2.os, "makedirs", lambda *args, **kwargs: None)
 
-    pop_at_risk_figures.create_impact_polygon_plots(pop, tiles, str(tmp_path))
+    class _F:
+        def __init__(self, value=None):
+            self._value = value
 
-    assert called == ["500_2020_zonal_sum"]
+        def result(self):
+            return self._value
+
+    class _Exec:
+        def __init__(self, max_workers=None):
+            self.max_workers = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            fn(*args, **kwargs)
+            return _F(None)
+
+    monkeypatch.setattr(n2, "ThreadPoolExecutor", _Exec)
+    monkeypatch.setattr(n2, "as_completed", lambda futures: list(futures))
+    monkeypatch.setattr(n2, "row_operation", lambda *args, **kwargs: None)
+
+    # First pass: one idx already processed, one remains for execution.
+    monkeypatch.setattr(n2.os, "listdir", lambda p: ["idx_1_lines.geojson"])
+    n2.main()
+
+    # Second pass: all done -> early return branch.
+    monkeypatch.setattr(n2.os, "listdir", lambda p: ["idx_1_lines.geojson", "idx_2_polygons.geojson"])
+    n2.main()

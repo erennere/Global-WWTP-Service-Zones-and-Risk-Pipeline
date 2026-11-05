@@ -5,6 +5,16 @@ import pytest
 from shapely.geometry import LineString, Point, Polygon
 
 from src import geo_utils
+import argparse
+import contextlib
+import runpy
+import sys
+from pathlib import Path
+import numpy as np
+import pandas as pd
+from pyproj import CRS
+from shapely.geometry import GeometryCollection, LineString, Point, Polygon, box
+from src import create_voronoi as cv
 
 pytestmark = pytest.mark.unit
 
@@ -162,3 +172,25 @@ def test_safe_to_wkt_converts_recognized_geometry():
 def test_safe_to_wkt_returns_none_for_unrecognized_type():
     assert geo_utils.safe_to_wkt("not-a-geometry") is None
     assert geo_utils.safe_to_wkt(None) is None
+
+
+# --- moved from the coverage-campaign files ---
+
+def test_estimate_utm_crs_linestring_and_epsg_failure(monkeypatch):
+    gdf = gpd.GeoDataFrame({"geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:4326")
+
+    class _FakeUnion:
+        @property
+        def centroid(self):
+            return Point(float("nan"), float("nan"))
+
+    original_from_epsg = geo_utils.CRS.from_epsg
+
+    def _patched_from_epsg(epsg):
+        if epsg != 3857:
+            raise RuntimeError("bad epsg")
+        return original_from_epsg(epsg)
+
+    monkeypatch.setattr(gpd.GeoSeries, "unary_union", property(lambda self: _FakeUnion()))
+    monkeypatch.setattr(geo_utils.CRS, "from_epsg", _patched_from_epsg)
+    assert cv.estimate_utm_crs(gdf).to_epsg() == 3857

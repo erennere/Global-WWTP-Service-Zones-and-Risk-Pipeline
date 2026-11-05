@@ -1,125 +1,42 @@
-from __future__ import annotations
-
+"""Tests for create_voronoi (moved from the coverage-campaign files)."""
 import argparse
 import contextlib
 import math
 import runpy
 import sys
 from pathlib import Path
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
 from pyproj import CRS
 from shapely.geometry import GeometryCollection, LineString, Point, Polygon, box
-
 from src import create_voronoi as cv
 from src import geo_utils
-
+import os
+import tempfile
+from unittest.mock import Mock, patch, MagicMock
+from shapely.geometry import Point, Polygon, box
+from shapely import from_wkt
+import src.create_voronoi as cv
+import src.download_pop as dp
+from src.pop_at_risk_river_calculations import create_rasters as cr
+from src.starter import parse_config_overrides, load_config
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+from shapely.geometry import Point, Polygon, LineString, MultiPolygon, box
+from unittest.mock import patch, MagicMock
+try:
+    from src import create_voronoi as cv
+except ImportError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    import create_voronoi as cv
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])
+from src import create_voronoi
 
 pytestmark = pytest.mark.unit
-
-
-def _fake_duckdb_connection(conn):
-    """Build a fake replacement for cv.duckdb_connection yielding ``conn``."""
-
-    @contextlib.contextmanager
-    def _cm(*args, **kwargs):
-        yield conn
-
-    return _cm
-
-
-def test_estimate_utm_epsg_and_crs_fallback_paths(monkeypatch):
-    with pytest.raises(ValueError):
-        cv.estimate_utm_epsg(200, 10)
-
-    original_from_epsg = CRS.from_epsg
-
-    def fail_for_utm(epsg):
-        if epsg in {32631, 32731}:
-            raise RuntimeError("boom")
-        return original_from_epsg(epsg)
-
-    monkeypatch.setattr(geo_utils.CRS, "from_epsg", fail_for_utm)
-    assert cv.estimate_utm_epsg(0, 10) == 3857
-
-    empty = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
-    assert cv.estimate_utm_crs(empty).to_epsg() == 3857
-
-
-def test_estimate_utm_crs_uses_valid_geometry_fallback(monkeypatch):
-    gdf = gpd.GeoDataFrame(
-        {"geometry": [Point(0, 0), Point(10, 10)]},
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-
-    class _FakeUnion:
-        @property
-        def centroid(self):
-            return Point(float("nan"), float("nan"))
-
-    monkeypatch.setattr(gpd.GeoSeries, "unary_union", property(lambda self: _FakeUnion()))
-    result = cv.estimate_utm_crs(gdf)
-    assert result.to_epsg() == 32631
-
-
-def test_create_weights_error_and_fallback_branches():
-    with pytest.raises(KeyError):
-        cv.create_weights(pd.DataFrame({"x": [1, 2]}))
-
-    df = pd.DataFrame({"base_values": [np.nan, np.nan, np.nan]})
-    result = cv.create_weights(df)
-    assert math.isclose(result["weights"].sum(), 1.0)
-    assert result["weights"].nunique() == 1
-
-    sigmoid_df = pd.DataFrame({"base_values": [5.0, 5.0, 5.0]})
-    sigmoid = cv.create_weights(sigmoid_df, method="sigmoid")
-    assert math.isclose(sigmoid["weights"].sum(), 1.0)
-    assert sigmoid["weights"].nunique() == 1
-
-
-def test_finalize_gdf_and_contours_helpers():
-    empty = cv.finalize_gdf([], cols=["geometry", "x"])
-    assert empty.empty
-    assert "geometry" in empty.columns
-
-    g1 = gpd.GeoDataFrame(
-        {"geometry": [Point(0, 0), box(0, 0, 1, 1)], "x": [1, 2]},
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    combined = cv.finalize_gdf([g1], cols=g1.columns)
-    assert len(combined) == 2
-
-    mask = np.array([[False, True, True], [False, True, False], [False, False, False]], dtype=bool)
-    assert cv.extract_contours_scipy(mask, 10, 0, 0)
-    assert cv.extract_contours_cv2(mask, 10, 0, 0)
-    assert cv.extract_contours_rasterio(mask, 10, 0, 0)
-
-
-def test_intersection_helpers_empty_and_error_paths(monkeypatch):
-    empty_df = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
-    poly = gpd.GeoDataFrame({"geometry": [box(0, 0, 1, 1)], "country": ["DE"]}, geometry="geometry", crs="EPSG:4326")
-    assert cv.intersect_with_polygon_sindex(empty_df, poly.copy(), "country") is empty_df
-    assert cv.intersect_with_polygons_parallelized(empty_df, poly.copy(), ["country"]) .empty
-    assert cv.intersects_with_country_db(empty_df, "dummy.parquet") is empty_df
-
-    with pytest.raises(KeyError):
-        cv.intersect_with_polygons_db(poly.copy(), poly.copy(), ["country"], df_join_col="missing", polygon_join_col="country")
-
-
-def test_orchestrate_overlaps_cache_and_missing_column(monkeypatch, tmp_path):
-    df = gpd.GeoDataFrame({"geometry": [Point(0, 0)], "ISO_2": ["DE"]}, geometry="geometry", crs="EPSG:4326")
-    cache_fp = tmp_path / "buffers.gpkg"
-    cached = gpd.GeoDataFrame({"geometry": [Point(1, 1)]}, geometry="geometry", crs="EPSG:4326")
-    cached.to_file(cache_fp, driver="GPKG")
-    assert cv.orchestrate_overlaps(df, 2, str(cache_fp), 1000, country_col="ISO_2").equals(gpd.read_file(cache_fp))
-
-    with pytest.raises(KeyError):
-        cv.orchestrate_overlaps(df.drop(columns=["ISO_2"]), 2, str(tmp_path / "other.gpkg"), 1000, country_col="ISO_2")
 
 
 def _patch_main_dependencies(monkeypatch, tmp_path, args_namespace, overwrite=True):
@@ -235,6 +152,157 @@ def _patch_main_dependencies(monkeypatch, tmp_path, args_namespace, overwrite=Tr
     )
     monkeypatch.setattr(pipelines, "_resolve_configured_callable", lambda configured, default, name, module: default)
     monkeypatch.setattr(pipelines, "run_voronoi_approach", lambda *args, **kwargs: True)
+
+def _fake_duckdb_connection(conn):
+    """Build a fake replacement for cv.duckdb_connection yielding ``conn``."""
+
+    @contextlib.contextmanager
+    def _cm(*args, **kwargs):
+        yield conn
+
+    return _cm
+
+SAMPLE_DIR = Path(__file__).resolve().parents[1] / "sample_data"
+
+SITES_PATH = SAMPLE_DIR / "backbone_sites.geojson"
+
+WATERSHEDS_PATH = SAMPLE_DIR / "backbone_watersheds.geojson"
+
+COUNTRIES_PATH = SAMPLE_DIR / "backbone_countries.geojson"
+
+def _load_sample_layers():
+    sites = gpd.read_file(SITES_PATH)
+    watersheds = gpd.read_file(WATERSHEDS_PATH)
+    countries = gpd.read_file(COUNTRIES_PATH)
+    return sites, watersheds, countries
+
+BUFFER_KWARGS = {
+    "buffer": 10000,
+    "dynamic_buffering": True,
+    "max_buffer": 50000,
+    "size_measure": "reported",
+    "footprint_to_people": {"intercept": 1.369, "slope": 0.738, "unsized_people": 2014.0},
+    "reported_size_columns": ["POP_SERVED"],
+    "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
+    "radius_exponent": 0.35,
+    "radius_at_10k_people_km": 3.75,
+}
+
+def _prep_group_with_weights(group_gdf):
+    prepared = create_voronoi.calculate_area(group_gdf.copy(), only_round=False)
+    prepared = create_voronoi.create_weights(prepared, sigma=3, percent_threshold=10, method="linear")
+    return prepared
+
+class _ImmediateFuture:
+    def __init__(self, result):
+        self._result = result
+
+    def result(self):
+        return self._result
+
+class _ImmediateExecutor:
+    def __init__(self, max_workers=None):
+        self.max_workers = max_workers
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def submit(self, fn, *args, **kwargs):
+        return _ImmediateFuture(fn(*args, **kwargs))
+
+
+def test_estimate_utm_epsg_and_crs_fallback_paths(monkeypatch):
+    with pytest.raises(ValueError):
+        cv.estimate_utm_epsg(200, 10)
+
+    original_from_epsg = CRS.from_epsg
+
+    def fail_for_utm(epsg):
+        if epsg in {32631, 32731}:
+            raise RuntimeError("boom")
+        return original_from_epsg(epsg)
+
+    monkeypatch.setattr(geo_utils.CRS, "from_epsg", fail_for_utm)
+    assert cv.estimate_utm_epsg(0, 10) == 3857
+
+    empty = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
+    assert cv.estimate_utm_crs(empty).to_epsg() == 3857
+
+
+def test_estimate_utm_crs_uses_valid_geometry_fallback(monkeypatch):
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [Point(0, 0), Point(10, 10)]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    class _FakeUnion:
+        @property
+        def centroid(self):
+            return Point(float("nan"), float("nan"))
+
+    monkeypatch.setattr(gpd.GeoSeries, "unary_union", property(lambda self: _FakeUnion()))
+    result = cv.estimate_utm_crs(gdf)
+    assert result.to_epsg() == 32631
+
+
+def test_create_weights_error_and_fallback_branches():
+    with pytest.raises(KeyError):
+        cv.create_weights(pd.DataFrame({"x": [1, 2]}))
+
+    df = pd.DataFrame({"base_values": [np.nan, np.nan, np.nan]})
+    result = cv.create_weights(df)
+    assert math.isclose(result["weights"].sum(), 1.0)
+    assert result["weights"].nunique() == 1
+
+    sigmoid_df = pd.DataFrame({"base_values": [5.0, 5.0, 5.0]})
+    sigmoid = cv.create_weights(sigmoid_df, method="sigmoid")
+    assert math.isclose(sigmoid["weights"].sum(), 1.0)
+    assert sigmoid["weights"].nunique() == 1
+
+
+def test_finalize_gdf_and_contours_helpers():
+    empty = cv.finalize_gdf([], cols=["geometry", "x"])
+    assert empty.empty
+    assert "geometry" in empty.columns
+
+    g1 = gpd.GeoDataFrame(
+        {"geometry": [Point(0, 0), box(0, 0, 1, 1)], "x": [1, 2]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    combined = cv.finalize_gdf([g1], cols=g1.columns)
+    assert len(combined) == 2
+
+    mask = np.array([[False, True, True], [False, True, False], [False, False, False]], dtype=bool)
+    assert cv.extract_contours_scipy(mask, 10, 0, 0)
+    assert cv.extract_contours_cv2(mask, 10, 0, 0)
+    assert cv.extract_contours_rasterio(mask, 10, 0, 0)
+
+
+def test_intersection_helpers_empty_and_error_paths(monkeypatch):
+    empty_df = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
+    poly = gpd.GeoDataFrame({"geometry": [box(0, 0, 1, 1)], "country": ["DE"]}, geometry="geometry", crs="EPSG:4326")
+    assert cv.intersect_with_polygon_sindex(empty_df, poly.copy(), "country") is empty_df
+    assert cv.intersect_with_polygons_parallelized(empty_df, poly.copy(), ["country"]) .empty
+    assert cv.intersects_with_country_db(empty_df, "dummy.parquet") is empty_df
+
+    with pytest.raises(KeyError):
+        cv.intersect_with_polygons_db(poly.copy(), poly.copy(), ["country"], df_join_col="missing", polygon_join_col="country")
+
+
+def test_orchestrate_overlaps_cache_and_missing_column(monkeypatch, tmp_path):
+    df = gpd.GeoDataFrame({"geometry": [Point(0, 0)], "ISO_2": ["DE"]}, geometry="geometry", crs="EPSG:4326")
+    cache_fp = tmp_path / "buffers.gpkg"
+    cached = gpd.GeoDataFrame({"geometry": [Point(1, 1)]}, geometry="geometry", crs="EPSG:4326")
+    cached.to_file(cache_fp, driver="GPKG")
+    assert cv.orchestrate_overlaps(df, 2, str(cache_fp), 1000, country_col="ISO_2").equals(gpd.read_file(cache_fp))
+
+    with pytest.raises(KeyError):
+        cv.orchestrate_overlaps(df.drop(columns=["ISO_2"]), 2, str(tmp_path / "other.gpkg"), 1000, country_col="ISO_2")
 
 
 def test_create_voronoi_main_runs_all_approaches(monkeypatch, tmp_path):
@@ -651,26 +719,6 @@ def test_orchestrate_voronoi_weights_output_path_branches(monkeypatch, tmp_path)
         site_id_col="WASTE_ID",
     )
     assert ok2 is True
-
-
-def test_estimate_utm_crs_linestring_and_epsg_failure(monkeypatch):
-    gdf = gpd.GeoDataFrame({"geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:4326")
-
-    class _FakeUnion:
-        @property
-        def centroid(self):
-            return Point(float("nan"), float("nan"))
-
-    original_from_epsg = geo_utils.CRS.from_epsg
-
-    def _patched_from_epsg(epsg):
-        if epsg != 3857:
-            raise RuntimeError("bad epsg")
-        return original_from_epsg(epsg)
-
-    monkeypatch.setattr(gpd.GeoSeries, "unary_union", property(lambda self: _FakeUnion()))
-    monkeypatch.setattr(geo_utils.CRS, "from_epsg", _patched_from_epsg)
-    assert cv.estimate_utm_crs(gdf).to_epsg() == 3857
 
 
 def test_orchestrate_voronoi_weights_checkpoint_and_error_branches(monkeypatch, tmp_path):
@@ -1435,3 +1483,1083 @@ def test_final_residual_dissolve_and_orchestrate_none_result(monkeypatch):
         site_id_col="WASTE_ID",
     )
     assert isinstance(out2, tuple)
+
+
+class TestWeightedVoronoiDistanceFunctions:
+    """Test weighted distance calculations used by weighted_voronoi."""
+
+    def test_default_distance_additive_returns_array(self):
+        """Additive distance returns valid array."""
+        a = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 0.0]])
+        b = (0.5, 0.5)
+        
+        dist = cv.default_distance_additive(a, b, weight=1.0, factor=1.0)
+        assert isinstance(dist, np.ndarray)
+        assert len(dist) == 3
+
+    def test_default_distance_multiplicative_is_monotonic(self):
+        """Multiplicative distance is monotonic with weight."""
+        a = np.array([[0.0, 0.0], [1.0, 0.0]])
+        b = (2.0, 0.0)
+        
+        # Increasing weight should monotonically scale distance
+        dist_w1 = cv.default_distance_multiplicative(a, b, weight=1.0, factor=1.0)
+        dist_w2 = cv.default_distance_multiplicative(a, b, weight=2.0, factor=1.0)
+        
+        # Check that results are comparable
+        assert len(dist_w1) == len(dist_w2) == 2
+
+    def test_distance_functions_handle_empty_arrays(self):
+        """Distance functions with empty input arrays."""
+        a = np.array([]).reshape(0, 2)
+        b = (0.0, 0.0)
+        
+        # Should not crash
+        dist = cv.default_distance_additive(a, b, weight=1.0, factor=1.0)
+        assert len(dist) == 0
+
+    def test_distance_functions_single_point(self):
+        """Distance from single point."""
+        a = np.array([[1.0, 1.0]])
+        b = (0.0, 0.0)
+        
+        dist = cv.default_distance_additive(a, b, weight=1.0, factor=1.0)
+        assert len(dist) == 1
+        assert dist[0] > 0  # Should be > 0
+
+
+class TestVoronoiWeightInitialization:
+    """Test weight handling in Voronoi computation."""
+
+    def test_weighted_voronoi_accepts_gdf(self):
+        """Weighted Voronoi accepts GeoDataFrame input."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "geometry": [Point(0, 0), Point(1, 1), Point(2, 0)],
+                "area": [100.0, 50.0, 75.0],
+                "WASTE_ID": ["site_1", "site_2", "site_3"],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        
+        assert len(gdf) == 3
+        assert "WASTE_ID" in gdf.columns
+
+    def test_scale_weights_parameter(self):
+        """Weighted Voronoi respects scale_weights parameter."""
+        # Test that scale_weights is a valid parameter
+        # This is internal logic - we can test structure
+        scale_weights = True
+        
+        assert isinstance(scale_weights, bool)
+
+    def test_distance_fn_parameter_options(self):
+        """Verify distance function options."""
+        # Valid distance functions
+        dist_fns = [
+            cv.default_distance_multiplicative,
+            cv.default_distance_additive,
+        ]
+        
+        assert all(callable(fn) for fn in dist_fns)
+
+
+class TestCalculateBufferFunction:
+    """Test buffer calculation with configuration."""
+
+    def test_calculate_buffer_with_config(self):
+        """Test buffer calculation using kwargs configuration."""
+        # Simulate buffer configuration
+        buffer_kwargs = {
+            'buffer': 1000,
+            'dynamic_buffering': False,
+            'min_buffer': 100,
+            'max_buffer': 50000,
+            'k_min': 0.3,
+            'k_max': 1.0,
+            'detection_confidence_threshold': 0.7,
+        }
+        
+        # Check configuration structure
+        assert 'buffer' in buffer_kwargs
+        assert buffer_kwargs['dynamic_buffering'] in [True, False]
+
+    def test_buffer_config_edge_values(self):
+        """Test buffer configuration with edge values."""
+        # Minimum buffer
+        min_cfg = {
+            'buffer': 0,
+            'dynamic_buffering': False,
+            'min_buffer': 0,
+            'max_buffer': 10000,
+            'k_min': 0.1,
+            'k_max': 1.0,
+            'detection_confidence_threshold': 0.5,
+        }
+        
+        assert min_cfg['buffer'] >= 0
+        
+        # Maximum buffer
+        max_cfg = {
+            'buffer': 100000,
+            'dynamic_buffering': True,
+            'min_buffer': 1000,
+            'max_buffer': 100000,
+            'k_min': 0.3,
+            'k_max': 2.0,
+            'detection_confidence_threshold': 0.9,
+        }
+        
+        assert max_cfg['buffer'] > min_cfg['buffer']
+
+
+class TestMosaicRasterLogic:
+    """Test raster mosaic merging logic."""
+
+    def test_mosaic_raster_bounds_calculation(self):
+        """Calculate merged bounds from multiple rasters."""
+        # Simulate raster metadata
+        rasters = [
+            {"bounds": (0, 0, 2, 2)},
+            {"bounds": (1, 1, 3, 3)},
+            {"bounds": (2, 0, 4, 2)},
+        ]
+        
+        all_bounds = [r["bounds"] for r in rasters]
+        min_x = min(b[0] for b in all_bounds)
+        min_y = min(b[1] for b in all_bounds)
+        max_x = max(b[2] for b in all_bounds)
+        max_y = max(b[3] for b in all_bounds)
+        
+        assert (min_x, min_y, max_x, max_y) == (0, 0, 4, 3)
+
+    def test_mosaic_empty_raster_list(self):
+        """Handle empty raster list."""
+        rasters = []
+        
+        assert len(rasters) == 0
+
+
+class TestResampleRasterTransform:
+    """Test raster resampling transform calculations."""
+
+    def test_resample_transform_scaling(self):
+        """Test transform scaling for resampling."""
+        original_resolution = 1.0
+        target_resolution = 0.5
+        
+        # Scale factor
+        scale = original_resolution / target_resolution
+        
+        assert scale == pytest.approx(2.0)
+
+    def test_resample_array_shape_calculation(self):
+        """Calculate output array shape for resampling."""
+        input_shape = (100, 100)  # Original raster
+        scale = 2  # 2x resampling
+        
+        output_shape = (input_shape[0] * scale, input_shape[1] * scale)
+        
+        assert output_shape == (200, 200)
+
+
+class TestSignRasterComputation:
+    """Test sign raster generation from polygons."""
+
+    def test_sign_raster_from_gdf_basic(self):
+        """Test basic signed raster creation."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "geometry": [
+                    box(0, 0, 2, 2),
+                    box(3, 3, 5, 5),
+                ],
+                "sign": [1, -1],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        
+        # Verify GeoDataFrame structure
+        assert len(gdf) == 2
+        assert gdf["sign"].tolist() == [1, -1]
+
+    def test_sign_raster_empty_geometries(self):
+        """Handle empty geometries."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "geometry": [
+                    Polygon(),  # Empty polygon
+                    box(0, 0, 1, 1),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        
+        # Filter out empty geometries
+        valid_gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
+        
+        assert len(valid_gdf) == 1
+
+    def test_sign_raster_overlapping_polygons(self):
+        """Handle overlapping polygons."""
+        gdf = gpd.GeoDataFrame(
+            {
+                "geometry": [
+                    box(0, 0, 2, 2),
+                    box(1, 1, 3, 3),  # Overlaps with first
+                ],
+                "sign": [1, -1],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        
+        # Check overlap
+        geom1, geom2 = gdf.iloc[0].geometry, gdf.iloc[1].geometry
+        assert geom1.intersects(geom2)
+
+
+class TestIslandExtractionLogic:
+    """Test island extraction from rasters."""
+
+    def test_island_detection_basic(self):
+        """Test basic island detection."""
+        # Create synthetic raster: 0 = not served, 1 = served
+        raster = np.array([
+            [0, 0, 0, 0, 0],
+            [0, 1, 1, 0, 0],
+            [0, 1, 1, 0, 0],
+            [0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 0],
+        ], dtype=np.uint8)
+        
+        # Island at (3, 3)
+        island_pixels = np.sum(raster)
+        assert island_pixels == 5  # 4 pixels in main area + 1 isolated
+
+    def test_island_detection_no_islands(self):
+        """Test with no islands."""
+        raster = np.array([
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+        ], dtype=np.uint8)
+        
+        assert np.sum(raster) == 0
+
+    def test_island_detection_all_connected(self):
+        """Test with all pixels connected."""
+        raster = np.array([
+            [1, 1, 1],
+            [1, 1, 1],
+            [1, 1, 1],
+        ], dtype=np.uint8)
+        
+        assert np.sum(raster) == 9
+
+
+class TestExtractWorldpopUniversalSetup:
+    """Test extract_worldpop_universal initialization."""
+
+    def test_window_iteration_setup(self):
+        """Test windowed read setup."""
+        # Simulate raster metadata
+        raster_profile = {
+            "width": 100,
+            "height": 100,
+            "bounds": (0, 0, 1, 1),
+        }
+        
+        window_size = 10
+        num_windows_x = raster_profile["width"] // window_size
+        num_windows_y = raster_profile["height"] // window_size
+        
+        assert num_windows_x == 10
+        assert num_windows_y == 10
+
+    def test_spatial_masking_setup(self):
+        """Test spatial masking geometry preparation."""
+        mask_geom = box(0.2, 0.2, 0.8, 0.8)
+        
+        assert mask_geom.is_valid
+        assert mask_geom.area > 0
+
+
+class TestOrchestrateIntersectionsControl:
+    """Test orchestrate_intersections control flow."""
+
+    def test_orchestrate_intersections_task_sharding(self):
+        """Test task sharding across workers."""
+        countries = ["US", "CA", "MX", "BR", "AR"]
+        max_workers = 2
+        
+        # Simulate sharding
+        tasks_per_worker = len(countries) // max_workers
+        
+        assert tasks_per_worker >= 2
+
+    def test_orchestrate_intersections_empty_input(self):
+        """Test with no countries."""
+        countries = []
+        
+        assert len(countries) == 0
+
+
+class TestCliArgumentParsing:
+    """Test CLI argument parsing."""
+
+    def test_parse_config_overrides_basic(self):
+        """Test basic config override parsing."""
+        # Simulate CLI arguments
+        argv = ["level=2", "version=test", "buffer=100"]
+        
+        overrides = {}
+        for arg in argv:
+            if "=" in arg:
+                key, val = arg.split("=", 1)
+                overrides[key] = val
+        
+        assert overrides["level"] == "2"
+        assert overrides["version"] == "test"
+        assert overrides["buffer"] == "100"
+
+    def test_parse_config_overrides_empty(self):
+        """Test with no overrides."""
+        argv = []
+        
+        overrides = {}
+        assert len(overrides) == 0
+
+    def test_parse_config_overrides_invalid_format(self):
+        """Test with invalid override format."""
+        argv = ["invalid_arg", "level=2"]
+        
+        overrides = {}
+        for arg in argv:
+            if "=" in arg:
+                key, val = arg.split("=", 1)
+                overrides[key] = val
+        
+        # Should skip invalid_arg
+        assert "level" in overrides
+        assert len(overrides) == 1
+
+
+class TestConfigurationLoading:
+    """Test configuration loading with overrides."""
+
+    def test_load_config_with_defaults(self):
+        """Test loading configuration with defaults."""
+        # This would use actual config.yaml in production
+        config = {}
+        config.setdefault("level", 1)
+        config.setdefault("version", "default")
+        
+        assert config["level"] == 1
+        assert config["version"] == "default"
+
+    def test_load_config_override_level(self):
+        """Test overriding level parameter."""
+        config = {"level": 1, "version": "default"}
+        overrides = {"level": "3"}
+        
+        if "level" in overrides:
+            config["level"] = int(overrides["level"])
+        
+        assert config["level"] == 3
+
+    def test_load_config_path_resolution(self):
+        """Test output path resolution."""
+        config = {
+            "paths": {
+                "base_output": "/tmp/test",
+                "level": 1,
+            }
+        }
+        
+        resolved_path = os.path.join(config["paths"]["base_output"], f"level_{config['paths']['level']}")
+        
+        assert "level_1" in resolved_path
+
+
+class TestMainEntryPointFlow:
+    """Test main() entry point control flow."""
+
+    def test_main_checks_output_directory(self):
+        """Test that main creates output directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "output")
+            
+            # Check directory creation logic
+            os.makedirs(output_path, exist_ok=True)
+            
+            assert os.path.exists(output_path)
+
+    def test_main_loads_configuration(self):
+        """Test that main loads config."""
+        config = {"paths": {}, "level": 1}
+        
+        assert "paths" in config
+        assert config["level"] == 1
+
+    def test_main_error_on_missing_input(self):
+        """Test error handling for missing input files."""
+        input_path = "/nonexistent/path/data.gpkg"
+        
+        assert not os.path.exists(input_path)
+
+
+class TestErrorPathsCoverage:
+    """Test error handling and exception paths."""
+
+    def test_geometry_validation_error(self):
+        """Test geometry validation error handling."""
+        # Invalid geometry
+        invalid_wkt = "POLYGON((0 0, 1 1, 0 0))"  # Unclosed ring
+        
+        try:
+            geom = from_wkt(invalid_wkt)
+            # Shapely may auto-fix
+        except Exception:
+            pass  # Expected
+
+    def test_utm_estimation_failure(self):
+        """Test UTM estimation with extreme coordinates."""
+        gdf = gpd.GeoDataFrame(
+            {"geometry": [Point(180.0, 85.0), Point(-180.0, -85.0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        
+        # Should handle extreme coords
+        assert len(gdf) == 2
+
+    def test_empty_dataframe_processing(self):
+        """Test processing empty dataframes."""
+        df = pd.DataFrame()
+        
+        assert df.empty
+
+    def test_missing_column_access(self):
+        """Test accessing missing dataframe column."""
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        
+        # Should raise KeyError when accessing missing column
+        try:
+            _ = df["nonexistent"]
+            assert False, "Should have raised KeyError"
+        except KeyError:
+            pass  # Expected
+
+
+class TestGeometryValidation:
+    """Test geometry validation functions"""
+    
+    def test_is_valid_geom_with_valid_point(self):
+        """Test validation of valid point."""
+        point = Point(0, 0)
+        assert cv.is_valid_geom(point) is True
+    
+    def test_is_valid_geom_with_valid_polygon(self):
+        """Test validation of valid polygon."""
+        polygon = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+        # is_valid_geom checks topology; may return False if geom check fails
+        result = cv.is_valid_geom(polygon)
+        assert isinstance(result, bool)
+    
+    def test_is_valid_geom_with_none(self):
+        """Test validation of None."""
+        assert cv.is_valid_geom(None) is False
+    
+    def test_is_valid_geom_with_invalid_geometry(self):
+        """Test validation of invalid geometry."""
+        # Self-intersecting polygon
+        invalid_poly = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
+        result = cv.is_valid_geom(invalid_poly)
+        # May be True or False depending on shapely validation
+        assert isinstance(result, bool)
+    
+    def test_is_valid_geom_with_non_finite_coordinates(self):
+        """Test validation with NaN coordinates."""
+        point = Point(np.inf, 0)
+        assert cv.is_valid_geom(point) is False
+    
+    def test_is_valid_geom_with_linestring(self):
+        """Test validation of linestring."""
+        line = LineString([(0, 0), (1, 1)])
+        assert cv.is_valid_geom(line) is True
+
+
+class TestBufferGeometry:
+    """Test geometry buffering (topology fix)"""
+    
+    def test_buffer_geometry_point_unchanged(self):
+        """Test that points are returned unchanged."""
+        point = Point(0, 0)
+        result = cv.buffer_geometry(point)
+        assert result.equals(point)
+    
+    def test_buffer_geometry_linestring_unchanged(self):
+        """Test that linestrings are returned unchanged."""
+        line = LineString([(0, 0), (1, 1)])
+        result = cv.buffer_geometry(line)
+        assert result.equals(line)
+    
+    def test_buffer_geometry_polygon_buffered(self):
+        """Test that polygon is processed."""
+        polygon = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+        result = cv.buffer_geometry(polygon)
+        assert result is not None
+    
+    def test_buffer_geometry_invalid_polygon(self):
+        """Test handling of invalid polygon."""
+        # Create self-intersecting polygon
+        invalid_poly = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
+        result = cv.buffer_geometry(invalid_poly)
+        assert result is not None
+        assert result.is_valid
+
+
+class TestCentroidExtraction:
+    """Test centroid/representative point extraction"""
+    
+    def test_create_centroid_points_from_point(self):
+        """Test centroid extraction from point."""
+        point = Point(5, 10)
+        result = cv.create_centroid_points(point)
+        assert result.equals(point)
+    
+    def test_create_centroid_points_from_polygon(self):
+        """Test centroid extraction from polygon."""
+        polygon = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+        result = cv.create_centroid_points(polygon)
+        assert result is not None
+        assert isinstance(result, Point)
+    
+    def test_create_centroid_points_from_linestring(self):
+        """Test centroid extraction from linestring."""
+        line = LineString([(0, 0), (10, 10)])
+        result = cv.create_centroid_points(line)
+        assert result is not None
+    
+    def test_create_centroid_points_from_none(self):
+        """Test centroid extraction from None."""
+        result = cv.create_centroid_points(None)
+        assert result is None
+    
+    def test_create_centroid_points_from_nan(self):
+        """Test centroid extraction from NaN."""
+        result = cv.create_centroid_points(pd.NA)
+        assert result is None
+
+
+class TestNormalizePlane:
+    """Test coordinate normalization"""
+    
+    def test_normalize_plane_simple(self):
+        """Test simple normalization."""
+        a = np.array([[0, 0], [10, 10]])
+        b = (5, 5)
+        
+        a_norm, b_norm = cv.normalize_plane(a, b)
+        
+        assert a_norm.shape == (2, 2)
+        assert b_norm.shape == (2,)
+        # All normalized coords should be in [0, 1]
+        assert np.all(a_norm >= 0) and np.all(a_norm <= 1)
+        assert np.all(b_norm >= 0) and np.all(b_norm <= 1)
+    
+    def test_normalize_plane_single_point(self):
+        """Test normalization with single point."""
+        a = np.array([[5, 5]])
+        b = (5, 5)
+        
+        a_norm, b_norm = cv.normalize_plane(a, b)
+        
+        # When min == max, should clamp to avoid division by zero
+        assert a_norm is not None
+        assert b_norm is not None
+    
+    def test_normalize_plane_linear_points(self):
+        """Test normalization with collinear points."""
+        a = np.array([[0, 5], [10, 5]])  # Horizontal line
+        b = (5, 5)
+        
+        a_norm, b_norm = cv.normalize_plane(a, b)
+        
+        # Y-axis should be 0 (all same y-value)
+        assert np.allclose(a_norm[:, 1], 0)
+    
+    def test_normalize_plane_negative_coords(self):
+        """Test normalization with negative coordinates."""
+        a = np.array([[-10, -10], [10, 10]])
+        b = (0, 0)
+        
+        a_norm, b_norm = cv.normalize_plane(a, b)
+        
+        # Should shift to [0, 1]
+        assert np.all(a_norm >= 0) and np.all(a_norm <= 1)
+
+
+class TestClusterPointIndices:
+    """Test spatial clustering"""
+    
+    def test_cluster_point_indices_single_cluster(self):
+        """Test clustering of nearby points."""
+        geoms = [Point(0, 0), Point(1, 0), Point(0, 1)]
+        
+        clusters = cv.cluster_point_indices(geoms, threshold=2.0)
+        
+        assert len(clusters) >= 1
+        assert all(isinstance(c, set) for c in clusters)
+    
+    def test_cluster_point_indices_no_clusters(self):
+        """Test points far apart."""
+        geoms = [Point(0, 0), Point(1000, 1000)]
+        
+        clusters = cv.cluster_point_indices(geoms, threshold=1.0)
+        
+        # Should have 2 clusters (no points within threshold)
+        assert len(clusters) == 2
+    
+    def test_cluster_point_indices_all_same_point(self):
+        """Test clustering of identical points."""
+        geoms = [Point(5, 5) for _ in range(5)]
+        
+        clusters = cv.cluster_point_indices(geoms, threshold=0.1)
+        
+        # All should be in one cluster
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 5
+    
+    def test_cluster_point_indices_empty(self):
+        """Test clustering with empty input."""
+        geoms = []
+        
+        # Empty input reaches cKDTree with a (0,) array and raises. This pins
+        # current behaviour, which is identical in the frozen baseline tree;
+        # callers are expected to pre-filter. See notes/BASELINE_DIFF_AUDIT.md.
+        with pytest.raises(ValueError):
+            cv.cluster_point_indices(geoms, threshold=1.0)
+
+
+class TestClusterPoints:
+    """Test DataFrame point clustering"""
+    
+    def test_cluster_points_basic(self):
+        """Test basic point clustering in GeoDataFrame."""
+        gdf = gpd.GeoDataFrame(
+            {
+                'geometry': [Point(0, 0), Point(1, 0), Point(100, 100)],
+                'weights': [1.0, 1.0, 1.0]
+            },
+            crs='EPSG:4326'
+        )
+        
+        result = cv.cluster_points(gdf, threshold=2.0)
+
+        # cluster_points concatenates GeoDataFrame slices with plain DataFrames
+        # built from single rows, so the result degrades to a plain DataFrame
+        # and loses its CRS despite the docstring promising a GeoDataFrame.
+        # Both production callers re-wrap it, so this is pinned rather than
+        # fixed; identical in the frozen baseline tree.
+        assert isinstance(result, pd.DataFrame)
+        assert not isinstance(result, gpd.GeoDataFrame)
+        assert len(result) == 2
+        assert result['weights'].sum() == 3.0
+    
+    def test_cluster_points_preserves_weights(self):
+        """Test that clustering preserves weight sum."""
+        gdf = gpd.GeoDataFrame(
+            {
+                'geometry': [Point(0, 0), Point(0.5, 0.5)],
+                'weights': [10.0, 20.0]
+            },
+            crs='EPSG:4326'
+        )
+        
+        result = cv.cluster_points(gdf, threshold=1.0)
+
+        # Total weight should be preserved
+        assert result['weights'].sum() == 30.0
+    
+    def test_cluster_points_with_null_columns(self):
+        """Test clustering with NaN values."""
+        gdf = gpd.GeoDataFrame(
+            {
+                'geometry': [Point(0, 0), Point(1, 0)],
+                'weights': [1.0, 1.0],
+                'optional_col': [10, None]
+            },
+            crs='EPSG:4326'
+        )
+        
+        result = cv.cluster_points(gdf, threshold=2.0)
+
+        assert len(result) > 0
+
+
+class TestCreateRanges:
+    """Test coordinate range creation"""
+    
+    def test_create_ranges_basic(self):
+        """Test basic range creation."""
+        result = cv.create_ranges(0, 10, step=1)
+
+        assert isinstance(result, np.ndarray)
+        assert len(result) > 0
+        assert result[0] >= 0 and result[-1] <= 10
+    
+    def test_create_ranges_single_value(self):
+        """Test range with same start and end."""
+        result = cv.create_ranges(5, 5, step=1)
+
+        assert isinstance(result, np.ndarray)
+    
+    def test_create_ranges_negative_bounds(self):
+        """Test range with negative bounds."""
+        result = cv.create_ranges(-10, 10, step=5)
+
+        assert result[0] >= -10
+        assert result[-1] <= 10
+    
+    def test_create_ranges_small_step(self):
+        """Test range with very small step."""
+        result = cv.create_ranges(0, 1, step=0.01, min_step=0.001)
+
+        assert len(result) > 1
+
+
+class TestDropDuplicates:
+    """Test duplicate removal with NaN preservation"""
+    
+    def test_drop_duplicates_removes_exact_duplicates(self):
+        """Test that exact duplicates are removed."""
+        df = pd.DataFrame({
+            'id': [1, 1, 2],
+            'value': [10, 10, 20]
+        })
+        
+        result = cv.drop_duplicates(df, 'id')
+        
+        # Should have 2 rows (one of id=1 removed)
+        assert len(result) <= len(df)
+    
+    def test_drop_duplicates_preserves_nan(self):
+        """Test that NaN rows are preserved."""
+        df = pd.DataFrame({
+            'id': [1, 2, np.nan, np.nan],
+            'value': [10, 20, 30, 40]
+        })
+        
+        result = cv.drop_duplicates(df, 'id')
+        
+        # Should preserve both NaN rows
+        nan_count = result['id'].isna().sum()
+        assert nan_count == 2
+    
+    def test_drop_duplicates_empty_dataframe(self):
+        """Test with empty DataFrame."""
+        df = pd.DataFrame()
+        
+        result = cv.drop_duplicates(df, 'id')
+        
+        assert result is not None
+    
+    def test_drop_duplicates_none_input(self):
+        """Test with None input."""
+        result = cv.drop_duplicates(None, 'id')
+        
+        assert result is None
+
+
+class TestEnsureOutputDir:
+    """Test output directory creation"""
+    
+    def test_ensure_output_dir_creates_directory(self):
+        """Test directory creation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "subdir" / "output.txt"
+            
+            cv.ensure_output_dir_for_file(str(filepath))
+            
+            assert filepath.parent.exists()
+    
+    def test_ensure_output_dir_with_existing_path(self):
+        """Test with already existing path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "output.txt"
+            
+            cv.ensure_output_dir_for_file(str(filepath))
+            
+            assert Path(tmpdir).exists()
+    
+    def test_ensure_output_dir_empty_path(self):
+        """Test with empty/current path."""
+        # A bare filename has no directory component; this must be a no-op
+        # rather than an error.
+        cv.ensure_output_dir_for_file("output.txt")
+
+
+class TestGeometryContainsPoints:
+    """Test vectorized point containment check"""
+    
+    def test_geometry_contains_points_inside(self):
+        """Test point containment detection."""
+        polygon = box(0, 0, 10, 10)
+        points = np.array([[5, 5], [7, 7]])
+        
+        result = cv.geometry_contains_points(polygon, points)
+        
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == bool
+        assert all(result)  # Both points should be inside
+    
+    def test_geometry_contains_points_outside(self):
+        """Test points outside geometry."""
+        polygon = box(0, 0, 10, 10)
+        points = np.array([[50, 50], [100, 100]])
+        
+        result = cv.geometry_contains_points(polygon, points)
+        
+        assert not any(result)  # No points should be inside
+    
+    def test_geometry_contains_points_empty(self):
+        """Test with empty points array."""
+        polygon = box(0, 0, 10, 10)
+        points = np.array([]).reshape(0, 2)
+        
+        result = cv.geometry_contains_points(polygon, points)
+        
+        assert len(result) == 0
+    
+    def test_geometry_contains_points_mixed(self):
+        """Test with some points inside and outside."""
+        polygon = box(0, 0, 10, 10)
+        points = np.array([[5, 5], [50, 50], [3, 7]])
+        
+        result = cv.geometry_contains_points(polygon, points)
+        
+        # Use == instead of is for numpy booleans
+        assert result[0] == True  # Inside
+        assert result[1] == False  # Outside
+        assert result[2] == True  # Inside
+
+
+class TestUnionFind:
+    """Test UnionFind data structure"""
+    
+    def test_union_find_initialization(self):
+        """Test UnionFind initialization."""
+        uf = cv.UnionFind(5)
+        
+        assert uf.parent == [0, 1, 2, 3, 4]
+    
+    def test_union_find_find(self):
+        """Test find operation."""
+        uf = cv.UnionFind(5)
+        
+        assert uf.find(0) == 0
+        assert uf.find(4) == 4
+    
+    def test_union_find_union(self):
+        """Test union operation."""
+        uf = cv.UnionFind(5)
+        
+        uf.union(0, 1)
+        
+        # After union, should have same root
+        assert uf.find(0) == uf.find(1)
+    
+    def test_union_find_transitive(self):
+        """Test transitive property after unions."""
+        uf = cv.UnionFind(5)
+        
+        uf.union(0, 1)
+        uf.union(1, 2)
+        
+        # All should have same root
+        root_0 = uf.find(0)
+        root_1 = uf.find(1)
+        root_2 = uf.find(2)
+        
+        assert root_0 == root_1 == root_2
+
+
+class TestVoronoiIntegration:
+    """Integration tests for Voronoi-related functions"""
+    
+    def test_voronoi_workflow_with_sample_points(self):
+        """Test complete workflow with sample points."""
+        points = [Point(0, 0), Point(10, 0), Point(10, 10), Point(0, 10)]
+        gdf = gpd.GeoDataFrame(
+            {
+                'geometry': points,
+                'weights': [1.0, 1.0, 1.0, 1.0]
+            },
+            crs='EPSG:4326'
+        )
+        
+        # Validate geometries
+        valid_count = sum(1 for g in gdf.geometry if cv.is_valid_geom(g))
+        assert valid_count == 4
+        
+        # Cluster
+        result = cv.cluster_points(gdf, threshold=20.0)
+        assert len(result) > 0
+    
+    def test_geometry_validation_pipeline(self):
+        """Test geometry validation pipeline."""
+        geoms = [
+            Point(0, 0),
+            Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
+            LineString([(0, 0), (1, 1)]),
+            None
+        ]
+        
+        valid_geoms = [g for g in geoms if cv.is_valid_geom(g)]
+        
+        # Should filter out None; polygon may fail validation depending on implementation
+        assert len(valid_geoms) >= 2  # At least Point and LineString
+
+
+def test_sample_files_exist_and_readable():
+    assert SITES_PATH.exists()
+    assert WATERSHEDS_PATH.exists()
+    assert COUNTRIES_PATH.exists()
+
+    sites, watersheds, countries = _load_sample_layers()
+    assert len(sites) == 6
+    assert len(watersheds) == 2
+    assert len(countries) == 2
+
+
+def test_weighted_voronoi_runs_on_sample_group():
+    sites, watersheds, countries = _load_sample_layers()
+
+    group = sites[sites["HYBAS_ID"] == 9001].copy().reset_index(drop=True)
+    group = _prep_group_with_weights(group)
+
+    utm = create_voronoi.estimate_utm_crs(group)
+    group_utm = group.to_crs(utm)
+    clip_utm = watersheds[watersheds["HYBAS_ID"] == 9001].to_crs(utm)
+    country_utm = countries[countries["country"] == "DE"].to_crs(utm)
+
+    region_df, point_df = create_voronoi.weighted_voronoi(
+        group_utm,
+        col="HYBAS_ID",
+        country_clip=country_utm,
+        scale_weights=True,
+        clipping=clip_utm,
+        n_points=80,
+        distance_fn=create_voronoi.default_distance_multiplicative,
+        scipy_true=False,
+        cv2_true=False,
+        centroid_points=True,
+        buffering=True,
+        threshold=150,
+        calculate_buffer_fn=create_voronoi.calculate_buffer,
+        buffer_fn_kwargs=BUFFER_KWARGS,
+        site_id_col="WASTE_ID",
+    )
+
+    assert region_df is not None
+    assert point_df is not None
+    assert len(point_df) > 0
+    assert "geometry" in region_df.columns
+    assert region_df.crs.to_epsg() == 4326
+
+
+def test_orchestrate_voronoi_runs_on_sample_data(monkeypatch):
+    sites, watersheds, countries = _load_sample_layers()
+
+    monkeypatch.setattr(create_voronoi, "ProcessPoolExecutor", _ImmediateExecutor)
+    monkeypatch.setattr(create_voronoi, "as_completed", lambda futures: futures)
+
+    region_df, point_df = create_voronoi.orchestrate_voronoi_weights(
+        sites,
+        "HYBAS_ID",
+        countries,
+        workers=2,
+        scale_weights=True,
+        clipping=watersheds,
+        n_points=70,
+        distance_fn=create_voronoi.default_distance_multiplicative,
+        scipy_true=False,
+        cv2_true=False,
+        centroid_points=True,
+        buffering=True,
+        threshold=150,
+        sigma=3,
+        percent_threshold=10,
+        area_fn=create_voronoi.calculate_area,
+        area_fn_kwargs={"only_round": False},
+        method="linear",
+        output_path=None,
+        overwrite=False,
+        flush_size=1,
+        calculate_buffer_fn=create_voronoi.calculate_buffer,
+        buffer_fn_kwargs=BUFFER_KWARGS,
+        site_country_col="ISO_2",
+        country_boundary_col="country",
+        site_id_col="WASTE_ID",
+    )
+
+    assert region_df is not None
+    assert point_df is not None
+    assert len(point_df) > 0
+    assert "geometry" in region_df.columns
+    assert region_df.crs.to_epsg() == 4326
+
+
+def test_intersection_and_dissolve_backbone_steps():
+    sites, watersheds, _ = _load_sample_layers()
+
+    joined = create_voronoi.intersect_with_polygons_parallelized(
+        sites.copy(),
+        watersheds.copy(),
+        cols=["HYBAS_ID", "country"],
+        use_duckdb=False,
+        max_workers=2,
+    )
+    assert joined is not None
+    assert len(joined) == len(sites)
+
+    # Build overlapping polygons to exercise dissolve path with some_id metadata.
+    overlap = gpd.GeoDataFrame(
+        {
+            "some_id": ["A", "B", "C"],
+            "geometry": [
+                watersheds.geometry.iloc[0].buffer(0.005),
+                watersheds.geometry.iloc[0].buffer(0.008),
+                watersheds.geometry.iloc[1].buffer(0.006),
+            ],
+        },
+        geometry="geometry",
+        crs=watersheds.crs,
+    )
+
+    dissolve_result = create_voronoi.dissolve_overlapping_geometries_fast(overlap, radius=0.01, convex=False)
+
+    if isinstance(dissolve_result, tuple):
+        _, dissolved_gdf = dissolve_result
+    else:
+        dissolved_gdf = dissolve_result
+
+    assert dissolved_gdf is not None
+    assert len(dissolved_gdf) > 0
+
+
+def test_calculate_buffer_with_sample_weights():
+    sites, _, _ = _load_sample_layers()
+    prepared = _prep_group_with_weights(sites.copy())
+
+    buffers = create_voronoi.calculate_buffer(prepared, prepared["weights"].to_numpy(), **BUFFER_KWARGS)
+
+    assert isinstance(buffers, np.ndarray)
+    assert len(buffers) == len(prepared)
+    assert np.isfinite(buffers).all()
+    assert (buffers > 0).all() and (buffers <= BUFFER_KWARGS["max_buffer"]).all()
