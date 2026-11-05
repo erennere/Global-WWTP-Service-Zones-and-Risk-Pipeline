@@ -73,13 +73,30 @@ def checkout(ref, dest):
     return sha
 
 
-def write_config(code_root, data_dir, out_path):
-    """The version's own config with data_dir pointed at the mock copy and 2 workers."""
+def write_config(code_root, data_dir, out_path, settings=None):
+    """The version's own config with data_dir pointed at the mock copy and 2 workers.
+
+    ``settings`` maps ``"section.key"`` (or ``"section.sub.key"``) to a value and
+    is applied on top, e.g. ``{"create_voronoi.area_ceiling": False}``.
+    """
     text = (code_root / "src" / "config.yaml").read_text()
     text, n = re.subn(r"^(\s*)data_dir: '\.\./data'", rf"\1data_dir: '{data_dir}'", text, count=1, flags=re.M)
     if n != 1:
         raise RuntimeError(f"Could not set data_dir in {code_root}/src/config.yaml")
     text = re.sub(r"^(\s*\w*(?:max_workers|_workers|concurrency)): \d+", r"\1: 2", text, flags=re.M)
+    if settings:
+        import yaml
+
+        cfg = yaml.safe_load(text)
+        for dotted, value in settings.items():
+            *parents, key = dotted.split(".")
+            node = cfg
+            for part in parents:
+                node = node[part]
+            if key not in node:
+                raise KeyError(f"{dotted} is not in {code_root}/src/config.yaml")
+            node[key] = value
+        text = yaml.safe_dump(cfg, sort_keys=False)
     out_path.write_text(text)
     return out_path
 
@@ -265,7 +282,7 @@ def collect(code_root, cfg_path, paths, data_dir, sites_total, hashes):
 # --------------------------------------------------------------------------- #
 # Driver                                                                      #
 # --------------------------------------------------------------------------- #
-def run_version(label, ref, workdir, seed):
+def run_version(label, ref, workdir, seed, settings=None):
     from src.tests.fixtures.mock_world import build_mock_world
 
     code_root = workdir / f"code_{label}"
@@ -274,7 +291,7 @@ def run_version(label, ref, workdir, seed):
     shutil.rmtree(data_dir, ignore_errors=True)
     build_mock_world(data_dir, seed=seed)
     sites_total = len(gpd.read_file(data_dir / "all_annotated_v2.gpkg"))
-    cfg_path = write_config(code_root, data_dir, workdir / f"config_{label}.yaml")
+    cfg_path = write_config(code_root, data_dir, workdir / f"config_{label}.yaml", settings)
     log_dir = workdir / f"logs_{label}"
     shutil.rmtree(log_dir, ignore_errors=True)
     log_dir.mkdir(parents=True)
@@ -301,7 +318,8 @@ def run_version(label, ref, workdir, seed):
     appr1 = [f for f in _gpkgs(main_voronoi) if os.path.basename(f).startswith("appr_1_v")]
     hashes["after"] = file_hash(appr1[0]) if appr1 else None
     metrics = collect(code_root, cfg_path, paths, str(data_dir), sites_total, hashes)
-    return {"ref": ref, "sha": sha, "sites": sites_total, "status": status, "metrics": metrics}
+    return {"ref": ref, "sha": sha, "sites": sites_total, "settings": settings or {}, "status": status,
+            "metrics": metrics}
 
 
 def _fmt(value):
@@ -319,30 +337,36 @@ def _delta(old, new):
 
 
 def report(result):
-    old, new = result["old"], result["new"]
-    lines = [f"# Before/after on the mock region (seed {result['seed']})", "",
-             f"Old: `{old['ref']}` ({old['sha']}), new: `{new['ref']}` ({new['sha']}); {new['sites']} mock plants.", "",
-             "## Stage status", "", "| Stage | Old | New |", "|---|---|---|"]
+    labels = ["old", "new"] + [k for k in result.get("variants", []) if k in result]
+    runs = [result[k] for k in labels]
+    head = " | ".join(labels)
+    lines = [f"# Before/after on the mock region (seed {result['seed']})", ""]
+    for label, run in zip(labels, runs):
+        extra = f", settings {run['settings']}" if run.get("settings") else ""
+        lines.append(f"- **{label}**: `{run['ref']}` ({run['sha']}){extra}")
+    lines += ["", f"{runs[0]['sites']} mock plants.", "", "## Stage status", "",
+              f"| Stage | {head} |", "|---" * (len(labels) + 1) + "|"]
+    cell = lambda st: ("ok" if st.get("returncode") == 0 else f"FAILED: {st.get('error', '')[:90]}")
     for name, _ in STAGES:
-        o, n = old["status"].get(name, {}), new["status"].get(name, {})
-        cell = lambda s: ("ok" if s.get("returncode") == 0 else f"FAILED: {s.get('error', '')[:90]}") + f" ({s.get('seconds', 0)} s)"
-        lines.append(f"| {name} | {cell(o)} | {cell(n)} |")
-    lines += ["", "## Outputs", "", "| Output | Metric | Old | New | Change |", "|---|---|---|---|---|"]
-    keys = list(dict.fromkeys(list(old["metrics"]) + list(new["metrics"])))
+        lines.append(f"| {name} | " + " | ".join(cell(r["status"].get(name, {})) for r in runs) + " |")
+    lines += ["", "## Outputs", "", "Change = new vs old.", "",
+              f"| Output | Metric | {head} | Change |", "|---" * (len(labels) + 3) + "|"]
+    keys = list(dict.fromkeys(k for r in runs for k in r["metrics"]))
     for key in keys:
-        o, n = old["metrics"].get(key) or {}, new["metrics"].get(key) or {}
-        if isinstance(o, dict) and "error" in o or isinstance(n, dict) and "error" in n:
-            lines.append(f"| {key} | error | {o.get('error', '')[:60]} | {n.get('error', '')[:60]} | |")
-            continue
-        sub = list(dict.fromkeys(list(o) + list(n)))
-        for metric in sub:
-            ov, nv = o.get(metric), n.get(metric)
-            if isinstance(ov, dict) or isinstance(nv, dict):
-                for m2 in dict.fromkeys(list(ov or {}) + list(nv or {})):
-                    a, b = (ov or {}).get(m2), (nv or {}).get(m2)
-                    lines.append(f"| {key}/{metric} | {m2} | {_fmt(a)} | {_fmt(b)} | {_delta(a, b)} |")
-            else:
-                lines.append(f"| {key} | {metric} | {_fmt(ov)} | {_fmt(nv)} | {_delta(ov, nv)} |")
+        blocks = [r["metrics"].get(key) or {} for r in runs]
+        flat = []
+        for blk in blocks:
+            row = {}
+            for metric, value in blk.items():
+                if isinstance(value, dict):
+                    row.update({f"{metric}/{m2}": v2 for m2, v2 in value.items()})
+                else:
+                    row[metric] = value
+            flat.append(row)
+        for metric in dict.fromkeys(m for row in flat for m in row):
+            values = [row.get(metric) for row in flat]
+            lines.append(f"| {key} | {metric} | " + " | ".join(_fmt(v) for v in values)
+                         + f" | {_delta(values[0], values[1])} |")
     return "\n".join(lines) + "\n"
 
 
@@ -352,7 +376,10 @@ def main():
     parser.add_argument("--new-ref", default="HEAD")
     parser.add_argument("--workdir", default="/tmp/mock_before_after")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--only", choices=["old", "new"], default=None, help="Run one side only")
+    parser.add_argument("--only", default=None, help="Comma-separated run labels to (re)run; others are kept")
+    parser.add_argument("--variant", action="append", default=[], metavar="LABEL:section.key=value[,...]",
+                        help="Extra run of --new-ref with config changes, to attribute a difference, "
+                             "e.g. 'no_ceiling:create_voronoi.area_ceiling=false'")
     parser.add_argument("--python", default=sys.executable,
                         help="Interpreter for the stages, e.g. a venv that matches the cluster's package versions")
     args = parser.parse_args()
@@ -363,10 +390,18 @@ def main():
     result_path = workdir / "metrics.json"
     result = json.loads(result_path.read_text()) if result_path.exists() else {}
     result["seed"] = args.seed
-    for label, ref in (("old", args.old_ref), ("new", args.new_ref)):
-        if args.only and label != args.only:
+    import yaml
+
+    runs = [("old", args.old_ref, None), ("new", args.new_ref, None)]
+    for spec in args.variant:
+        label, _, assignments = spec.partition(":")
+        settings = {k: yaml.safe_load(v) for k, _, v in (a.partition("=") for a in assignments.split(","))}
+        runs.append((label, args.new_ref, settings))
+    result["variants"] = [label for label, _, settings in runs if settings]
+    for label, ref, settings in runs:
+        if args.only and label not in args.only.split(","):
             continue
-        result[label] = run_version(label, ref, workdir, args.seed)
+        result[label] = run_version(label, ref, workdir, args.seed, settings)
         result_path.write_text(json.dumps(result, indent=1, default=str))
     if "old" in result and "new" in result:
         (workdir / "report.md").write_text(report(result))
