@@ -30,7 +30,6 @@ It is an experiment and evaluation layer on top of the main pipeline. It reuses 
 | `compare_pop_sweep_hw_eu.py` | Python worker | Aggregates and scores sweep outputs | population-enriched sweep layers and references | alias maps, summaries, and ranking tables |
 | `sweep_ver_ranking.sh` | shell launcher | Ranks the sweep's verification subsets | sweep verification outputs and the EU reference layer | ranking tables |
 | `sweep_ver_ranking.py` | Python worker | Scores each sweep run's verification subsets against the EU reference | verification `.gpkg` outputs and the EU reference layer | per-subset and overall ranking CSVs |
-| `create_voronoi_param_sweep_parallel_additive.sh` | shell launcher | Parallel sweep variant restricted to the additive weighting regime | array task id and internal job count | additive-regime sweep outputs |
 | `create_voronoi_single_additive_test.sh` | shell launcher | Single-combination smoke run of the additive regime | one parameter combination | one Voronoi output plus logs |
 
 ## Execution Flow

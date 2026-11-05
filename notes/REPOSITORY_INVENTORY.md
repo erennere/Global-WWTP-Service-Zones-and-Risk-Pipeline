@@ -158,7 +158,7 @@
 - `src/sensitivity_analysis_scripts/industrial_analysis_sweep.sh` -> `src/industrial_analysis/download_and_vectorize.py` -> `src/industrial_analysis/find_unconnected_industrial_areas.py`
 - `src/sensitivity_analysis_scripts/compare_pop_sweep_hw_eu.sh` -> `src/sensitivity_analysis_scripts/compare_pop_sweep_hw_eu.py`
 - `src/sensitivity_analysis_scripts/sweep_ver_ranking.sh` -> `src/sensitivity_analysis_scripts/sweep_ver_ranking.py`
-- `src/sensitivity_analysis_scripts/create_voronoi_param_sweep_parallel_additive.sh` and `create_voronoi_single_additive_test.sh` -> additive-regime variants of the parallel sweep
+- `src/sensitivity_analysis_scripts/create_voronoi_single_additive_test.sh` -> single-combination smoke run of the additive regime (additive is not in the default sweep grid)
 
 ## 5. Configuration Systems And Parameter Interfaces
 

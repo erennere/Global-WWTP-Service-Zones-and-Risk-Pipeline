@@ -61,8 +61,10 @@ def generate_parameter_combinations(weight_func_filter: str = "all") -> List[Tup
          dynamic_buffering, dynamic_buffer_k)
     """
     levels = [6, 7, 8, 9]
+    # The additive weighting stays available to single runs (and through the
+    # explicit "add" filter) but is not part of the default sweep grid.
     if weight_func_filter == "all":
-        weight_funcs = ["mult", "add", ""]
+        weight_funcs = ["mult", ""]
     elif weight_func_filter == "add":
         weight_funcs = ["add"]
     elif weight_func_filter == "mult":
@@ -402,7 +404,7 @@ def main():
                        help="Seed for deterministic random assignment across 10 tasks")
     parser.add_argument("--weight-func-filter", type=str, default="all",
                        choices=["all", "add", "mult", "none"],
-                       help="Optional weight_func subset for the sweep grid")
+                       help="Optional weight_func subset for the sweep grid; 'all' = mult + unweighted, 'add' is opt-in")
     
     args = parser.parse_args()
     
