@@ -334,14 +334,11 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
             "image_size_px": 3072,
             "zoom_level": 17,
             "base_z17_resolution": 1.1943285669555664,
-            "bing_imagery_url": "https://dev.virtualearth.net/REST/v1/Imagery/Map/Aerial",
             "max_workers": 1,
             "georeferenced": False,
             "fontsize": 24,
             "dpi": 300,
             "target_size_px": 1024,
-            "request_timeout_seconds": 10,
-            "random_image_rgb": [255, 255, 255],
             "mercator_tile_size_px": 256,
             "imagery_reference_tile_size_px": 3072,
             "earth_radius_m": 6378137,
@@ -358,7 +355,6 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
 
     monkeypatch.setattr(starter, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
-    monkeypatch.setenv("BING_API_KEY", "dummy")
 
     grids = gpd.GeoDataFrame({"idx": [1], "geometry": [box(0, 0, 10, 10)]}, geometry="geometry", crs="EPSG:4326")
     points = gpd.GeoDataFrame({"idx": [1], "geometry": [Point(5, 5)]}, geometry="geometry", crs="EPSG:4326")

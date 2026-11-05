@@ -15,11 +15,9 @@ import geopandas as gpd
 import pandas as pd
 import rasterio
 from rasterio.transform import from_origin
-from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyproj import Transformer
-import duckdb
 import logging
 import shapely.wkt
 
@@ -30,7 +28,6 @@ try:
         configure_logging,
         duckdb_connection,
         ensure_output_dir_for_file,
-        requests_session_with_retries,
     )
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
@@ -39,7 +36,6 @@ except ImportError:
         configure_logging,
         duckdb_connection,
         ensure_output_dir_for_file,
-        requests_session_with_retries,
     )
 
 logger = logging.getLogger(__name__)
@@ -52,11 +48,9 @@ def safe_wkt_load(wkt_wtr):
         if not wkt_wtr or not isinstance(wkt_wtr, str):
             return None
         return shapely.wkt.loads(wkt_wtr)
-    except Exception as e:
+    except Exception:
         return None
     
-BING_API_KEY = os.environ.get("BING_API_KEY", "")
-BING_IMAGERY_URL = "https://dev.virtualearth.net/REST/v1/Imagery/Map/Aerial"
 # Bundled asset, resolved against the package rather than the working directory.
 FONT_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dejavu-sans.book.ttf"
@@ -96,35 +90,12 @@ DPI = 72
 EARTH_RADIUS = 6378137
 WORLD_WIDTH = 2 * math.pi * EARTH_RADIUS  # ~40075016.685
 TARGET_SIZE = [1024, 1024]
-REQUEST_TIMEOUT_SECONDS = 15
-RANDOM_IMAGE_RGB = (0, 0, 0)
 WEB_MERCATOR_TILE_SIZE = 256
 IMAGERY_REFERENCE_TILE_SIZE = 512
 
 transformer = Transformer.from_crs(
     "EPSG:4326", "EPSG:3857", always_xy=True
 )
-
-# Shared across the thread pool in parallel_download - requests.Session is
-# safe for concurrent use, and this centralizes the retry policy instead of
-# leaving the timeout as the only defense against a flaky tile server.
-_bing_session = requests_session_with_retries()
-
-def download_bing_image(center_lon, center_lat):
-    """Download one imagery tile centered on the provided lon/lat coordinates."""
-    url = (
-        f"{BING_IMAGERY_URL}/{center_lat},{center_lon}"
-        f"/{ZOOM_LEVEL}"
-        f"?mapSize={IMAGE_SIZE[0]},{IMAGE_SIZE[1]}"
-        f"&key={BING_API_KEY}"
-    )
-    r = _bing_session.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
-    r.raise_for_status()
-    return Image.open(BytesIO(r.content)).convert("RGB")
-
-def download_random_image(center_lon, center_lat):
-    """Return a dummy black image with the same dimensions as production tiles."""
-    return Image.new("RGB", IMAGE_SIZE, RANDOM_IMAGE_RGB)
 
 def get_image(idx, images_dir):
     """Load a pre-generated source image for one annotation index."""
@@ -521,25 +492,12 @@ if __name__ == "__main__":
     RES_X = RESOLUTIONS[ZOOM_LEVEL]
     RES_Y = RESOLUTIONS[ZOOM_LEVEL]
     BASE_Z17_RES = float(annotations_cfg["base_z17_resolution"])
-    BING_IMAGERY_URL = annotations_cfg["bing_imagery_url"]
-    BING_API_KEY = os.environ.get("BING_API_KEY", "")
-    if not BING_API_KEY:
-        raise RuntimeError(
-            "BING_API_KEY is not set. Export the Bing Maps key in the environment "
-            "before running download_bing_annotate; it is never read from config.yaml."
-        )
     MAX_WORKERS = int(annotations_cfg["max_workers"])
     GEOREFERENCED = bool(annotations_cfg["georeferenced"])
     FONTSIZE = int(annotations_cfg["fontsize"])
     DPI = int(annotations_cfg["dpi"])
     target_size_px = int(annotations_cfg["target_size_px"])
     TARGET_SIZE = [target_size_px, target_size_px]
-    REQUEST_TIMEOUT_SECONDS = float(annotations_cfg["request_timeout_seconds"])
-    rgb = annotations_cfg["random_image_rgb"]
-    if isinstance(rgb, (list, tuple)) and len(rgb) == 3:
-        RANDOM_IMAGE_RGB = tuple(int(v) for v in rgb)
-    else:
-        raise ValueError("annotations.random_image_rgb must be a 3-element list or tuple")
     WEB_MERCATOR_TILE_SIZE = int(annotations_cfg["mercator_tile_size_px"])
     IMAGERY_REFERENCE_TILE_SIZE = int(annotations_cfg["imagery_reference_tile_size_px"])
     EARTH_RADIUS = float(annotations_cfg["earth_radius_m"])

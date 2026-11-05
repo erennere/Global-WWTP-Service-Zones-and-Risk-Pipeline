@@ -37,7 +37,7 @@ Cluster-specific defaults for imagery and annotation outputs must be overridden 
 | `NEW_01_GENERATEGRIDS.py` | Python worker | Builds annotation grids around corrected WWTP points | corrected WWTP layer, grid parameters | grid GeoPackages |
 | `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.py` | Python worker | Extracts OSM context for each grid | grid files, OSM settings, retries | per-grid OSM GeoJSON |
 | `run_download_bing_annotate_array.sh` | shell launcher | Launches image rendering as a SLURM array | array task id, split seed, config overrides | per-task logs and annotated images |
-| `download_bing_annotate.py` | Python worker | Downloads imagery and creates annotation overlays | imagery directory, OSM context, tile ids | annotated image assets |
+| `download_bing_annotate.py` | Python worker | Draws annotation overlays on pre-downloaded imagery | imagery directory, OSM context, tile ids | annotated image assets |
 | `merge_annotations.sh` | shell launcher | Runs the merge-back stage | config values and named `--level`/`--version`/... overrides | merge logs and updated corrected-all file |
 | `merge_annotations.py` | Python worker | Parses annotation text and merges labels into WWTP points | annotation CSV, annotated images, corrected layer | updated corrected-all GeoPackage |
 | `annotations_inspection.sh` | shell launcher | Runs QA sampling and inspection | config values and named `--level`/`--version`/... overrides | QA logs and review images |
@@ -107,13 +107,10 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | `download_bing_annotate.annotations.zoom_level` | `17` | Imagery zoom level |
 | `download_bing_annotate.annotations.image_size_px` | `3072` | Requested imagery width/height in pixels |
 | `download_bing_annotate.annotations.max_workers` | `64` | Parallel bbox annotation worker count |
-| `download_bing_annotate.annotations.request_timeout_seconds` | `15` | HTTP timeout for imagery downloads |
-| `download_bing_annotate.annotations.random_image_rgb` | `[0,0,0]` | Fill color used by random-image fallback |
 | `download_bing_annotate.annotations.georeferenced` | `false` | Write georeferenced GeoTIFF output instead of resized PNG |
 | `download_bing_annotate.annotations.fontsize` | `24` | Label font size in rendered outputs |
 | `download_bing_annotate.annotations.dpi` | `72` | PNG save DPI |
 | `download_bing_annotate.annotations.target_size_px` | `1024` | Final PNG output width/height |
-| `download_bing_annotate.annotations.bing_imagery_url` | Bing endpoint | Base URL for imagery requests |
 | `download_bing_annotate.annotations.earth_radius_m` | `6378137` | Earth radius used for Mercator math |
 | `download_bing_annotate.annotations.mercator_tile_size_px` | `256` | Web-Mercator base tile size |
 | `download_bing_annotate.annotations.imagery_reference_tile_size_px` | `512` | Imagery provider native tile size used in pixel scaling |

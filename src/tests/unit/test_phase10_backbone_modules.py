@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import io
-from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -9,7 +7,7 @@ import pandas as pd
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 from rasterio.transform import from_origin
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
+from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from src.annotation_scripts import download_bing_annotate as dba
 from src.figures_scripts import piechart_figure as pf
@@ -161,26 +159,7 @@ def test_add_boundary_info_preserves_original_geometry(monkeypatch):
     assert enriched.geometry.equals(industrial.geometry)
 
 
-def test_bing_image_helpers_and_drawing(tmp_path, monkeypatch):
-    # download_bing_image via mocked requests
-    img = Image.new("RGB", (64, 64), (25, 25, 25))
-    buff = io.BytesIO()
-    img.save(buff, format="PNG")
-
-    class _Resp:
-        content = buff.getvalue()
-
-        def raise_for_status(self):
-            return None
-
-    monkeypatch.setattr(dba._bing_session, "get", lambda *args, **kwargs: _Resp())
-
-    downloaded = dba.download_bing_image(0.0, 0.0)
-    assert downloaded.size == (64, 64)
-
-    random_img = dba.download_random_image(0.0, 0.0)
-    assert random_img.size == tuple(dba.IMAGE_SIZE)
-
+def test_image_helpers_and_drawing(tmp_path):
     in_dir = tmp_path / "images"
     in_dir.mkdir(parents=True, exist_ok=True)
     file_img = in_dir / "3.png"

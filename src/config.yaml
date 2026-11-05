@@ -98,17 +98,12 @@ download_bing_annotate:
     fontsize: 24
     dpi: 72
     target_size_px: 1024
-    request_timeout_seconds: 15
-    random_image_rgb: [0, 0, 0]
     mercator_tile_size_px: 256
     imagery_reference_tile_size_px: 512
     earth_radius_m: 6378137
     # Single source of truth for annotation-pipeline seeding; declared here
     # because this is the earliest consumer.
     random_seed: 42
-    # The Bing Maps key is read from the BING_API_KEY environment variable and
-    # is deliberately not declared here - never commit a credential to config.
-    bing_imagery_url: 'https://dev.virtualearth.net/REST/v1/Imagery/Map/Aerial'
   paths:
     data_dir: null
     corrected_all_filepath: null
