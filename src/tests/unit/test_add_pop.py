@@ -24,6 +24,9 @@ def _add_pop_cfg_defaults(request):
     cfg = request.getfixturevalue("mock_cfg")
     cfg.setdefault("add_pop_max_workers", 8)
     cfg.setdefault("overwrite_existing", False)
+    cfg.setdefault("start_year", 2015)
+    cfg.setdefault("end_year", 2024)
+    cfg.setdefault("include_2014", False)
 
 
 class _ImmediateFuture:
@@ -209,7 +212,7 @@ def test_intersect_all_files_preserves_input_crs_and_concatenates_seeded_random_
         lambda countries, tif_dir: {"DE": ["de_2020.tif"], "FR": ["fr_2020.tif"]},
     )
 
-    def fake_intersect_single_file(sub_gdf, tif_paths, all_years=True):
+    def fake_intersect_single_file(sub_gdf, tif_paths, all_years=True, years=None):
         return sub_gdf.assign(pop_sum_seed=int(rng.integers(1, 50)))
 
     monkeypatch.setattr(add_pop, "intersect_single_file", fake_intersect_single_file)
@@ -264,7 +267,7 @@ def test_intersect_all_files_keeps_rows_with_invalid_country_and_marks_populatio
     monkeypatch.setattr(add_pop, "as_completed", lambda futures: futures)
     monkeypatch.setattr(add_pop, "tqdm", lambda iterable, total=None, desc=None: iterable)
     monkeypatch.setattr(
-        add_pop, "intersect_single_file", lambda sub, paths, all_years=True: sub.assign(**{"2020_zonal_sum": 50.0})
+        add_pop, "intersect_single_file", lambda sub, paths, all_years=True, years=None: sub.assign(**{"2020_zonal_sum": 50.0})
     )
 
     result = add_pop.intersect_all_files(gdf, tif_dir="unused", max_workers=1, country_col="ISO_2")
@@ -331,7 +334,7 @@ def test_orchestrate_intersections_reads_selected_file_and_writes_output(monkeyp
         captured["read_path"] = path
         return source_gdf.copy()
 
-    def fake_intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col="ISO_2"):
+    def fake_intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col="ISO_2", years=None):
         captured["intersect"] = {
             "tif_dir": tif_dir,
             "max_workers": max_workers,
@@ -395,7 +398,7 @@ def test_main_passes_configured_paths_and_avoids_false_existing_output_warning(m
     monkeypatch.setattr(
         add_pop,
         "orchestrate_intersections",
-        lambda data_dir, tif_dir, output_dir, index, max_workers, country_col=None, overwrite=True: captured.update(
+        lambda data_dir, tif_dir, output_dir, index, max_workers, country_col=None, overwrite=True, years=None: captured.update(
             {
                 "call": {
                     "data_dir": data_dir,
@@ -702,3 +705,27 @@ def test_intersect_single_file_repairs_invalid_polygons_and_leaves_null_geometry
     assert sums[0] == 7.0
     assert np.isnan(sums[1])
     assert sums[2] == 0.0
+
+
+
+def test_population_years_follow_download_pop(tmp_path):
+    """A 2014 raster left from an older download is not read unless include_2014 is on."""
+    assert add_pop.population_years({"start_year": 2015, "end_year": 2024, "include_2014": False}) == set(range(2015, 2025))
+    assert 2014 in add_pop.population_years({"start_year": 2015, "end_year": 2024, "include_2014": True})
+
+
+def test_rasters_of_unconfigured_years_are_skipped(tmp_path):
+    import rasterio
+    from rasterio.transform import from_origin
+    from shapely.geometry import box
+
+    paths = []
+    for year in (2014, 2020):
+        path = tmp_path / f"XX_pop_{year}_CN_100m.tif"
+        with rasterio.open(path, "w", driver="GTiff", height=2, width=2, count=1, dtype="float32", crs="EPSG:4326",
+                           transform=from_origin(8.0, 50.0, 0.01, 0.01)) as dst:
+            dst.write(np.ones((2, 2), dtype="float32"), 1)
+        paths.append(str(path))
+    gdf = gpd.GeoDataFrame({"ISO_2": ["XX"]}, geometry=[box(8.0, 49.98, 8.02, 50.0)], crs=4326)
+    out = add_pop.intersect_single_file(gdf, paths, years={2020})
+    assert "2020_zonal_sum" in out.columns and "2014_zonal_sum" not in out.columns

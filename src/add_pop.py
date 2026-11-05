@@ -86,13 +86,14 @@ def _find_failing_geometry_indices(tif_path, gdf, max_report=10):
 
     return failing
 
-def intersect_single_file(gdf, tif_paths, all_years=True):
+def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
     """Compute zonal statistics of population rasters within polygons using exactextract.
     
     Args:
         gdf: GeoDataFrame with polygon geometries
         tif_paths: List of population raster file paths (single or multiple years)
         all_years: When false, only process the most recent year found in tif_paths.
+        years: Raster years to use (others are skipped); None uses every year found.
     Returns:
         GeoDataFrame: Input GeoDataFrame with added columns for year-specific population stats
     """
@@ -119,7 +120,9 @@ def intersect_single_file(gdf, tif_paths, all_years=True):
         basename = os.path.basename(file)
         parts = [int(k) for k in basename.split('_') if k.startswith('20') and len(k) == 4]
         
-        if parts:
+        if parts and years is not None and parts[0] not in years:
+            logger.info("Skipping %s: year %s is not configured (download_pop years)", basename, parts[0])
+        elif parts:
             my_dict[parts[0]] = file
         else:
             logger.warning(f"Could not extract year from filename: {basename}")
@@ -351,7 +354,7 @@ def find_newest_country_tif_files(countries, tif_dir):
     return newest
 
 
-def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_col='ISO_2'):
+def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_col='ISO_2', years=None):
     """Intersect population rasters with polygons across all countries.
 
     Parameters
@@ -423,6 +426,7 @@ def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_co
                 gdf[gdf[country_col] == iso_2].copy(),
                 tif_filepaths.get(iso_2, []),
                 all_years=all_years,
+                years=years,
             ): iso_2
             for iso_2 in countries
         }
@@ -450,7 +454,8 @@ def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_co
     data = pd.concat(parts, ignore_index=True)
     return gpd.GeoDataFrame(data, geometry='geometry', crs=gdf.crs)
     
-def orchestrate_intersections(data_dir, tif_dir, output_dir, index, max_workers=16, country_col='ISO_2', overwrite=True):
+def orchestrate_intersections(data_dir, tif_dir, output_dir, index, max_workers=16, country_col='ISO_2', overwrite=True,
+                              years=None):
     """Run the population-intersection workflow for one Voronoi file.
 
     Parameters
@@ -499,7 +504,7 @@ def orchestrate_intersections(data_dir, tif_dir, output_dir, index, max_workers=
         gdf = gpd.read_file(voronoi_file)
         logger.info(f"Loaded Voronoi layer with {len(gdf)} features")
         
-        gdf = intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col=country_col)
+        gdf = intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col=country_col, years=years)
 
         ensure_output_dir_for_file(output_path)
         gdf.to_file(output_path, driver='GPKG', index=False)
@@ -560,11 +565,25 @@ def main():
             max_workers,
             country_col=cfg['country_output_column'],
             overwrite=cfg['overwrite_existing'],
+            years=population_years(cfg),
         )
         logger.info("Population data integration completed successfully")
     except Exception as err:
         logger.error(f"Population data integration failed: {err}", exc_info=True)
         sys.exit(1)
+
+def population_years(cfg):
+    """Raster years add_pop reads: the years download_pop fetches.
+
+    The 2014 layer is the 1 km unconstrained product; it counts only with
+    ``include_2014`` (a 2014 file left in pop_tif_dir from an older download is
+    otherwise skipped instead of becoming a 2014_zonal_sum column).
+    """
+    years = set(range(int(cfg['start_year']), int(cfg['end_year']) + 1))
+    if cfg['include_2014']:
+        years.add(2014)
+    return years
+
 
 if __name__ == '__main__':
     configure_logging()

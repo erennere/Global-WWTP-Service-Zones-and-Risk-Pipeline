@@ -610,7 +610,6 @@ def get_runtime_params(cfg: dict) -> dict:
 
     return {
         "org_per_pop": float(section["org_per_pop"]),
-        "width": float(section["width"]),
         "c_limit": float(section["c_limit"]),
         "base_k": float(section["base_k"]),
         "theta": float(section["theta"]),

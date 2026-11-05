@@ -316,6 +316,11 @@ add_pop:
   add_pop_max_workers: 8
   country_output_column: null
   overwrite_existing: false
+  # Raster years read: those download_pop fetches (start_year..end_year, plus
+  # 2014 only with include_2014). Other years in pop_tif_dir are skipped.
+  start_year: null
+  end_year: null
+  include_2014: null
   paths:
     data_dir: null
     voronoi_dir: null
@@ -455,7 +460,6 @@ impact_polygons_pop:
   size_measure: null
   impact_polygons_pop_params:
     org_per_pop: 60.0
-    width: 12.0
     c_limit: 5.0
     base_k: 0.23
     theta: 1.047

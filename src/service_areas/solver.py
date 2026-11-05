@@ -60,7 +60,8 @@ def cluster_points(df, threshold):
         
     Returns:
         pd.GeoDataFrame: One row per cluster: the most complete record, with
-        ``weights`` summed, ``POP_SERVED`` the cluster maximum (never the sum)
+        ``weights`` and ``POP_SERVED`` the cluster maximum (never the sum: the
+        records are one plant reported by several sources)
         and ``n_merged_records`` the number of records merged.
 
     Notes:
@@ -79,7 +80,7 @@ def cluster_points(df, threshold):
         if len(sub_df) == 1:
             data.append(sub_df.assign(n_merged_records=1))
         else:
-            weights = sub_df['weights'].sum()
+            weights = sub_df['weights'].max()
             # Get the row(s) with the fewest NaNs
             min_missing = sub_df['num_missing'].min()
             best_rows = sub_df[sub_df['num_missing'] == min_missing]

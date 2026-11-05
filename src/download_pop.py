@@ -26,13 +26,12 @@ from tqdm import tqdm
 import pandas as pd
 import geopandas as gpd
 from rasterio.transform import from_origin
-from rasterio.warp import calculate_default_transform, reproject, Resampling
-import rasterio.features
+import numpy as np
+import rasterio
 from rasterio.merge import merge
 import logging
 from .starter import add_standard_override_arguments, load_config, parse_config_overrides
 from . import provenance
-from .geo_utils import estimate_utm_crs
 from .utils import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     configure_logging,
@@ -341,8 +340,19 @@ def find_files(folder):
         return find_type(folder, '.csv'), False
     return result, True
     
+METRES_PER_DEGREE_LAT = 111_320.0
+
+
 def rasterize_csv(df, output_path, res=30):
-    """Rasterize a point-based population CSV into a GeoTIFF.
+    """Rasterize a point-based population CSV into an EPSG:4326 GeoTIFF of summed counts.
+
+    Each point adds its population to the cell it falls in, on a grid of
+    ``res`` metres of latitude per cell (degrees, so no reprojection follows).
+    The raster total equals the CSV total exactly. The previous version burned
+    points into a UTM grid (a later point in the same cell replaced the
+    earlier one), cut off the last row and column, and reprojected the counts
+    to EPSG:4326 with nearest-neighbour resampling, which duplicates or drops
+    counts.
 
     Parameters
     ----------
@@ -351,7 +361,7 @@ def rasterize_csv(df, output_path, res=30):
     output_path : str
         Path of the GeoTIFF to create.
     res : int | float, default=30
-        Target raster resolution in meters.
+        Cell size in metres of latitude (``res / 111,320`` degrees).
 
     Returns
     -------
@@ -368,53 +378,27 @@ def rasterize_csv(df, output_path, res=30):
         logger.error(f"Missing required column in CSV. Available columns: {list(df.columns)}")
         return None
 
-    df[lat_col] = df[lat_col].astype(float)
-    df[lon_col] = df[lon_col].astype(float)
-    df[pop_col] = df[pop_col].astype(float)
+    lat = pd.to_numeric(df[lat_col], errors='coerce').to_numpy(dtype=float)
+    lon = pd.to_numeric(df[lon_col], errors='coerce').to_numpy(dtype=float)
+    pop = pd.to_numeric(df[pop_col], errors='coerce').to_numpy(dtype=float)
+    ok = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(pop)
+    if not ok.any():
+        logger.error("No valid points to rasterize for %s", output_path)
+        return None
+    lat, lon, pop = lat[ok], lon[ok], pop[ok]
 
-    gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon_col], df[lat_col]), crs="EPSG:4326")
-    utm_crs = estimate_utm_crs(gdf)
-    gdf_utm = gdf.to_crs(utm_crs)
-
-    minx, miny, maxx, maxy = gdf_utm.total_bounds
-    width = int((maxx - minx) / res)
-    height = int((maxy - miny) / res)
-    transform_utm = from_origin(minx, maxy, res, res)
-
-    shapes = ((geom, value) for geom, value in zip(gdf_utm.geometry, gdf_utm[pop_col]))
-    raster_utm = rasterio.features.rasterize(
-        shapes=shapes,
-        out_shape=(height, width),
-        transform=transform_utm,
-        fill=0,
-        all_touched=False,
-        dtype='float32'
-    )
-    dst_crs = "EPSG:4326"
-    transform_4326, width_4326, height_4326 = calculate_default_transform(
-        utm_crs, dst_crs, width, height, *gdf_utm.total_bounds)
-
-    kwargs = {
-        'driver': 'GTiff',
-        'height': height_4326,
-        'width': width_4326,
-        'count': 1,
-        'dtype': 'float32',
-        'crs': dst_crs,
-        'transform': transform_4326
-    }
+    cell = float(res) / METRES_PER_DEGREE_LAT
+    west, north = lon.min() - cell / 2, lat.max() + cell / 2  # points sit inside their cells, not on edges
+    cols = np.floor((lon - west) / cell).astype(np.int64)
+    rows = np.floor((north - lat) / cell).astype(np.int64)
+    grid = np.zeros((rows.max() + 1, cols.max() + 1), dtype=np.float64)
+    np.add.at(grid, (rows, cols), pop)
 
     ensure_output_dir_for_file(output_path)
-    with rasterio.open(output_path, "w", **kwargs) as dst:
-        reproject(
-            source=raster_utm,
-            destination=rasterio.band(dst, 1),
-            src_transform=transform_utm,
-            src_crs=utm_crs,
-            dst_transform=transform_4326,
-            dst_crs=dst_crs,
-            resampling=Resampling.nearest
-        )
+    with rasterio.open(output_path, "w", driver='GTiff', height=grid.shape[0], width=grid.shape[1], count=1,
+                       dtype='float32', crs="EPSG:4326", transform=from_origin(west, north, cell, cell),
+                       compress='lzw') as dst:
+        dst.write(grid.astype('float32'), 1)
     return output_path
 
 def mosaic_large_rasters(raster_files, output_path):

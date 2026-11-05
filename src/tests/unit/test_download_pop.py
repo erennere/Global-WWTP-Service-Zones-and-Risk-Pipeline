@@ -408,69 +408,28 @@ def test_mosaic_large_rasters_places_tiles_side_by_side(tmp_path):
     assert np.allclose(data[:, 5:], 2.0)
 
 
-class TestRasterizeCsvGridLogic:
-    """Test CSV rasterization grid construction."""
+class TestRasterizeCsv:
+    """Point CSV -> raster: counts are summed per cell and the total is kept."""
 
-    def test_rasterize_csv_grid_construction(self):
-        """Test grid alignment calculation for rasterization."""
-        # Create dummy CSV with point data
-        df = pd.DataFrame({
-            "x": [0.5, 1.5, 2.5],
-            "y": [0.5, 1.5, 2.5],
-            "population": [100, 200, 150],
-        })
-        
-        # Mock rasterio operations
-        with patch("src.download_pop.rasterio.features.rasterize") as mock_rasterize:
-            mock_rasterize.return_value = (np.array([[100, 0], [0, 200]]), 
-                                          MagicMock())
-            
-            # Create synthetic bounds for grid
-            bounds = (0, 0, 3, 3)
-            grid_size = 1.0
-            
-            # Calculate grid origin
-            min_x, min_y = bounds[0], bounds[1]
-            assert min_x == 0.0
-            assert min_y == 0.0
+    def test_total_is_preserved_and_shared_cells_are_summed(self, tmp_path):
+        import rasterio
 
-    def test_rasterize_csv_edge_cases(self):
-        """Test rasterization with edge case data."""
-        # Empty dataframe
-        df_empty = pd.DataFrame({
-            "x": [],
-            "y": [],
-            "population": [],
-        })
-        
-        assert len(df_empty) == 0
-        
-        # Single point
-        df_single = pd.DataFrame({
-            "x": [0.5],
-            "y": [0.5],
-            "population": [100],
-        })
-        
-        assert len(df_single) == 1
-        assert df_single["population"].sum() == 100
+        cell = 30 / dp.METRES_PER_DEGREE_LAT
+        df = pd.DataFrame({"latitude": [50.0, 50.0 + cell * 0.2, 50.0 + 3 * cell, 49.9],
+                           "longitude": [8.0, 8.0, 8.0 + 2 * cell, 8.1],
+                           "population": [1.5, 2.25, 4.0, 10.0]})
+        out = dp.rasterize_csv(df.copy(), str(tmp_path / "pop.tif"), res=30)
+        with rasterio.open(out) as src:
+            data = src.read(1).astype(float)
+            assert src.crs.to_epsg() == 4326 and src.res[0] == pytest.approx(cell)
+            row, col = src.index(8.0, 50.0)
+        assert data.sum() == pytest.approx(df.population.sum())
+        assert data[row, col] == pytest.approx(3.75)  # two points in one cell add up
 
-    def test_rasterize_csv_bounds_calculation(self):
-        """Test bounds calculation for raster output."""
-        df = pd.DataFrame({
-            "x": [0.1, 2.9, 1.5],
-            "y": [0.1, 2.9, 1.5],
-            "population": [100, 200, 150],
-        })
-        
-        # Calculate expected bounds
-        min_x, max_x = df["x"].min(), df["x"].max()
-        min_y, max_y = df["y"].min(), df["y"].max()
-        
-        assert min_x == pytest.approx(0.1)
-        assert max_x == pytest.approx(2.9)
-        assert min_y == pytest.approx(0.1)
-        assert max_y == pytest.approx(2.9)
+    def test_missing_columns_or_values(self, tmp_path):
+        assert dp.rasterize_csv(pd.DataFrame({"a": [1]}), str(tmp_path / "x.tif")) is None
+        bad = pd.DataFrame({"lat": [None], "lon": [8.0], "pop": [1.0]})
+        assert dp.rasterize_csv(bad, str(tmp_path / "y.tif")) is None
 
 
 class TestDownloadPopUrlDiscovery:

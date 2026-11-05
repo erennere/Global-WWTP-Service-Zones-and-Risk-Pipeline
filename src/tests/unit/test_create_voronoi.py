@@ -2143,7 +2143,7 @@ class TestClusterPoints:
         assert isinstance(result, pd.DataFrame)
         assert not isinstance(result, gpd.GeoDataFrame)
         assert len(result) == 2
-        assert result['weights'].sum() == 3.0
+        assert result['weights'].sum() == 2.0  # merged duplicates keep the larger weight (B6), not the sum
     
     def test_cluster_points_preserves_weights(self):
         """Test that clustering preserves weight sum."""
@@ -2158,7 +2158,7 @@ class TestClusterPoints:
         result = sa.cluster_points(gdf, threshold=1.0)
 
         # Total weight should be preserved
-        assert result['weights'].sum() == 30.0
+        assert result['weights'].sum() == 20.0  # one plant: the larger weight, not the sum
     
     def test_cluster_points_with_null_columns(self):
         """Test clustering with NaN values."""
