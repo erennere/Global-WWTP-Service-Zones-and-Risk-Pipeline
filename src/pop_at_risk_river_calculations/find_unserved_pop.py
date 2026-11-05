@@ -143,13 +143,15 @@ def orchestrate_urban_intersection(unserved_gdf, urban_filepath, zoom_level=8, m
                     ST_GeomFromText(b.geometry)
                )
         ),
-        random_tile AS (
+        -- One tile per polygon, the lowest-numbered one: reproducible, and DuckDB 2
+        -- rejects RANDOM() in a window ORDER BY.
+        first_tile AS (
             SELECT idx, tile
             FROM (
                 SELECT
                     idx,
                     tile,
-                    ROW_NUMBER() OVER (PARTITION BY idx ORDER BY RANDOM()) AS row_num
+                    ROW_NUMBER() OVER (PARTITION BY idx ORDER BY tile) AS row_num
                 FROM unserved
             )
             WHERE row_num = 1
@@ -170,7 +172,7 @@ def orchestrate_urban_intersection(unserved_gdf, urban_filepath, zoom_level=8, m
         FROM unserved_gdf u
         INNER JOIN aggregated a
             ON u.idx = a.idx
-        INNER JOIN random_tile t
+        INNER JOIN first_tile t
             ON u.idx = t.idx
     """
 

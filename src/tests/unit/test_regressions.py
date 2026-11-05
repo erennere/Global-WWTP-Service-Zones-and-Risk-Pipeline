@@ -554,3 +554,44 @@ def test_R3_buffer_squares_keep_their_size_far_from_the_country_centre():
     side_m = np.sqrt(boxes.to_crs(6933).area.to_numpy())  # equal-area CRS
     np.testing.assert_allclose(side_m, 2 * radius, rtol=0.01)  # one central UTM zone: off by > 2x at the edges
     assert sorted(map(sorted, groups)) == [[0], [1], [2]]
+
+
+# --------------------------------------------------------------------------- #
+# R15  unserved basin parts: basin minus ALL its service areas, once per basin #
+# --------------------------------------------------------------------------- #
+@needs_spatial
+def test_R15_basin_difference_is_computed_once_against_all_regions():
+    from src.pop_at_risk_river_calculations.find_diff_pop import find_differences
+
+    basin = gpd.GeoDataFrame({"HYBAS_ID": [1]}, geometry=[box(8.0, 49.0, 8.4, 49.2)], crs="EPSG:4326")
+    regions = gpd.GeoDataFrame(  # two plants' service areas in the same basin
+        {"HYBAS_ID": [1, 1], "WASTE_ID": [10, 20]},
+        geometry=[box(8.0, 49.0, 8.1, 49.2), box(8.1, 49.0, 8.2, 49.2)],
+        crs="EPSG:4326",
+    )
+
+    diff = find_differences(basin, regions, is_parallel=False)
+
+    assert len(diff) == 1  # was 2: one "difference" per plant
+    got_km2 = diff.to_crs(6933).area.iloc[0] / 1e6
+    expected_km2 = gpd.GeoSeries([box(8.2, 49.0, 8.4, 49.2)], crs="EPSG:4326").to_crs(6933).area.iloc[0] / 1e6
+    assert got_km2 == pytest.approx(expected_km2, rel=0.01)  # was the whole basin, twice
+    assert not diff.geometry.iloc[0].contains(Point(8.05, 49.1))  # served by plant 10
+
+
+def test_industrial_section_has_every_key_run_voronoi_approach_reads():
+    """The mock run stopped with KeyError: 'temp_voronoi_overwrite' here."""
+    from src.starter import load_config
+
+    cfg = load_config(script_name="find_unconnected_industrial_areas")
+    for key in ("temp_voronoi_overwrite", "overwrite_existing", "n_points", "threshold", "max_workers",
+                "calculate_buffer_fn", "calculate_area_fn", "flush_size"):
+        assert key in cfg and cfg[key] is not None, key
+
+
+def test_find_diff_pop_can_resolve_its_country_layer():
+    """HydroBASINS has no country column; find_diff_pop now joins the boundary layer."""
+    from src.starter import load_config
+
+    cfg = load_config(script_name="find_diff_pop")
+    assert cfg["paths"]["overture"] and cfg["country_boundary_column"]

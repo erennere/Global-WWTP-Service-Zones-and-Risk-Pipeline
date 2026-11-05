@@ -352,6 +352,7 @@ find_diff_pop:
   max_workers: null
   basin_column_name: null
   country_output_column: null
+  country_boundary_column: null
   figures:
     approach: null
   paths:
@@ -362,6 +363,9 @@ find_diff_pop:
     voronoi_dir: null
     pop_tif_dir: null
     pop_output_dir: null
+    # The uncovered basin parts get their country from the boundary layer:
+    # the HydroBASINS file has no country column.
+    overture: null
     pop_dif_output_dir: '{data_dir}/pop_diff_voronoi_layers/v{version}/lvl{level}/bf{buffer}/{weight_type}'
 
 assign_rivers_to_basin:
@@ -500,6 +504,9 @@ find_unconnected_industrial_areas:
   # so the two layers can never disagree. An empty list is rejected.
   industrial_category_numbers: null
   mix_use_categories: null
+  # Inherited from create_voronoi: run_voronoi_approach reads it, and the
+  # section used to lack it, so the industrial run stopped with a KeyError.
+  temp_voronoi_overwrite: null
   overwrite_existing: false
   scipy_true: null
   cv2_true: null

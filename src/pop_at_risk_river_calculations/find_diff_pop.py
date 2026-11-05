@@ -15,10 +15,11 @@ import geopandas as gpd
 from shapely import from_wkt, to_wkt
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..geo_utils import ensure_duckdb_spatial, estimate_utm_epsg_for_geom
+from ..geo_utils import buffer_geometry, ensure_duckdb_spatial, estimate_utm_epsg_for_geom
 from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
 from ..add_pop import intersect_all_files
 from ..pipelines import create_pop_output_paths
+from ..create_voronoi import intersects_with_country_db
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,11 @@ def find_difference(watershed_gdf, pop_gdf, basin_col='HYBAS_ID'):
             conn.register("pop_gdf", pop_local)
 
             query = f"""
-            SELECT a.*,
-            ST_AsText(ST_Difference(ST_GEOMFROMTEXT(a.geometry), ST_GEOMFROMTEXT(b.geometry))) as geometry
+            -- REPLACE, not a second "geometry" column: DuckDB renames a duplicate
+            -- to geometry_1, so the difference was dropped and the whole basin kept.
+            SELECT a.* REPLACE (
+                ST_AsText(ST_Difference(ST_GEOMFROMTEXT(a.geometry), ST_GEOMFROMTEXT(b.geometry))) AS geometry
+            )
             FROM watershed_gdf AS a
             LEFT JOIN pop_gdf AS b
             ON a.{basin_col} = b.{basin_col}
@@ -84,8 +88,14 @@ def process_epsg_group(epsg, watershed_gdf, pop_gdf, basin_col='HYBAS_ID'):
     return diff_gdf
 
 def find_differences(watershed_gdf, pop_gdf, max_workers=None, is_parallel=True, basin_col='HYBAS_ID'):
-    """Compute all differences by grouping inputs in local UTM EPSG zones."""
-    pop_local = pop_gdf.copy()
+    """Compute, per basin, the part not covered by any service area.
+
+    The service areas are dissolved per basin first. Subtracting each region
+    from its basin separately gave one overlapping "difference" per plant, each
+    still containing the other plants' regions, so a basin with k plants was
+    counted k times and served areas were reported as unserved.
+    """
+    pop_local = pop_gdf[pop_gdf[basin_col].notna()][[basin_col, 'geometry']].dissolve(by=basin_col, as_index=False)
     pop_local['epsg'] = pop_local['geometry'].apply(estimate_utm_epsg_for_geom)
     gdf_list = []
 
@@ -107,6 +117,10 @@ def find_differences(watershed_gdf, pop_gdf, max_workers=None, is_parallel=True,
     
     if gdf_list:
         gdf = gpd.GeoDataFrame(pd.concat(gdf_list, ignore_index=True), geometry='geometry', crs=4326)
+        # Reprojected differences can self-touch; the country join's
+        # ST_Intersection fails on such rings.
+        gdf['geometry'] = gdf['geometry'].map(buffer_geometry)
+        gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty].reset_index(drop=True)
         logger.info("Total difference features: %s", len(gdf))
         return gdf
     return gpd.GeoDataFrame(columns=watershed_gdf.columns, geometry='geometry', crs=4326)
@@ -193,7 +207,20 @@ def main():
     logger.info("Loaded %s population features and %s watershed features", len(pop_gdf), len(watershed_gdf))
 
     diff_gdf = find_differences(watershed_gdf, pop_gdf, max_workers=max_workers, is_parallel=args.is_parallel, basin_col=cfg['basin_column_name'])
-    diff_gdf = intersect_all_files(diff_gdf, tif_dir, max_workers=max_workers, country_col=cfg['country_output_column'])
+    country_col = cfg['country_output_column']
+    if country_col not in diff_gdf.columns:
+        # HydroBASINS carries no country, so the uncovered parts get theirs here
+        # (largest overlap); intersect_all_files needs it to pick the raster.
+        if diff_gdf.empty:
+            diff_gdf[country_col] = pd.Series(dtype=object)
+        else:
+            diff_gdf = intersects_with_country_db(
+                diff_gdf,
+                cfg['paths']['overture'],
+                polygon_country_col=cfg['country_boundary_column'],
+                output_country_col=country_col,
+            )
+    diff_gdf = intersect_all_files(diff_gdf, tif_dir, max_workers=max_workers, country_col=country_col)
     logger.info("Post-intersection features: %s", len(diff_gdf))
     
     if not os.path.exists(pop_dif_output_dir):
