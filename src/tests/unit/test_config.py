@@ -32,3 +32,15 @@ def test_stages_share_one_basin_level():
     levels = {str(starter.load_config(script_name=s)["level"]) for s in SECTIONS
               if "level" in starter.load_config(script_name=s)}
     assert levels == {"6"}
+
+
+def test_every_package_is_installed_by_pyproject():
+    """A package missing from [tool.setuptools] packages works from the repo but not when installed."""
+    import tomllib
+    from pathlib import Path
+
+    root = Path(starter.__file__).resolve().parent
+    listed = set(tomllib.loads((root / "pyproject.toml").read_text())["tool"]["setuptools"]["packages"])
+    on_disk = {"src." + str(p.parent.relative_to(root)).replace("/", ".") if p.parent != root else "src"
+               for p in root.rglob("__init__.py") if "tests" not in p.parts and "maps" not in p.parts}
+    assert on_disk <= listed, on_disk - listed

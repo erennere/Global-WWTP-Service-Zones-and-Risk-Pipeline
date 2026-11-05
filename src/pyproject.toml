@@ -59,6 +59,7 @@ packages = [
   "src.pop_at_risk_river_calculations",
   "src.pop_validation_scripts",
   "src.sensitivity_analysis_scripts",
+  "src.service_areas",
 ]
 
 [tool.setuptools.package-dir]
