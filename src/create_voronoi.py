@@ -68,6 +68,7 @@ try:
         buffer_geometry,
         safe_to_wkt,
         nearest_neighbor_distances,
+        apply_in_utm_zones,
     )
     from .utils import configure_logging, default_cpu_workers, duckdb_connection, ensure_output_dir_for_file, quote_sql_identifier
 except ImportError:  # Support running/importing as a top-level module
@@ -82,6 +83,7 @@ except ImportError:  # Support running/importing as a top-level module
         buffer_geometry,
         safe_to_wkt,
         nearest_neighbor_distances,
+        apply_in_utm_zones,
     )
     from utils import configure_logging, default_cpu_workers, duckdb_connection, ensure_output_dir_for_file, quote_sql_identifier
 
@@ -1019,17 +1021,21 @@ def dissolve_overlapping_geometries_fast(subdf, radius, convex=False):
     if subdf is None or subdf.empty:
         return [], None
 
-    # 1. Coordinate Projection (UTM is required for distance-based buffering)
-    utm = subdf.estimate_utm_crs()
-    subdf = subdf.to_crs(utm).reset_index(drop=True)
-    
-    # 2. Geometry Preparation (Replicating your original logic)
+    # 1-2. Squares (or bounding boxes) built in metres, each feature in its own
+    # UTM zone: one zone per country distorted large countries (Russia spans
+    # 30 zones) by far more than the buffer radius.
+    subdf = subdf.reset_index(drop=True)
+    if subdf.crs is None:
+        subdf = subdf.set_crs(4326)
     if convex:
-        # Use the bounding box of the original geometry
-        subdf['geometry'] = subdf['geometry'].apply(lambda g: box(*g.bounds))
+        # Bounding box of the original geometry, in metres
+        boxes = apply_in_utm_zones(subdf, lambda geoms: geoms.envelope)
     else:
-        # Buffer the centroid and create a bounding box around it
-        subdf['geometry'] = subdf.geometry.centroid.buffer(radius).apply(lambda g: box(*g.bounds))
+        # Square of side 2 * radius around the centroid
+        boxes = apply_in_utm_zones(
+            subdf, lambda geoms: geoms.centroid.buffer(float(radius), cap_style='square')
+        )
+    subdf = subdf.set_geometry(boxes).to_crs(4326)
 
     # 3. Spatial Join to find overlaps (The "Sweep" replacement)
     # This finds every pair of geometries that intersect
@@ -1051,9 +1057,7 @@ def dissolve_overlapping_geometries_fast(subdf, radius, convex=False):
         group_ids = set(subdf.iloc[list(component)]['some_id'])
         final_groups.append(group_ids)
 
-    # 6. Cleanup to match original return format
-    subdf = subdf.to_crs(4326)
-    # Final buffer(0) to ensure valid geometries as per original code
+    # 6. Final buffer(0) to ensure valid geometries as per original code
     subdf['geometry'] = subdf['geometry'].buffer(0)
 
     return final_groups, subdf
@@ -1102,8 +1106,11 @@ def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False
     if country_col not in df.columns:
         raise KeyError(f"Country grouping column '{country_col}' not found in input dataframe.")
     
-    countries = df[country_col].unique()
-    np.random.shuffle(countries)
+    # Overlap groups stay within one country on purpose: Voronoi regions are
+    # built and clipped per country, so a neighbour's buffer across the border
+    # must not enlarge a country's clipping polygon. The order is only for load
+    # balancing; a fixed seed keeps runs reproducible.
+    countries = np.random.default_rng(0).permutation(np.asarray(pd.unique(df[country_col]), dtype=object))
     logger.debug(f"Processing {len(countries)} countries in parallel with {max_workers} workers")
     df['some_id'] = np.arange(0, len(df))
     #subdf = df.copy()
@@ -1126,9 +1133,11 @@ def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False
                 dfs.append(subdf)
         except Exception as err:
             error_count += 1
-            logger.warning(f'Error in parallel dissolution: {err}')
+            logger.error(f'Error in parallel dissolution: {err}', exc_info=True)
 
-    logger.debug(f"Parallel dissolution completed with {error_count} errors")
+    if error_count:
+        # A failed country would silently lose every plant's buffer downstream.
+        raise RuntimeError(f"Buffer dissolution failed for {error_count} country group(s); see the log")
     if dfs:
         dfs = pd.concat(dfs, ignore_index=True)
     else:

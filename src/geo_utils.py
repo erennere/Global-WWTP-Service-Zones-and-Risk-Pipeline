@@ -455,30 +455,49 @@ def nearest_distances_m(source_gdf, target_gdf, k=1):
     return distances, indices
 
 
-def buffer_meters(gdf, distance_m):
-    """Buffer every geometry by ``distance_m`` metres in its own UTM zone.
+def utm_zone_epsg(gdf):
+    """EPSG code of the metric zone of each feature (UTM; polar stereographic beyond 84N / 80S)."""
+    lonlat = _lonlat_of(gdf)
+    zones = (np.floor((lonlat[:, 0] + 180.0) / 6.0) + 1).clip(1, 60)
+    epsg = np.where(lonlat[:, 1] >= 0, 32600, 32700) + np.nan_to_num(zones, nan=1).astype(int)
+    epsg = np.where(lonlat[:, 1] > 84, 3413, epsg)
+    epsg = np.where(lonlat[:, 1] < -80, 3031, epsg)
+    return epsg
 
-    Returns a GeoSeries in the input CRS. Features are grouped by the UTM zone
-    of their centroid, buffered there and projected back, so the radius is
-    within 0.1 % of ``distance_m`` wherever the feature lies (Web Mercator, by
-    contrast, shrinks a buffer by cos(latitude)).
+
+def apply_in_utm_zones(gdf, fn):
+    """Apply a metric geometry operation to every feature in its own UTM zone.
+
+    ``fn`` receives a GeoSeries in one zone's metric CRS and must return a
+    GeoSeries (or geometry array) of the same length in that CRS. The result is
+    a GeoSeries in the input CRS; missing or empty geometries pass through.
+    A single projection for a large country (Russia spans 30 zones) or for Web
+    Mercator distorts distances by up to tens of percent; per-zone projection
+    keeps the scale error below 0.1 %.
     """
     if gdf.crs is None:
-        raise ValueError("GeoDataFrame needs a CRS to buffer in metres")
+        raise ValueError("GeoDataFrame needs a CRS for metric operations")
     geoms = gdf.geometry
     out = geoms.copy()
     valid = geoms.notna().to_numpy() & ~geoms.is_empty.to_numpy()
     if not valid.any():
         return out
-    lonlat = _lonlat_of(gdf)
-    zones = (np.floor((lonlat[:, 0] + 180.0) / 6.0) + 1).clip(1, 60)
-    epsg = np.where(lonlat[:, 1] >= 0, 32600, 32700) + np.nan_to_num(zones, nan=1).astype(int)
-    # Polar caps fall outside UTM: use the polar stereographic projections there.
-    epsg = np.where(lonlat[:, 1] > 84, 3413, epsg)
-    epsg = np.where(lonlat[:, 1] < -80, 3031, epsg)
+    epsg = utm_zone_epsg(gdf)
     for code in np.unique(epsg[valid]):
         mask = valid & (epsg == code)
-        part = geoms[mask].to_crs(int(code)).buffer(float(distance_m)).to_crs(gdf.crs)
-        out[mask] = part.to_numpy()
+        metric = geoms[mask].to_crs(int(code))
+        result = gpd.GeoSeries(np.asarray(fn(metric)), index=metric.index, crs=metric.crs)
+        out[mask] = result.to_crs(gdf.crs).to_numpy()
     return out
 
+
+def buffer_meters(gdf, distance_m, **buffer_kwargs):
+    """Buffer every geometry by ``distance_m`` metres in its own UTM zone.
+
+    Returns a GeoSeries in the input CRS. Features are grouped by the UTM zone
+    of their centroid, buffered there and projected back, so the radius is
+    within 0.1 % of ``distance_m`` wherever the feature lies (Web Mercator, by
+    contrast, shrinks a buffer by cos(latitude)). ``buffer_kwargs`` go to
+    ``GeoSeries.buffer`` (e.g. ``cap_style='square'``).
+    """
+    return apply_in_utm_zones(gdf, lambda geoms: geoms.buffer(float(distance_m), **buffer_kwargs))

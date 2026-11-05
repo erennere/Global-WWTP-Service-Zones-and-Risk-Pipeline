@@ -336,9 +336,15 @@ def test_prepare_data_uses_final_geometry_and_filters_industrial_sites(monkeypat
 
     result = pipelines.prepare_data(cfg)
 
-    gdf_bbox = result["gdf_bbox"].sort_values("WASTE_ID").reset_index(drop=True)
-    assert gdf_bbox["WASTE_ID"].tolist() == [0, 1]
+    gdf_bbox = result["gdf_bbox"].sort_values("old_WASTE_ID").reset_index(drop=True)
+    # R12: IDs are assigned once over all plants, before remove_industrial, so the
+    # kept plants carry the IDs they would have without the filter.
+    all_plants = bbox_gdf.assign(geometry=final_points).drop(columns=["final_geometry"])
+    all_plants["WKT_WWTP"] = all_plants.geometry.to_wkt()
+    expected = pipelines.assign_stable_site_ids(all_plants, "WASTE_ID", "old_WASTE_ID").set_index("old_WASTE_ID")
     assert gdf_bbox["old_WASTE_ID"].tolist() == [10, 30]
+    assert gdf_bbox["WASTE_ID"].tolist() == expected.loc[[10, 30], "WASTE_ID"].tolist()
+    assert gdf_bbox["SITE_UID"].tolist() == expected.loc[[10, 30], "SITE_UID"].tolist()
     assert gdf_bbox["geometry"].tolist() == [final_points[0], final_points[2]]
     assert gdf_bbox["ISO_2"].tolist() == ["DE", "DE"]
     assert "final_geometry" not in gdf_bbox.columns

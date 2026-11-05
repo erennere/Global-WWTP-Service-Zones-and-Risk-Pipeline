@@ -515,3 +515,42 @@ def test_R9_years_are_mosaicked_separately_and_2014_is_opt_in():
     assert sorted(groups, key=lambda k: (k is None, k or 0)) == [2014, 2020, 2021, None]
     urls = get_urls(start_year=2015, end_year=2016)
     assert not any("2014" in url for country_urls in urls.values() for url in country_urls)
+
+
+# --------------------------------------------------------------------------- #
+# R12  site IDs do not depend on row order                                     #
+# --------------------------------------------------------------------------- #
+def test_R12_site_ids_are_independent_of_row_order():
+    gdf = gpd.GeoDataFrame(
+        {"WASTE_ID": [10, 20, np.nan, np.nan]},
+        geometry=[Point(0, 0), Point(1, 0), Point(2, 0), Point(3, 0)],
+        crs="EPSG:4326",
+    )
+    gdf["WKT_WWTP"] = gdf.geometry.to_wkt()
+
+    a = pipelines.assign_stable_site_ids(gdf, "WASTE_ID", "OLD_WASTE_ID")
+    b = pipelines.assign_stable_site_ids(gdf.iloc[::-1], "WASTE_ID", "OLD_WASTE_ID")
+
+    key = a["WKT_WWTP"]
+    assert dict(zip(key, a["WASTE_ID"])) == dict(zip(b["WKT_WWTP"], b["WASTE_ID"]))
+    assert dict(zip(key, a["SITE_UID"])) == dict(zip(b["WKT_WWTP"], b["SITE_UID"]))
+    assert sorted(a["WASTE_ID"]) == [0, 1, 2, 3]
+    assert (a["SITE_UID"] > 0).all()
+
+
+# --------------------------------------------------------------------------- #
+# R3  dissolve buffers are true squares in metres across a wide country        #
+# --------------------------------------------------------------------------- #
+def test_R3_buffer_squares_keep_their_size_far_from_the_country_centre():
+    sites = gpd.GeoDataFrame(
+        {"some_id": [0, 1, 2]},
+        geometry=[Point(40.0, 60.0), Point(105.0, 60.0), Point(170.0, 60.0)],  # one country, 130 deg wide
+        crs="EPSG:4326",
+    )
+    radius = 10_000.0
+
+    groups, boxes = cv.dissolve_overlapping_geometries_fast(sites, radius)
+
+    side_m = np.sqrt(boxes.to_crs(6933).area.to_numpy())  # equal-area CRS
+    np.testing.assert_allclose(side_m, 2 * radius, rtol=0.01)  # one central UTM zone: off by > 2x at the edges
+    assert sorted(map(sorted, groups)) == [[0], [1], [2]]

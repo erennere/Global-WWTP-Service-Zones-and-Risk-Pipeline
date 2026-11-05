@@ -931,7 +931,17 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
         geometry="geometry",
         crs="EPSG:4326",
     )
-    dissolved = cv.orchestrate_overlaps(df2, 2, str(tmp_path / "no_cache.gpkg"), 10, country_col="ISO_2")
+    # R3: a failed country group now stops the run instead of silently
+    # dropping that country's buffers.
+    with pytest.raises(RuntimeError, match="2 country group"):
+        cv.orchestrate_overlaps(df2.copy(), 2, str(tmp_path / "no_cache.gpkg"), 10, country_col="ISO_2")
+
+    class _ExecGood(_Exec):
+        def submit(self, fn, *args):
+            return _FutGood()
+
+    monkeypatch.setattr(cv, "ProcessPoolExecutor", _ExecGood)
+    dissolved = cv.orchestrate_overlaps(df2.iloc[[2]].copy(), 2, str(tmp_path / "no_cache.gpkg"), 10, country_col="ISO_2")
     assert isinstance(dissolved, gpd.GeoDataFrame)
 
     # resolve_polygon_overlaps None-geometry skip

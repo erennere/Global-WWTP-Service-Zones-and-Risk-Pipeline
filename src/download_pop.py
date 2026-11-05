@@ -23,7 +23,6 @@ import zipfile
 import os, re, shutil
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from tqdm import tqdm
-import numpy as np
 import pandas as pd
 import geopandas as gpd
 from rasterio.transform import from_origin

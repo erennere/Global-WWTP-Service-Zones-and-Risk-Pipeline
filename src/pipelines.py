@@ -29,6 +29,7 @@ pipeline passes them explicitly from ``cfg``, so those defaults only apply to
 direct in-process calls.
 """
 
+import hashlib
 import os
 import numpy as np
 import pandas as pd
@@ -43,6 +44,39 @@ except ImportError:  # Support running/importing as a top-level module
     from geo_utils import nearest_distances_m
 
 logger = logging.getLogger(__name__)
+
+
+SITE_UID_COLUMN = 'SITE_UID'
+
+
+def _site_uid(source_id, wkt):
+    """Positive 63-bit integer hash of a site's source ID and geometry."""
+    key = f"{'' if pd.isna(source_id) else source_id}|{wkt}".encode()
+    return int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), 'big') & 0x7FFF_FFFF_FFFF_FFFF
+
+
+def assign_stable_site_ids(gdf, site_id_col, old_site_id_col, wkt_col='WKT_WWTP'):
+    """Give every site an ID that does not depend on row order or later filters.
+
+    The source ID moves to ``old_site_id_col``. ``SITE_UID`` is a hash of the
+    source ID and the geometry (WKT), so it is the same for the same plant in
+    every run and every dataset version. ``site_id_col`` stays a dense integer
+    for the joins that need one, numbered in ``SITE_UID`` order - not in file
+    order - and is assigned once, before ``remove_industrial`` filters rows, so
+    a plant keeps its ID whether industrial plants are removed or not.
+    """
+    gdf = gdf.copy()
+    gdf[old_site_id_col] = gdf[site_id_col]
+    gdf[SITE_UID_COLUMN] = [
+        _site_uid(source_id, wkt) for source_id, wkt in zip(gdf[old_site_id_col], gdf[wkt_col])
+    ]
+    if gdf[SITE_UID_COLUMN].duplicated().any():
+        raise ValueError("Duplicate SITE_UID: two sites share the same source ID and geometry")
+    order = np.argsort(gdf[SITE_UID_COLUMN].to_numpy(), kind='stable')
+    ids = np.empty(len(gdf), dtype=np.int64)
+    ids[order] = np.arange(len(gdf))
+    gdf[site_id_col] = ids
+    return gdf
 
 
 def _compute_mean_2_nnd_m(gdf):
@@ -370,9 +404,7 @@ def prepare_data(cfg):
         index=gdf_bbox.index,
     )
     gdf_bbox['WKT_WWTP'] = gdf_bbox['geometry'].apply(lambda geom: to_wkt(geom))
-    old_site_id_col = cfg['old_site_id_column']
-    gdf_bbox[old_site_id_col] = gdf_bbox[site_id_col]
-    gdf_bbox[site_id_col] = np.arange(len(gdf_bbox))
+    gdf_bbox = assign_stable_site_ids(gdf_bbox, site_id_col, cfg['old_site_id_column'])
     gdf_bbox = _compute_mean_2_nnd_m(gdf_bbox)
 
     if cfg['remove_industrial']:
@@ -386,7 +418,6 @@ def prepare_data(cfg):
             keep=False,
             logger=logger,
         )
-        gdf_bbox[site_id_col] = np.arange(len(gdf_bbox))
     
     # Add country codes. Rejoining is the default: an inherited country column
     # from an upstream layer can disagree with the boundary layer in use.
