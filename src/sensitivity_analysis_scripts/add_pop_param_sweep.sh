@@ -55,28 +55,28 @@ print_task_combinations(int(sys.argv[1]), int(sys.argv[2]))
 )
 
 for combo in "${ASSIGNED_COMBOS[@]}"; do
-    IFS=$'\t' read -r level buffer weight_method weight_func dynamic_buffering radius_quantile <<< "${combo}"
+    IFS=$'\t' read -r level buffer weight_method weight_func dynamic_buffering size_measure <<< "${combo}"
     level="${level//$'\r'/}"
     buffer="${buffer//$'\r'/}"
     weight_method="${weight_method//$'\r'/}"
     weight_func="${weight_func//$'\r'/}"
     dynamic_buffering="${dynamic_buffering//$'\r'/}"
-    radius_quantile="${radius_quantile//$'\r'/}"
+    size_measure="${size_measure//$'\r'/}"
     if [[ "${weight_func}" == "__EMPTY__" ]]; then
         weight_func=""
     fi
-    if [[ "${radius_quantile}" == "__EMPTY__" ]]; then
-        radius_quantile=""
+    if [[ "${size_measure}" == "__EMPTY__" ]]; then
+        size_measure=""
     fi
 
     # Discover how many voronoi files exist for this parameter combination.
     # Each (level, buffer, weight_func) maps to a different voronoi directory,
     # so the file count must be determined at runtime rather than using TASK_ID.
-    raw_num_files=$(${PYTHON_CMD} - "${level}" "${VERSION}" "${buffer}" "${weight_method}" "${weight_func}" "${dynamic_buffering}" "${radius_quantile}" <<'PY'
+    raw_num_files=$(${PYTHON_CMD} - "${level}" "${VERSION}" "${buffer}" "${weight_method}" "${weight_func}" "${dynamic_buffering}" "${size_measure}" <<'PY'
 import os, sys
 from src.starter import load_config, parse_config_overrides
 
-level, version, buffer, weight_method, weight_func, dynamic_buffering, radius_quantile = sys.argv[1:]
+level, version, buffer, weight_method, weight_func, dynamic_buffering, size_measure = sys.argv[1:]
 argv = [
     '',
     '--level', level,
@@ -86,8 +86,8 @@ argv = [
     '--weight-func', weight_func,
     '--dynamic-buffering', dynamic_buffering,
 ]
-if radius_quantile:
-    argv.extend(['--radius-quantile', radius_quantile])
+if size_measure:
+    argv.extend(['--size-measure', size_measure])
 sys.argv = argv
 
 overrides = parse_config_overrides()
@@ -107,13 +107,13 @@ PY
     fi
 
     if (( num_files == 0 )); then
-        log "WARNING: No voronoi files found for level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} radius_quantile=${radius_quantile} - skipping"
+        log "WARNING: No voronoi files found for level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} size_measure=${size_measure} - skipping"
         continue
     fi
 
     for file_idx in $(seq 0 $((num_files - 1))); do
         run_count=$((run_count + 1))
-        log "Run ${run_count}: file_index=${file_idx}/${num_files} level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} radius_quantile=${radius_quantile}"
+        log "Run ${run_count}: file_index=${file_idx}/${num_files} level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} size_measure=${size_measure}"
         cmd=(
             "${PYTHON_CMD}" -m "${PYTHON_SCRIPT}"
             --index "${file_idx}"
@@ -124,8 +124,8 @@ PY
             --weight-func "${weight_func}"
             --dynamic-buffering "${dynamic_buffering}"
         )
-        if [[ -n "${radius_quantile}" ]]; then
-            cmd+=(--radius-quantile "${radius_quantile}")
+        if [[ -n "${size_measure}" ]]; then
+            cmd+=(--size-measure "${size_measure}")
         fi
         "${cmd[@]}" 2>&1 | tee -a "${LOG_FILE}"
     done

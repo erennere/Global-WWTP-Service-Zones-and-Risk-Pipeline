@@ -45,7 +45,7 @@ chmod +x "${STUB}"
 
 # Standard override set used for every wrapper that accepts the seven flags.
 STD_OVERRIDES=(--level 8 --version 2 --buffer 9000 --weight-method linear
-               --weight-func mult --dynamic-buffering false --radius-quantile 0.7)
+               --weight-func mult --dynamic-buffering false --size-measure footprint)
 
 # Wrapper-specific argument sets. Anything not listed here gets STD_OVERRIDES.
 # The listed wrappers accept a narrower flag set and reject the full seven.
@@ -59,10 +59,10 @@ wrapper_args() {
             printf '%s\n' --version 2 ;;
         ./sensitivity_analysis_scripts/create_voronoi_param_sweep_parallel.sh|\
         ./sensitivity_analysis_scripts/create_voronoi_param_sweep_parallel_additive.sh)
-            printf '%s\n' --approach 1 --version 2 --dynamic-buffering false --radius-quantile 0.7 --num-jobs 2 ;;
+            printf '%s\n' --approach 1 --version 2 --dynamic-buffering false --size-measure footprint --num-jobs 2 ;;
         ./sensitivity_analysis_scripts/create_voronoi_single_additive_test.sh)
             printf '%s\n' --approach 1 --level 8 --version 2 --buffer 9000 \
-                          --weight-method linear --dynamic-buffering false --radius-quantile 0.7 ;;
+                          --weight-method linear --dynamic-buffering false --size-measure footprint ;;
         *)
             printf '%s\n' "${STD_OVERRIDES[@]}" ;;
     esac

@@ -10,11 +10,11 @@
 # Quick single-run sanity check for additive Voronoi mode.
 #
 # Usage:
-#   sbatch sensitivity_analysis_scripts/create_voronoi_single_additive_test.sh [--approach <n>] [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--dynamic-buffering <true|false>] [--radius-quantile <q>]
-#   bash sensitivity_analysis_scripts/create_voronoi_single_additive_test.sh [--approach <n>] [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--dynamic-buffering <true|false>] [--radius-quantile <q>]
+#   sbatch sensitivity_analysis_scripts/create_voronoi_single_additive_test.sh [--approach <n>] [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--dynamic-buffering <true|false>] [--size-measure <reported|footprint>]
+#   bash sensitivity_analysis_scripts/create_voronoi_single_additive_test.sh [--approach <n>] [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--dynamic-buffering <true|false>] [--size-measure <reported|footprint>]
 #
 # Defaults:
-#   approach=1 level=8 version='' buffer=9000 weight_method=logarithmic dynamic_buffering=false radius_quantile=''
+#   approach=1 level=8 version='' buffer=9000 weight_method=logarithmic dynamic_buffering=false size_measure=''
 
 set -Eeuo pipefail
 
@@ -29,7 +29,7 @@ VERSION=""
 BUFFER="9000"
 WEIGHT_METHOD="logarithmic"
 DYNAMIC_BUFFERING="false"
-RADIUS_QUANTILE=""
+SIZE_MEASURE=""
 WEIGHT_FUNC="add"
 
 while [[ $# -gt 0 ]]; do
@@ -58,13 +58,13 @@ while [[ $# -gt 0 ]]; do
             DYNAMIC_BUFFERING="$2"
             shift 2
             ;;
-        --radius-quantile)
-            RADIUS_QUANTILE="$2"
+        --size-measure)
+            SIZE_MEASURE="$2"
             shift 2
             ;;
         *)
             echo "ERROR: Unknown argument '$1'" >&2
-            echo "Usage: $0 [--approach <n>] [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--dynamic-buffering <true|false>] [--radius-quantile <q>]" >&2
+            echo "Usage: $0 [--approach <n>] [--level <n>] [--version <v>] [--buffer <m>] [--weight-method <method>] [--dynamic-buffering <true|false>] [--size-measure <reported|footprint>]" >&2
             exit 1
             ;;
     esac
@@ -82,7 +82,7 @@ export_thread_vars
 
 build_override_args
 
-log "Parameters: approach=${APPROACH} level=${LEVEL} version=${VERSION:-default} buffer=${BUFFER} weight_method=${WEIGHT_METHOD} weight_func=${WEIGHT_FUNC} dynamic_buffering=${DYNAMIC_BUFFERING} radius_quantile=${RADIUS_QUANTILE:-default}"
+log "Parameters: approach=${APPROACH} level=${LEVEL} version=${VERSION:-default} buffer=${BUFFER} weight_method=${WEIGHT_METHOD} weight_func=${WEIGHT_FUNC} dynamic_buffering=${DYNAMIC_BUFFERING} size_measure=${SIZE_MEASURE:-default}"
 
 run_stage "create_voronoi" ${PYTHON_CMD} -m src.create_voronoi "${OVERRIDE_ARGS[@]}" --approach "${APPROACH}"
 

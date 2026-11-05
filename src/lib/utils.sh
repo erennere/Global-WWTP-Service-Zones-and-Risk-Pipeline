@@ -23,7 +23,7 @@
 #   run_stage <name> <cmd> — run one pipeline stage, tee it, abort on failure
 #   parse_overrides <args> — populate the seven standard config-override vars:
 #                            LEVEL VERSION BUFFER WEIGHT_METHOD WEIGHT_FUNC
-#                            DYNAMIC_BUFFERING RADIUS_QUANTILE
+#                            DYNAMIC_BUFFERING SIZE_MEASURE
 #                            Unknown --flags are rejected, not ignored.
 #   build_override_args    — assemble OVERRIDE_ARGS from the parsed vars
 #   ensure_src_importable  — editable install only when 'src' is not importable
@@ -91,7 +91,7 @@ run_stage() {
 # parse_overrides "$@"
 # Standard named flags:
 #   --level --version --buffer --weight-method --weight-func
-#   --dynamic-buffering --radius-quantile
+#   --dynamic-buffering --size-measure
 # Unknown --flags are rejected with exit 2: silently shifting them away meant a
 # typo like `--dynamic-buffer 0.5` (missing the -k) ran a whole job against
 # config defaults and filed its output under the wrong directory. Scripts that
@@ -103,7 +103,7 @@ parse_overrides() {
     WEIGHT_METHOD=""
     WEIGHT_FUNC=""
     DYNAMIC_BUFFERING=""
-    RADIUS_QUANTILE=""
+    SIZE_MEASURE=""
 
     while (($#)); do
         case "$1" in
@@ -131,8 +131,8 @@ parse_overrides() {
                 DYNAMIC_BUFFERING="${2:-}"
                 shift 2
                 ;;
-            --radius-quantile)
-                RADIUS_QUANTILE="${2:-}"
+            --size-measure)
+                SIZE_MEASURE="${2:-}"
                 shift 2
                 ;;
             --)
@@ -172,8 +172,8 @@ build_override_args() {
     if [[ -n "${DYNAMIC_BUFFERING}" ]]; then
         OVERRIDE_ARGS+=("--dynamic-buffering" "${DYNAMIC_BUFFERING}")
     fi
-    if [[ -n "${RADIUS_QUANTILE}" ]]; then
-        OVERRIDE_ARGS+=("--radius-quantile" "${RADIUS_QUANTILE}")
+    if [[ -n "${SIZE_MEASURE}" ]]; then
+        OVERRIDE_ARGS+=("--size-measure" "${SIZE_MEASURE}")
     fi
 }
 

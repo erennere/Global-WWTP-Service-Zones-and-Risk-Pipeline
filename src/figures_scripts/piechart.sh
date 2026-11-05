@@ -15,7 +15,7 @@ init_log "piechart"
 enable_err_trap
 
 # Usage:
-#   ./figures_scripts/piechart.sh [mode] [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [radius_quantile]
+#   ./figures_scripts/piechart.sh [mode] [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [size_measure]
 #
 # mode:
 #   static       -> run only piechart_figure.py

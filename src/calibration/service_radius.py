@@ -1,41 +1,46 @@
-"""Calibrate the service radius against real catchments and census population.
+"""Calibrate plant size in people and the service radius against census population.
 
-Two steps, both from published data matched to our own plants:
+Two steps, both from published data matched to our own plants. They produce
+``footprint_to_people`` and ``radius_calibration`` in ``create_voronoi``
+(config.yaml).
 
-1. **Shape** (``radius_exponent`` and the ``radius_calibration`` rows).
-   EPA National Sewershed Dataset, sourced polygons only, matched to our plants
-   by CWNS ID. For each plant, r95 is the distance from the plant within which
-   95 % of its catchment area lies. ``log10 r95 = a + b log10 F`` is fitted on
-   plants with a usable footprint F (detected tanks + rectangles, no lagoon).
-   Row q holds ``coefficient_km = 10 ** (a + quantile_q(residuals))`` and, for
-   plants without a usable footprint, ``unsized_km = quantile_q(r95)``.
-   Optionally the GB catchments (Hoffmann et al.) are used as an independent
-   check: same fit, coverage of the US rows.
+1. **People per footprint** (``footprint_to_people``). For every plant with a
+   detected footprint F (tank circles + rectangles, no lagoon) and a reported
+   size S (``reported_size_columns`` without the skipped values, e.g.
+   HydroWASTE ``QUAL_POP`` 4) fit ``log10 S = intercept + slope log10 F``.
+   ``unsized_people`` is the median reported size of lagoon plants and plants
+   without detections.
 
-2. **Level** (``radius_quantile``). Census 2020 block-group population centroids
-   (USpopcenters, ``block_group2020.rda``) inside the sourced sewersheds of
-   states where almost every plant has a sourced boundary, so that people
-   outside them are unsewered. Each plant's service area is approximated by
-   its Thiessen cell among all our plants, cut by the circle; the chosen q is
-   the one whose total population matches the sewershed total. A
+2. **Radius** (``radius_calibration``). Census 2020 block-group population
+   centroids (USpopcenters, ``block_group2020.rda``) in states where almost
+   every plant has a sourced EPA sewershed, so that people outside them are
+   unsewered. Each centroid goes to the plant with the smallest distance /
+   sqrt(people) among all our plants nearby and stays with it inside the
+   plant's circle ``radius_at_10k_people_km * (people / 10000) ** radius_exponent``
+   - the pipeline's rule without basins. Evaluation plants: our plants matched
+   one-to-one to a sourced sewershed by CWNS ID, plant within 500 m of it.
+   For each size measure the grid pair with the smallest mean, over the size
+   classes <10k, 10k-100k and >100k people, of the class median
+   ``|log10 predicted / census|`` is chosen (large plants count as much as
+   small ones; a plant whose area holds nobody counts as a failure), among the
+   pairs whose total population is within ``TOTAL_TOLERANCE`` of the census
+   total, so that served and unserved totals stay unbiased. A
    leave-one-state-out run reports the out-of-sample error.
 
-Neighbour distance is reported in step 1 as well; it explained 0.1 % of r95
-in the 2026-11 run and is therefore not part of the rule.
+The GB catchments are not used: they stay the independent test.
 
 Usage::
 
     python -m src.calibration.service_radius \\
         --plants data/all_merged_v2.gpkg \\
         --epa-gdb data/validation_data/usa_epa_sewersheds/Version_1_3.gdb \\
-        --gb-dir data/validation_data/gbr_catchments \\
         --blockgroups block_group2020.rda --out notes/service_radius_calibration.json
 """
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
-import os
 
 import geopandas as gpd
 import numpy as np
@@ -43,18 +48,27 @@ import pandas as pd
 import shapely
 from scipy.spatial import cKDTree
 
-EARTH_RADIUS_M = 6_371_008.8
+try:
+    from ..create_voronoi import calculate_area, plant_size_people, reported_size_people
+    from ..starter import load_config
+except ImportError:  # run as a script from src/
+    from create_voronoi import calculate_area, plant_size_people, reported_size_people
+    from starter import load_config
+
 US_ALBERS = 5070
-BNG = 27700
 DEFAULT_STATES = {"MA": "25", "CT": "09", "RI": "44", "VT": "50", "NH": "33", "UT": "49", "KY": "21"}
-QUANTILES = (0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+EXPONENTS = (0.3, 0.35, 0.4, 0.45, 0.5)
+RADII_AT_10K_KM = tuple(np.round(np.arange(2.0, 6.01, 0.25), 2))
+SIZE_CLASSES = (1e4, 1e5)  # <10k, 10k-100k, >100k people
+CANDIDATE_PLANTS = 64  # nearest plants considered per population point
+TOTAL_TOLERANCE = 0.1  # allowed |total predicted / census - 1|
 
 
 # --------------------------------------------------------------------------- #
 # Inputs                                                                      #
 # --------------------------------------------------------------------------- #
 def load_plants(path):
-    """Our plants with lon, lat, footprint_m2, lagoon, CWNS ID and spacing.
+    """Our plants with lon, lat, footprint_m2, lagoon flag and CWNS ID.
 
     Accepts the merged GeoPackage (footprint computed exactly as the pipeline
     does) or a CSV with ``lon``, ``lat`` and ``footprint_m2`` columns.
@@ -62,214 +76,173 @@ def load_plants(path):
     if path.endswith((".csv", ".csv.gz")):
         df = pd.read_csv(path, low_memory=False, dtype={"CWNS_2022_ID": str})
     else:
-        try:
-            from ..create_voronoi import calculate_area
-        except ImportError:
-            from src.create_voronoi import calculate_area
         gdf = gpd.read_file(path).to_crs(4326)
         gdf = calculate_area(gdf)
         df = pd.DataFrame(gdf.drop(columns="geometry"))
         pts = gdf.geometry.representative_point()
         df["lon"], df["lat"] = pts.x.values, pts.y.values
     df = df[df["lon"].notna() & df["lat"].notna()].reset_index(drop=True)
-    df["footprint_m2"] = pd.to_numeric(df.get("footprint_m2", 0), errors="coerce").fillna(0.0)
+    df["footprint_m2"] = pd.to_numeric(df["footprint_m2"], errors="coerce").fillna(0.0)
     lagoon = df["lagoon_detected"] if "lagoon_detected" in df else pd.Series(False, index=df.index)
     df["lagoon"] = lagoon.astype(str).str.strip().str.lower().isin({"true", "1", "1.0", "yes"})
     df["sized"] = (df["footprint_m2"] > 0) & ~df["lagoon"]
     cwns = df["CWNS_2022_ID"] if "CWNS_2022_ID" in df else pd.Series(np.nan, index=df.index)
     df["cwns"] = cwns.astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(11).where(cwns.notna())
-    df["nnd2_km"] = two_neighbour_distance_km(df["lon"].to_numpy(), df["lat"].to_numpy())
     return df
 
 
-def two_neighbour_distance_km(lon, lat):
-    """Mean great-circle distance to the two nearest other plants (km)."""
-    lon, lat = np.radians(lon), np.radians(lat)
-    xyz = np.column_stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
-    d, _ = cKDTree(xyz).query(xyz, k=3)
-    return (2 * EARTH_RADIUS_M * np.arcsin(np.clip(d / 2, 0, 1)))[:, 1:3].mean(1) / 1000.0
-
-
-def reach_km(geoms, xs, ys, n=4000, seed=0):
-    """(r_far, r95, r50) in km of each polygon around its plant (metric CRS)."""
-    rng = np.random.default_rng(seed)
-    out = []
-    for geom, x, y in zip(geoms, xs, ys):
-        coords = shapely.get_coordinates(geom)
-        far = np.hypot(coords[:, 0] - x, coords[:, 1] - y).max()
-        minx, miny, maxx, maxy = geom.bounds
-        pts = shapely.points(rng.uniform(minx, maxx, n), rng.uniform(miny, maxy, n))
-        inside = shapely.contains(geom, pts)
-        if inside.sum() < 20:
-            out.append((far, np.nan, np.nan))
-            continue
-        q = shapely.get_coordinates(pts[inside])
-        d = np.hypot(q[:, 0] - x, q[:, 1] - y)
-        out.append((far, np.percentile(d, 95), np.percentile(d, 50)))
-    return np.asarray(out, dtype=float) / 1000.0
-
-
-def us_matches(plants, gdb):
-    """Our plants matched one-to-one to EPA sourced sewersheds (CONUS)."""
+def us_matches(plants, gdb, states):
+    """Our plants matched one-to-one to EPA sourced sewersheds in ``states``."""
     s = gpd.read_file(gdb, layer="Sewersheds")
-    s = s[(s["Method"] == "Sourced") & ~s["CWNS_ID"].str.contains(";") & s["Flag"].isna()
-          & (s["RESIDENTIAL_POP_2022"] > 0) & ~s["STATE_CODE"].isin(["AK", "HI", "PR", "GU", "VI", "AS", "MP"])]
-    j = s.merge(plants, left_on="CWNS_ID", right_on="cwns")
+    s = s[(s["Method"] == "Sourced") & s["STATE_CODE"].isin(states) & ~s["CWNS_ID"].str.contains(";")
+          & s["Flag"].isna()]
+    j = plants.reset_index().merge(s[["CWNS_ID", "STATE_CODE", "geometry"]], left_on="cwns", right_on="CWNS_ID")
     j = j[j.groupby("CWNS_ID")["CWNS_ID"].transform("size") == 1].reset_index(drop=True)
-    poly = gpd.GeoSeries(j.geometry, crs=4326).to_crs(US_ALBERS).make_valid()
+    poly = gpd.GeoSeries(j["geometry"], crs=4326).to_crs(US_ALBERS).make_valid()
     pt = gpd.GeoSeries(gpd.points_from_xy(j["lon"], j["lat"]), crs=4326).to_crs(US_ALBERS)
     near = poly.buffer(500).contains(pt).to_numpy()  # plant at its catchment
-    r = reach_km(poly.values, pt.x.values, pt.y.values)
-    j = j.assign(r_far_km=r[:, 0], r95_km=r[:, 1], r50_km=r[:, 2], poly=poly.values, pt=pt.values)
-    return j[near & np.isfinite(j["r95_km"])].reset_index(drop=True)
-
-
-def gb_matches(plants, gb_dir):
-    """Our plants inside exactly one GB catchment polygon, one plant per catchment."""
-    import tempfile
-    import zipfile
-    zpath = os.path.join(gb_dir, "catchments_consolidated.zip")
-    with tempfile.TemporaryDirectory() as tmp:
-        zipfile.ZipFile(zpath).extractall(tmp)
-        shp = next(f for f in os.listdir(tmp) if f.endswith(".shp"))
-        c = gpd.read_file(os.path.join(tmp, shp))
-    c = c[c.geometry.notna()].copy()
-    c["geometry"] = c.geometry.make_valid()
-    c = c.dissolve(by="identifier", as_index=False)
-    pts = gpd.GeoDataFrame(plants, geometry=gpd.points_from_xy(plants["lon"], plants["lat"]), crs=4326).to_crs(BNG)
-    j = gpd.sjoin(pts, c[["identifier", "geometry"]], predicate="within")
-    j = j[j["identifier"].map(j.groupby("identifier").size()) == 1]
-    j = j[j.index.map(j.groupby(level=0).size()) == 1]
-    poly = c.set_index("identifier").loc[j["identifier"]].geometry
-    r = reach_km(poly.values, j.geometry.x.values, j.geometry.y.values)
-    j = j.assign(r_far_km=r[:, 0], r95_km=r[:, 1], r50_km=r[:, 2])
-    return j[np.isfinite(j["r95_km"])].reset_index(drop=True)
+    return pd.DataFrame({"plant": j["index"], "state": j["STATE_CODE"], "poly": poly.values})[near].reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------- #
-# Step 1: shape                                                               #
+# Step 1: people per footprint                                                #
 # --------------------------------------------------------------------------- #
-def ols(y, cols):
-    X = np.column_stack([np.ones(len(y))] + list(cols))
-    b, *_ = np.linalg.lstsq(X, y, rcond=None)
-    r = y - X @ b
-    return b, float(1 - r.var() / y.var()), r
+def fit_footprint_to_people(plants, reported_size_columns, reported_size_skip):
+    """``log10 people = intercept + slope log10 footprint`` and the size-free people."""
+    reported = reported_size_people(plants, reported_size_columns, reported_size_skip)
+    has = np.isfinite(reported)
+    fit = plants["sized"].to_numpy() & has
+    x, y = np.log10(plants.loc[fit, "footprint_m2"].to_numpy()), np.log10(reported[fit])
+    slope, intercept = np.polyfit(x, y, 1)
+    unsized = ~plants["sized"].to_numpy() & has
+    return {"intercept": round(float(intercept), 3), "slope": round(float(slope), 3),
+            "unsized_people": round(float(np.median(reported[unsized]))),
+            "r2": float(np.corrcoef(x, y)[0, 1] ** 2), "n_fit": int(fit.sum()), "n_unsized": int(unsized.sum())}
 
 
-def fit_shape(matches):
-    """Fit log10 r95 on log10 footprint; report what neighbour distance adds."""
-    sized = matches[matches["sized"]]
-    x, y = np.log10(sized["footprint_m2"].to_numpy()), np.log10(sized["r95_km"].to_numpy())
-    (a, b), r2, resid = ols(y, [x])
-    _, r2_nnd, _ = ols(y, [np.log10(sized["nnd2_km"].to_numpy())])
-    _, r2_both, _ = ols(y, [x, np.log10(sized["nnd2_km"].to_numpy())])
-    unsized = matches.loc[~matches["sized"], "r95_km"].to_numpy()
-    rows = {q: {"coefficient_km": round(float(10 ** (a + np.quantile(resid, q))), 3),
-                "unsized_km": round(float(np.quantile(unsized, q)), 2)} for q in QUANTILES}
-    return {"intercept": float(a), "exponent": float(b), "r2_footprint": r2, "r2_neighbour_distance": r2_nnd,
-            "r2_footprint_and_neighbours": r2_both, "residual_sd": float(resid.std()), "n_sized": len(sized),
-            "n_unsized": len(unsized), "rows": rows}
+# --------------------------------------------------------------------------- #
+# Step 2: radius                                                              #
+# --------------------------------------------------------------------------- #
+def _abs_log_error(pred, truth):
+    """|log10 pred / truth|; a plant whose area holds nobody counts as infinitely wrong."""
+    return np.where(pred > 0, np.abs(np.log10(np.maximum(pred, 1.0) / truth)), np.inf)
 
 
-def coverage(matches, shape):
-    """Share of catchments whose r95 lies inside the circle of each row."""
-    F = np.where(matches["sized"], matches["footprint_m2"], 1.0)
-    out = {}
-    for q, row in shape["rows"].items():
-        radius = np.where(matches["sized"], row["coefficient_km"] * F ** shape["exponent"], row["unsized_km"])
-        out[q] = float(np.mean(matches["r95_km"].to_numpy() <= radius))
+def class_balanced_error(pred, truth):
+    """Mean over the size classes of the class median |log10 pred / truth|."""
+    cls = np.digitize(truth, SIZE_CLASSES)
+    err = _abs_log_error(pred, truth)
+    return float(np.mean([np.median(err[cls == c]) for c in np.unique(cls)]))
+
+
+def summary(pred, truth):
+    cls = np.digitize(truth, SIZE_CLASSES)
+    err = _abs_log_error(pred, truth)
+    out = {"class_balanced_error_x": 10 ** class_balanced_error(pred, truth), "typical_error_x": 10 ** float(np.median(err)),
+           "within_factor_2": float(np.mean(err <= np.log10(2))), "total_ratio": float(pred.sum() / truth.sum()),
+           "n": int(len(truth))}
+    for c, label in enumerate(("<10k", "10k-100k", ">100k")):
+        if (cls == c).any():
+            out[f"ratio {label}"] = float(pred[cls == c].sum() / truth[cls == c].sum())
     return out
 
 
-# --------------------------------------------------------------------------- #
-# Step 2: level                                                               #
-# --------------------------------------------------------------------------- #
-def choose_quantile(plants, us, shape, blockgroups, states=DEFAULT_STATES):
-    """Pick q from census population; leave-one-state-out check."""
+def choose_radius(plants, size_people, matches, blockgroups, max_buffer_m, states=DEFAULT_STATES):
+    """Pick (radius_exponent, radius_at_10k_people_km) on census population; leave-one-state-out."""
     import pyreadr
 
     bg = pyreadr.read_r(blockgroups)["block_group2020"]
     bg = bg[bg["STATEFP"].isin(states.values()) & (bg["POPULATION"] > 0)]
     pop = gpd.GeoSeries(gpd.points_from_xy(bg["LONGITUDE"], bg["LATITUDE"]), crs=4326).to_crs(US_ALBERS)
     popv = bg["POPULATION"].to_numpy(dtype=float)
+    pxy = np.column_stack([pop.x, pop.y])
+
+    pts = gpd.GeoSeries(gpd.points_from_xy(plants["lon"], plants["lat"]), crs=4326).to_crs(US_ALBERS)
+    lo, hi = pxy.min(0) - 100_000, pxy.max(0) + 100_000
+    keep = np.flatnonzero(pts.x.between(lo[0], hi[0]).to_numpy() & pts.y.between(lo[1], hi[1]).to_numpy())
+    plxy = np.column_stack([pts.x.values[keep], pts.y.values[keep]])
+    position = {p: i for i, p in enumerate(keep)}
+    cand_d, cand_i = cKDTree(plxy).query(pxy, k=min(CANDIDATE_PLANTS, len(plxy)))
+    people = size_people[keep]
+    rows = np.arange(len(pxy))
+
     tree = shapely.STRtree(pop.values)
+    ev = matches[matches["plant"].isin(position)].reset_index(drop=True)
+    truth = np.array([popv[tree.query(g, predicate="contains")].sum() for g in ev["poly"]])
+    ev, truth = ev[truth > 0].reset_index(drop=True), truth[truth > 0]
+    ev_idx = np.array([position[p] for p in ev["plant"]])
+    state = ev["state"].to_numpy()
 
-    conus = plants[plants["lon"].between(-125, -66) & plants["lat"].between(24, 50)]
-    P = gpd.GeoSeries(gpd.points_from_xy(conus["lon"], conus["lat"]), crs=4326).to_crs(US_ALBERS)
-    P = P[~P.duplicated()]
-    region = shapely.box(*P.total_bounds).buffer(200_000)
-    cells = list(shapely.get_parts(shapely.voronoi_polygons(shapely.multipoints(P.values), extend_to=region)))
-    cell_tree = shapely.STRtree(cells)
+    k = np.argmin(cand_d / np.sqrt(people)[cand_i], axis=1)
+    winner, dist = cand_i[rows, k], cand_d[rows, k]
+    preds = {}
+    for e, r10 in itertools.product(EXPONENTS, RADII_AT_10K_KM):
+        radius = np.minimum(r10 * (people / 1e4) ** e * 1000.0, max_buffer_m)
+        owner = np.where(dist <= radius[winner], winner, -1)
+        m = owner >= 0
+        preds[(e, float(r10))] = np.bincount(owner[m], weights=popv[m], minlength=len(plxy))[ev_idx]
 
-    ev = us[us["STATE_CODE"].isin(states)].reset_index(drop=True)
-    truth = [set(tree.query(g, predicate="contains").tolist()) for g in ev["poly"]]
-    P_true = np.array([popv[list(t)].sum() for t in truth])
-    near = []  # population points in each plant's Thiessen cell, with their distance to the plant
-    for pt in ev["pt"]:
-        cell = cells[int(cell_tree.query(pt, predicate="within")[0])]
-        idx = tree.query(cell, predicate="contains")
-        xy = shapely.get_coordinates(pop.values[idx])
-        near.append((idx, np.hypot(xy[:, 0] - pt.x, xy[:, 1] - pt.y)))
+    def best(mask):
+        unbiased = [key for key in preds
+                    if abs(preds[key][mask].sum() / truth[mask].sum() - 1) <= TOTAL_TOLERANCE]
+        if not unbiased:
+            raise RuntimeError("no radius on the grid keeps the total population within TOTAL_TOLERANCE")
+        return min(unbiased, key=lambda key: class_balanced_error(preds[key][mask], truth[mask]))
 
-    F = np.where(ev["sized"], ev["footprint_m2"], 1.0)
-    def predicted(q):
-        row = shape["rows"][q]
-        r = 1000 * np.where(ev["sized"], row["coefficient_km"] * F ** shape["exponent"], row["unsized_km"])
-        return np.array([popv[idx[d <= rr]].sum() for (idx, d), rr in zip(near, np.minimum(r, 50_000))])
-
-    preds = {q: predicted(q) for q in shape["rows"]}
-    def score(pred, mask):
-        ok = mask & (P_true > 0) & (pred > 0)
-        lr = np.log10(pred[ok] / P_true[ok])
-        return {"total_ratio": float(pred[mask].sum() / P_true[mask].sum()), "median_abs_log10": float(np.median(np.abs(lr))),
-                "within_factor_2": float(np.mean(np.abs(lr) <= np.log10(2))), "n": int(mask.sum())}
     every = np.ones(len(ev), bool)
-    table = {q: score(p, every) for q, p in preds.items()}
-    chosen = min(preds, key=lambda q: abs(table[q]["total_ratio"] - 1))
+    chosen = best(every)
     folds = []
-    for st in sorted(ev["STATE_CODE"].unique()):
-        train = ev["STATE_CODE"].to_numpy() != st
-        qs = min(preds, key=lambda q: abs(preds[q][train].sum() / P_true[train].sum() - 1))
-        folds.append({"held_out": st, "q": qs, **score(preds[qs], ~train)})
-    return {"states": sorted(states), "n_plants": len(ev), "people": float(popv.sum()),
-            "by_quantile": table, "chosen": chosen, "leave_one_state_out": folds}
+    for st in sorted(set(state)):
+        train = state != st
+        key = best(train)
+        folds.append({"held_out": st, "radius_exponent": key[0], "radius_at_10k_people_km": key[1],
+                      **summary(preds[key][~train], truth[~train])})
+    by_exponent = {}
+    for e in EXPONENTS:
+        keys = [k for k in preds if k[0] == e and abs(preds[k].sum() / truth.sum() - 1) <= TOTAL_TOLERANCE]
+        if keys:
+            key = min(keys, key=lambda k: class_balanced_error(preds[k], truth))
+            by_exponent[e] = {"radius_at_10k_people_km": key[1], **summary(preds[key], truth)}
+    return {"states": sorted(states), "n_plants": int(len(ev)), "people_in_sewersheds": float(truth.sum()),
+            "radius_exponent": chosen[0], "radius_at_10k_people_km": chosen[1],
+            "in_sample": summary(preds[chosen], truth), "best_per_exponent": by_exponent,
+            "leave_one_state_out": folds}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--plants", required=True, help="Merged plant GeoPackage or CSV with lon/lat/footprint_m2")
     parser.add_argument("--epa-gdb", required=True, help="EPA National Sewershed Dataset Version_1_3.gdb")
-    parser.add_argument("--gb-dir", default=None, help="Folder with catchments_consolidated.zip (independent check)")
-    parser.add_argument("--blockgroups", default=None, help="USpopcenters block_group2020.rda (step 2)")
+    parser.add_argument("--blockgroups", required=True, help="USpopcenters block_group2020.rda")
     parser.add_argument("--out", default=None, help="Write the full result as JSON")
     args = parser.parse_args()
 
+    cfg = load_config(script_name="create_voronoi")
     plants = load_plants(args.plants)
-    us = us_matches(plants, args.epa_gdb)
-    shape = fit_shape(us)
-    result = {"shape_us": shape, "coverage_us": coverage(us, shape)}
-    print(f"US: n={shape['n_sized']} sized + {shape['n_unsized']} unsized; log10 r95 = {shape['intercept']:.3f} + "
-          f"{shape['exponent']:.3f} log10 F, R2 {shape['r2_footprint']:.3f}; neighbour distance alone R2 "
-          f"{shape['r2_neighbour_distance']:.3f}, with footprint {shape['r2_footprint_and_neighbours']:.3f}")
-    if args.gb_dir:
-        gb = gb_matches(plants, args.gb_dir)
-        result["shape_gb"] = {k: v for k, v in fit_shape(gb).items() if k != "rows"}
-        result["coverage_gb_with_us_rows"] = coverage(gb, shape)
-        print(f"GB: exponent {result['shape_gb']['exponent']:.3f}, R2 {result['shape_gb']['r2_footprint']:.3f}; "
-              f"coverage of US rows {result['coverage_gb_with_us_rows']}")
-    if args.blockgroups:
-        level = choose_quantile(plants, us, shape, args.blockgroups)
-        result["level"] = level
-        print(pd.DataFrame(level["by_quantile"]).T.round(3).to_string())
-        print(pd.DataFrame(level["leave_one_state_out"]).round(3).to_string(index=False))
-        print("chosen radius_quantile:", level["chosen"])
-    print("\nconfig.yaml rows:")
-    print(f"  radius_exponent: {shape['exponent']:.3f}")
-    for q, row in shape["rows"].items():
-        print(f"    {q}: {{coefficient_km: {row['coefficient_km']:.3f}, unsized_km: {row['unsized_km']:.2f}}}")
+    to_people = fit_footprint_to_people(plants, cfg["reported_size_columns"], cfg["reported_size_skip"])
+    print(f"people per footprint: log10 S = {to_people['intercept']} + {to_people['slope']} log10 F "
+          f"(n {to_people['n_fit']}, R2 {to_people['r2']:.2f}); size-free plants {to_people['unsized_people']} people "
+          f"(n {to_people['n_unsized']})")
+    matches = us_matches(plants, args.epa_gdb, DEFAULT_STATES)
+    result = {"footprint_to_people": to_people, "radius_calibration": {}}
+    for measure in ("reported", "footprint"):
+        size = plant_size_people(plants, measure, to_people, cfg["reported_size_columns"], cfg["reported_size_skip"])
+        res = choose_radius(plants, size, matches, args.blockgroups, cfg["max_buffer"])
+        result["radius_calibration"][measure] = res
+        print(f"\n== {measure}: radius_exponent {res['radius_exponent']}, radius_at_10k_people_km "
+              f"{res['radius_at_10k_people_km']} ({res['n_plants']} plants)")
+        print(pd.DataFrame(res["best_per_exponent"]).T.round(3).to_string())
+        print(pd.DataFrame(res["leave_one_state_out"]).round(3).to_string(index=False))
+    print("\nconfig.yaml (create_voronoi):")
+    print(f"  footprint_to_people: {{intercept: {to_people['intercept']}, slope: {to_people['slope']}, "
+          f"unsized_people: {to_people['unsized_people']}}}")
+    print("  radius_calibration:")
+    for measure, res in result["radius_calibration"].items():
+        print(f"    {measure}: {{radius_exponent: {res['radius_exponent']}, "
+              f"radius_at_10k_people_km: {res['radius_at_10k_people_km']}}}")
     if args.out:
         with open(args.out, "w") as f:
-            json.dump(result, f, indent=1, default=str)
+            json.dump(result, f, indent=1, default=float)
 
 
 if __name__ == "__main__":

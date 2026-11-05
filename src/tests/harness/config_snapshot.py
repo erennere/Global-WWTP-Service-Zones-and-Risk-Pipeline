@@ -37,7 +37,7 @@ OVERRIDE_SETS = {
         "weight_method": "linear",
         "weight_func": "mult",
         "dynamic_buffering": "false",
-        "radius_quantile": "0.7",
+        "size_measure": "footprint",
     },
 }
 

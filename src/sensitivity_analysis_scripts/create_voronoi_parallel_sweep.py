@@ -6,13 +6,13 @@ Runs 4 instances of create_voronoi.py in parallel, each handling a subset
 of parameter combinations. Designed to be called from SLURM array jobs.
 
 Usage:
-    python -m src.sensitivity_analysis_scripts.create_voronoi_parallel_sweep --task-id <id> [--version <v>] [--dynamic-buffering <true|false>] [--radius-quantile <q>] [--approach APPROACH]
+    python -m src.sensitivity_analysis_scripts.create_voronoi_parallel_sweep --task-id <id> [--version <v>] [--dynamic-buffering <true|false>] [--size-measure <reported|footprint>] [--approach APPROACH]
 
 Parameters:
     TASK_ID: SLURM array task ID (0-9)
     VERSION: Optional config version
     DYNAMIC_BUFFERING: Backward-compatible positional arg (ignored; sweep grid controls this)
-    RADIUS_QUANTILE: Backward-compatible positional arg (ignored; sweep grid controls this)
+    SIZE_MEASURE: Backward-compatible positional arg (ignored; sweep grid controls this)
     APPROACH: Approach to run (default: 1)
 """
 
@@ -58,7 +58,7 @@ def generate_parameter_combinations(weight_func_filter: str = "all") -> List[Tup
 
     Combination tuple:
         (level, version, buffer, weight_method, weight_func,
-         dynamic_buffering, radius_quantile)
+         dynamic_buffering, size_measure)
     """
     levels = [6, 7, 8, 9]
     # The additive weighting stays available to single runs (and through the
@@ -73,10 +73,10 @@ def generate_parameter_combinations(weight_func_filter: str = "all") -> List[Tup
         weight_funcs = [""]
     else:
         raise ValueError("weight_func_filter must be one of: all, add, mult, none")
-    weight_methods = ["linear", "logarithmic", "square_root", "sigmoid"]
+    weight_methods = ["size", "linear", "logarithmic", "square_root", "sigmoid"]
     rigid_buffers = [9000, 11000, 13000, 15000]
-    # Calibrated service-radius quantiles (must be keys of radius_calibration in config.yaml)
-    radius_quantiles = [0.5, 0.6, 0.7]
+    # Plant size measures (must be keys of radius_calibration in config.yaml)
+    size_measures = ["reported", "footprint"]
     
     combinations = []
     for level in levels:
@@ -86,6 +86,9 @@ def generate_parameter_combinations(weight_func_filter: str = "all") -> List[Tup
                 # so weight_method has no effect on the output. Only include
                 # one canonical method (linear) to avoid redundant runs.
                 if weight_func == "" and weight_method != "linear":
+                    continue
+                # 'size' weights only exist for the multiplicative distance.
+                if weight_method == "size" and weight_func != "mult":
                     continue
 
                 # (a) Rigid buffering regime.
@@ -100,8 +103,8 @@ def generate_parameter_combinations(weight_func_filter: str = "all") -> List[Tup
                         "",
                     ))
 
-                # (b) Size-based service radius, one run per calibrated quantile.
-                for q in radius_quantiles:
+                # (b) Size-based service radius, one run per size measure.
+                for q in size_measures:
                     combinations.append((
                         level,
                         "",
@@ -136,7 +139,7 @@ def print_task_combinations(
     """Print this task's assigned combinations as tab-separated lines.
 
     Emits ``level``, ``buffer``, ``weight_method``, ``weight_func``,
-    ``dynamic_buffering``, ``radius_quantile`` per line (the ``version``
+    ``dynamic_buffering``, ``size_measure`` per line (the ``version``
     field of the combination tuple is dropped - the sweep .sh wrappers
     supply their own version via config/CLI override). Empty strings are
     encoded as ``__EMPTY__`` since the .sh wrappers parse this with a
@@ -151,9 +154,9 @@ def print_task_combinations(
     assigned = filter_combinations_by_task(
         combinations, task_id, num_tasks=num_tasks, shuffle_seed=shuffle_seed
     )
-    for level, _version, buffer, weight_method, weight_func, dynamic_buffering, radius_quantile in assigned:
+    for level, _version, buffer, weight_method, weight_func, dynamic_buffering, size_measure in assigned:
         wf = weight_func if weight_func != "" else "__EMPTY__"
-        dbk = radius_quantile if radius_quantile != "" else "__EMPTY__"
+        dbk = size_measure if size_measure != "" else "__EMPTY__"
         print(f"{level}\t{buffer}\t{weight_method}\t{wf}\t{dynamic_buffering}\t{dbk}")
 
 
@@ -180,7 +183,7 @@ def run_voronoi_job(
     project_root: str,
     version: str = "",
     dynamic_buffering: str = "",
-    radius_quantile: str = "",
+    size_measure: str = "",
     max_retries: int = 2,
 ) -> List[Tuple[int, str, int, str, str, str, str]]:
     """
@@ -190,7 +193,7 @@ def run_voronoi_job(
         job_id: Identifier for this job (0-3)
         combinations: List of
             (level, version, buffer, weight_method, weight_func,
-             dynamic_buffering, radius_quantile) tuples
+             dynamic_buffering, size_measure) tuples
         approach: Approach ID to run
         logger: Logger instance
         project_root: Root project directory
@@ -212,7 +215,7 @@ def run_voronoi_job(
         if combo in output_exists_cache:
             return output_exists_cache[combo]
 
-        level, combo_version, buffer, weight_method, weight_func, combo_dynamic_buffering, combo_radius_quantile = combo
+        level, combo_version, buffer, weight_method, weight_func, combo_dynamic_buffering, combo_size_measure = combo
         version_override = version or combo_version or None
 
         cfg = load_config(
@@ -223,7 +226,7 @@ def run_voronoi_job(
             weight_method=weight_method,
             weight_func=weight_func,
             dynamic_buffering=combo_dynamic_buffering if combo_dynamic_buffering else None,
-            radius_quantile=combo_radius_quantile if combo_radius_quantile else None,
+            size_measure=combo_size_measure if combo_size_measure else None,
         )
         output_path = create_output_paths(cfg)["voronoi"][approach]
         exists = os.path.exists(output_path)
@@ -233,10 +236,10 @@ def run_voronoi_job(
     try:
         import subprocess
 
-        for run_idx, (level, _, buffer, weight_method, weight_func, combo_dynamic_buffering, combo_radius_quantile) in enumerate(combinations, 1):
+        for run_idx, (level, _, buffer, weight_method, weight_func, combo_dynamic_buffering, combo_size_measure) in enumerate(combinations, 1):
             log_msg = f"Job {job_id}: Run {run_idx}/{len(combinations)}: " \
                      f"level={level} buffer={buffer} weight_method={weight_method} " \
-                     f"weight_func='{weight_func}' dynamic_buffering={combo_dynamic_buffering} radius_quantile={combo_radius_quantile}"
+                     f"weight_func='{weight_func}' dynamic_buffering={combo_dynamic_buffering} size_measure={combo_size_measure}"
             logger.debug(f"[Job {job_id}] {log_msg}")
 
             # Build command
@@ -263,8 +266,8 @@ def run_voronoi_job(
                 cmd.extend(["--version", version])
             if combo_dynamic_buffering:
                 cmd.extend(["--dynamic-buffering", combo_dynamic_buffering])
-            if combo_radius_quantile:
-                cmd.extend(["--radius-quantile", combo_radius_quantile])
+            if combo_size_measure:
+                cmd.extend(["--size-measure", combo_size_measure])
             env = os.environ.copy()
             env["WWTP_SERVICE_PIPELINE_LOG_LEVEL"] = "INFO"
 
@@ -294,7 +297,7 @@ def run_voronoi_job(
                     time.sleep(backoff_seconds)
 
             if not run_succeeded:
-                combo = (level, "", buffer, weight_method, weight_func, combo_dynamic_buffering, combo_radius_quantile)
+                combo = (level, "", buffer, weight_method, weight_func, combo_dynamic_buffering, combo_size_measure)
                 if output_exists_for_combo(combo):
                     logger.warning(
                         "[Job %s] Run %s returned non-zero but output file exists; skipping retry mark",
@@ -335,7 +338,7 @@ def execute_with_job_count(
     project_root: str,
     version: str,
     dynamic_buffering: str,
-    radius_quantile: str,
+    size_measure: str,
     retry_failed_runs: int,
 ) -> List[Tuple[int, str, int, str, str, str, str]]:
     """Execute a batch with a fixed number of jobs and return failed combinations."""
@@ -363,7 +366,7 @@ def execute_with_job_count(
                 project_root,
                 version,
                 dynamic_buffering,
-                radius_quantile,
+                size_measure,
                 retry_failed_runs,
             ): job_id
             for job_id, combos in non_empty_jobs
@@ -393,7 +396,7 @@ def main():
                        help="Optional config version")
     parser.add_argument("--dynamic-buffering", default="",
                        help="Optional global dynamic buffering override")
-    parser.add_argument("--radius-quantile", default="",
+    parser.add_argument("--size-measure", default="",
                        help="Optional global service-radius quantile override")
     parser.add_argument("--approach", type=str, default="1",
                        help="Approach to run (default: 1)")
@@ -430,7 +433,7 @@ def main():
     logger.info(f"Initial parallel jobs: {args.num_jobs}")
     logger.info(f"Shuffle seed: {args.shuffle_seed}")
     logger.info(f"Weight function filter: {args.weight_func_filter}")
-    if args.dynamic_buffering or args.radius_quantile:
+    if args.dynamic_buffering or args.size_measure:
         logger.info(
             "Dynamic buffering global overrides were provided; "
             "sweep combinations still define rigid and dynamic modes explicitly."
@@ -473,7 +476,7 @@ def main():
                 project_root=project_root,
                 version=args.version,
                 dynamic_buffering=args.dynamic_buffering,
-                radius_quantile=args.radius_quantile,
+                size_measure=args.size_measure,
                 retry_failed_runs=args.retry_failed_runs,
             )
 

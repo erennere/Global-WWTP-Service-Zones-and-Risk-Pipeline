@@ -70,7 +70,7 @@ SUBSET_TYPES = ("ver", "unver", "single")
 _PARAM_COLS = [
     "alias", "level", "version", "buffer", "buffer_path_token",
     "weight_method", "weight_type", "weight_func", "weight_func_suffix",
-    "dynamic_buffering", "radius_quantile", "approach",
+    "dynamic_buffering", "size_measure", "approach",
 ]
 
 # ── Process-local globals for parallel workers ────────────────────────────────
@@ -105,7 +105,7 @@ def enumerate_sweep_records(approach, weight_func_filter="all"):
     combos = generate_parameter_combinations(weight_func_filter=weight_func_filter)
     records = []
     for idx, (level, version, buffer, weight_method, weight_func,
-               dynamic_buffering, radius_quantile) in enumerate(combos, start=1):
+               dynamic_buffering, size_measure) in enumerate(combos, start=1):
         cfg = load_config(
             script_name="add_pop",
             level=level,
@@ -114,7 +114,7 @@ def enumerate_sweep_records(approach, weight_func_filter="all"):
             weight_method=weight_method,
             weight_func=weight_func or None,
             dynamic_buffering=dynamic_buffering,
-            radius_quantile=radius_quantile or None,
+            size_measure=size_measure or None,
         )
         # Build the pop-output path directly from resolved config values.
         # create_pop_output_paths -> create_output_paths requires buffers_dir,
@@ -142,7 +142,7 @@ def enumerate_sweep_records(approach, weight_func_filter="all"):
             "weight_func": weight_func,
             "weight_func_suffix": cfg["weight_func_suffix"],
             "dynamic_buffering": dynamic_buffering,
-            "radius_quantile": radius_quantile,
+            "size_measure": size_measure,
             "approach": approach,
         })
     return records

@@ -56,7 +56,7 @@ mapfile -t RASTER_CONFIG < <(
     WEIGHT_METHOD_OVERRIDE="${WEIGHT_METHOD}" \
     WEIGHT_FUNC_OVERRIDE="${WEIGHT_FUNC}" \
     DYNAMIC_BUFFERING_OVERRIDE="${DYNAMIC_BUFFERING}" \
-    RADIUS_QUANTILE_OVERRIDE="${RADIUS_QUANTILE}" \
+    SIZE_MEASURE_OVERRIDE="${SIZE_MEASURE}" \
     "${PYTHON_CMD}" - <<'PY'
 import os
 
@@ -80,7 +80,7 @@ cfg = load_config(
     weight_method=env_value("WEIGHT_METHOD_OVERRIDE"),
     weight_func=env_value("WEIGHT_FUNC_OVERRIDE", preserve_empty=True),
     dynamic_buffering=env_value("DYNAMIC_BUFFERING_OVERRIDE"),
-    radius_quantile=env_value("RADIUS_QUANTILE_OVERRIDE"),
+    size_measure=env_value("SIZE_MEASURE_OVERRIDE"),
 )
 annotations = cfg.get("annotations") or {}
 print(os.path.abspath("config.yaml"))

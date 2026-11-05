@@ -190,14 +190,23 @@ create_voronoi:
   level: null
   version: null
   buffer: 9000
-  weight_method: 'logarithmic'
+  # 'size': each plant's Voronoi weight is sqrt(plant size in people), so at
+  # equal density its area grows in proportion to its people. Needs weight_func
+  # 'mult'. The other methods transform the detected area (create_weights).
+  weight_method: 'size'
   weight_func: 'mult'
   dynamic_buffering: true
-  # Service radius quantile q: the circle around a plant is as large as the
-  # q-quantile of the reach of real catchments of that plant size (see
-  # radius_calibration). 0.6 gives an unbiased total population on the US test
-  # subset and was chosen in 5 of 7 leave-one-state-out folds.
-  radius_quantile: 0.6
+  # Plant size in people, used by the service radius and by weight_method 'size':
+  #   reported  - the first positive value in reported_size_columns, the
+  #               footprint estimate where there is none
+  #   footprint - the footprint estimate for every plant (detections only)
+  # GB catchments (not used for calibration), service-area / real population for
+  # catchments of <10k, 10k-100k, 100k-500k, >500k people:
+  #   reported  1.40, 1.09, 1.00, 1.01 (typical plant error x1.59)
+  #   footprint 2.21, 1.35, 0.97, 0.67 (x1.82): the detected footprint of the
+  #   largest plants is hardly larger than that of mid-size ones.
+  # See notes/service_radius_size_rule_2026-11-05.md.
+  size_measure: 'reported'
   max_workers: 16
   n_points: 100
   # Sites closer than this (m) are merged before the Voronoi run. Was
@@ -224,28 +233,34 @@ create_voronoi:
   # Largest service radius (m) in either mode: HydroFATE's largest
   # allocation distance (Ehalt Macedo et al. 2024, GMD 17:2877, supplement S.1).
   max_buffer: 50000
-  # Size-based service radius (dynamic_buffering: true):
-  #   radius_km = coefficient_km * footprint_m2 ** radius_exponent, at most max_buffer
-  # footprint_m2 = detected tank circles + rectangles. Lagoon plants
-  # (lagoon_detected) and plants without detections get unsized_km.
-  # Shape: 1,476 EPA sourced sewersheds matched to our plants, r95 (distance
-  # holding 95 % of the catchment area) vs footprint: log10 r95 = -0.305 + 0.286
-  # log10 F, R2 0.28 (GB catchments, independent: exponent 0.26, R2 0.27).
-  # Neighbour distance explains 0.1 % of r95 and is not used.
-  # Rows: per quantile q of the residuals; at most a share 1 - q of the US
-  # catchments reach beyond the circle.
-  # Level (radius_quantile): census 2020 block-group population in 558 sourced
-  # sewersheds in CT, KY, MA, NH, RI, UT, VT vs Thiessen cell x circle.
+  # Columns holding a plant's reported size, in order of preference: HydroWASTE
+  # people served, EPA CWNS 2022 people served (US), UWWTD load entering the
+  # plant in population equivalents (EU; GB plants: POP_SERVED = 0.91 x load).
+  reported_size_columns: ['POP_SERVED', 'EPA POP 2022', 'uwwLoadEnteringUWWTP']
+  # Values skipped: HydroWASTE QUAL_POP 4 is POP_SERVED estimated as the people
+  # within 11 km of the plant, not a record of the plant.
+  reported_size_skip: {POP_SERVED: {QUAL_POP: [4]}}
+  # Footprint estimate: log10 people = intercept + slope * log10 footprint_m2,
+  # footprint_m2 = detected tank circles + rectangles; fitted on the 24,505
+  # plants with both a footprint and a reported size (R2 0.31). Lagoon plants and
+  # plants without detections get unsized_people (median reported size of such
+  # plants, n 13,442).
+  footprint_to_people: {intercept: 1.523, slope: 0.7, unsized_people: 2580}
+  # Service radius (dynamic_buffering: true), per size_measure:
+  #   radius_km = radius_at_10k_people_km * (people / 10000) ** radius_exponent,
+  #   at most max_buffer
+  # Chosen on 2020 census block-group population in the 444 EPA sourced
+  # sewersheds of CT, KY, MA, NH, RI, UT and VT matched to our plants, with the
+  # same rule (sqrt(people) weights, circle): among the pairs whose total stays
+  # within 10 % of the census total, the one with the smallest typical error
+  # averaged over the size classes <10k, 10k-100k and >100k people, so that large
+  # plants count as much as small ones. US result (reported): typical error x1.38
+  # per class, 74 % of plants within a factor 2, total 0.99. GB catchments: not
+  # used.
   # Regenerate with: python -m src.calibration.service_radius --help
-  radius_exponent: 0.286
   radius_calibration:
-    0.3: {coefficient_km: 0.367, unsized_km: 2.20}
-    0.4: {coefficient_km: 0.421, unsized_km: 2.65}
-    0.5: {coefficient_km: 0.492, unsized_km: 3.22}
-    0.6: {coefficient_km: 0.568, unsized_km: 4.04}
-    0.7: {coefficient_km: 0.660, unsized_km: 4.96}
-    0.8: {coefficient_km: 0.791, unsized_km: 6.51}
-    0.9: {coefficient_km: 1.025, unsized_km: 9.85}
+    reported: {radius_exponent: 0.3, radius_at_10k_people_km: 3.75}
+    footprint: {radius_exponent: 0.5, radius_at_10k_people_km: 4.25}
   scipy_true: false
   cv2_true: false
   city_voronoi: false
@@ -285,7 +300,7 @@ add_pop:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   add_pop_max_workers: 8
   country_output_column: null
   overwrite_existing: false
@@ -302,7 +317,7 @@ create_rasters:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   zoom_level: 8
   min_pixels: 9
   # A pixel counts as served when its centre lies in a service area
@@ -344,7 +359,7 @@ find_unserved_pop:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   country_output_column: null
   max_workers: null
   is_parallel: true
@@ -368,7 +383,7 @@ find_diff_pop:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   max_workers: null
   basin_column_name: null
   country_output_column: null
@@ -395,7 +410,7 @@ assign_rivers_to_basin:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   paths:
     data_dir: null
     watershed: null
@@ -410,7 +425,7 @@ find_intersection_river:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   basin_column_name: null
   paths:
     data_dir: null
@@ -425,7 +440,7 @@ impact_polygons_pop:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   impact_polygons_pop_params:
     org_per_pop: 60.0
     width: 12.0
@@ -453,7 +468,7 @@ find_pop_in_danger_pop:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   zoom_level: null
   country_boundary_column: null
   country_output_column: null
@@ -497,7 +512,7 @@ find_unconnected_industrial_areas:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   max_workers: null
   n_points: null
   threshold: null
@@ -514,7 +529,9 @@ find_unconnected_industrial_areas:
   prepare_data_fn: null
   flush_size: null
   max_buffer: null
-  radius_exponent: null
+  reported_size_columns: null
+  reported_size_skip: null
+  footprint_to_people: null
   radius_calibration: null
   industrial_min_cells: null
   # null = the same category list create_voronoi uses for remove_industrial,
@@ -562,7 +579,7 @@ verification_script:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   percent_verification: 0.8
   paths:
     data_dir: null
@@ -576,7 +593,7 @@ hw_comparison:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   paths:
     data_dir: null
     verification_dir: null
@@ -589,7 +606,7 @@ eu_comparison:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   # Max distance (m) between a service area and a UWWTD plant to pair them.
   # Was inherited from final_data_merge.threshold; same value, now explicit.
   threshold: 500
@@ -610,7 +627,7 @@ interactive_unconnected_industrial_map:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   initial_zoom: 2
   vector_tiles:
     enabled: true
@@ -636,7 +653,7 @@ composite_area_population_plots:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   zonal_sum_default_column: '2024_zonal_sum'
   min_country_facility_count: 25
   # Earliest consumer of the shared outlier-clipping knobs; pop_at_risk_figures
@@ -666,7 +683,7 @@ piechart_figure:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   zonal_sum_default_column: null
   industrial_category_numbers: null
   mix_use_categories: null
@@ -689,7 +706,7 @@ piechart_interactive:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   zonal_sum_default_column: null
   industrial_category_numbers: null
   mix_use_categories: null
@@ -711,7 +728,7 @@ sizes_interactive_map:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   figures:
     approach: null
   paths:
@@ -738,7 +755,7 @@ pop_at_risk_figures:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   zoom_level: null
   max_workers: null
   paths:
@@ -756,7 +773,7 @@ create_voronoi_parallel_sweep:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  radius_quantile: null
+  size_measure: null
   paths:
     data_dir: null
     buffers_dir: null

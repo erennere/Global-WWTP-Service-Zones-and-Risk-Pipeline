@@ -1222,28 +1222,102 @@ def extract_site_coordinates(df, centroid_points):
     return points
 
 LAGOON_COLUMN = 'lagoon_detected'
+SIZE_MEASURES = ('reported', 'footprint')
+_WARNED_MISSING_SIZE_COLUMNS = set()  # warn once per process, not once per basin group
 
 
 def _truthy(series):
     return series.astype(str).str.strip().str.lower().isin({'true', '1', '1.0', 'yes'})
 
 
-def service_radius_m(footprint_m2, lagoon, coefficient_km, exponent, unsized_km, max_m):
-    """Service radius (m) from the detected footprint.
+def reported_size_people(df, columns, skip_quality):
+    """Reported plant size in people: the first positive value among ``columns``.
 
-    ``radius_km = coefficient_km * footprint_m2 ** exponent`` for plants with a
-    usable footprint; lagoon plants and plants without detections, whose
-    footprint says nothing about their size, get ``unsized_km``. Every radius is
-    at most ``max_m``. See ``radius_calibration`` in config.yaml for where the
-    numbers come from.
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Plant records.
+    columns : sequence of str
+        Columns in order of preference (e.g. ``POP_SERVED``, ``EPA POP 2022``,
+        ``uwwLoadEnteringUWWTP``). Missing columns are skipped.
+    skip_quality : dict
+        ``{column: {quality_column: [codes]}}``: values of ``column`` are ignored
+        on rows whose ``quality_column`` is one of ``codes`` (HydroWASTE
+        ``QUAL_POP`` 4: people within 11 km of the plant, not a plant record).
+
+    Returns
+    -------
+    numpy.ndarray
+        People per row; NaN where no column holds a positive value.
     """
-    footprint = np.nan_to_num(np.asarray(footprint_m2, dtype=float), nan=0.0)
-    sized = (footprint > 0) & ~np.asarray(lagoon, dtype=bool)
-    radius_km = np.where(
+    for column in columns:
+        if column not in df.columns and column not in _WARNED_MISSING_SIZE_COLUMNS:
+            _WARNED_MISSING_SIZE_COLUMNS.add(column)
+            logger.warning("Reported size column %r is not in the plant data; those plants use the footprint estimate", column)
+    values = {column: pd.to_numeric(df[column], errors='coerce') for column in columns if column in df.columns}
+    for column, rules in skip_quality.items():
+        for quality_column, codes in rules.items():
+            if column in values and quality_column in df.columns:
+                quality = pd.to_numeric(df[quality_column], errors='coerce')
+                values[column] = values[column].where(~quality.isin([float(c) for c in codes]))
+    out = pd.Series(np.nan, index=df.index, dtype=float)
+    for column in columns:
+        if column in values:
+            out = out.fillna(values[column].where(values[column] > 0))
+    return out.to_numpy(dtype=float)
+
+
+def plant_size_people(df, size_measure, footprint_to_people, reported_size_columns, reported_size_skip, **_):
+    """Plant size in people, used for both the service radius and the Voronoi weight.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Plant records with ``footprint_m2`` (from ``calculate_area``; falls back to
+        ``total_area``) and optionally ``lagoon_detected`` and the reported columns.
+    size_measure : {'reported', 'footprint'}
+        ``reported``: the reported size where there is one (see
+        ``reported_size_people``), the footprint estimate elsewhere.
+        ``footprint``: the footprint estimate for every plant.
+    footprint_to_people : dict
+        ``intercept`` and ``slope`` of ``log10 people = intercept + slope * log10
+        footprint_m2`` and ``unsized_people`` for lagoon plants and plants
+        without detections, whose footprint says nothing about their size.
+    reported_size_columns, reported_size_skip
+        Passed to ``reported_size_people`` (used with ``reported`` only).
+
+    Returns
+    -------
+    numpy.ndarray
+        People per row (always > 0).
+    """
+    if size_measure not in SIZE_MEASURES:
+        raise ValueError(f"size_measure must be one of {SIZE_MEASURES}, got {size_measure!r}")
+    if 'footprint_m2' in df.columns:
+        footprint = pd.to_numeric(df['footprint_m2'], errors='coerce')
+    elif 'total_area' in df.columns:
+        footprint = pd.to_numeric(df['total_area'], errors='coerce')
+    else:
+        footprint = pd.Series(0.0, index=df.index)
+    footprint = np.nan_to_num(footprint.to_numpy(dtype=float), nan=0.0)
+    lagoon = _truthy(df[LAGOON_COLUMN]).to_numpy() if LAGOON_COLUMN in df.columns else np.zeros(len(df), bool)
+    sized = (footprint > 0) & ~lagoon
+    people = np.where(
         sized,
-        float(coefficient_km) * np.power(np.where(sized, footprint, 1.0), float(exponent)),
-        float(unsized_km),
+        np.power(10.0, float(footprint_to_people['intercept'])
+                 + float(footprint_to_people['slope']) * np.log10(np.where(sized, footprint, 1.0))),
+        float(footprint_to_people['unsized_people']),
     )
+    if size_measure == 'reported':
+        reported = reported_size_people(df, reported_size_columns, reported_size_skip)
+        people = np.where(np.isfinite(reported), reported, people)
+    return people
+
+
+def service_radius_m(size_people, radius_at_10k_people_km, exponent, max_m):
+    """Service radius (m): ``radius_at_10k_people_km * (people / 10,000) ** exponent``, at most ``max_m``."""
+    people = np.asarray(size_people, dtype=float)
+    radius_km = float(radius_at_10k_people_km) * np.power(people / 1e4, float(exponent))
     return np.minimum(radius_km * 1000.0, float(max_m))
 
 
@@ -1253,15 +1327,15 @@ def calculate_buffer(df, weights, *args, **kwargs):
     Parameters
     ----------
     df : geopandas.GeoDataFrame
-        Input sites, with ``footprint_m2`` (from ``calculate_area``; falls back
-        to ``total_area``) and optionally ``lagoon_detected``.
+        Input sites (see ``plant_size_people`` for the columns used).
     weights : numpy.ndarray
         Voronoi weights; unused, kept for the ``calculate_buffer_fn`` signature.
     **kwargs
         ``buffer`` (m), ``dynamic_buffering``, ``max_buffer`` (m), and with
-        dynamic buffering ``radius_coefficient_km``, ``radius_exponent``,
-        ``radius_unsized_km`` (derived by starter from ``radius_calibration``
-        at ``radius_quantile``).
+        dynamic buffering ``size_measure``, ``footprint_to_people``,
+        ``reported_size_columns``, ``reported_size_skip``, ``radius_exponent``
+        and ``radius_at_10k_people_km`` (starter picks the latter from
+        ``radius_calibration`` for the size measure).
 
     Returns
     -------
@@ -1271,27 +1345,17 @@ def calculate_buffer(df, weights, *args, **kwargs):
     Notes
     -----
     With ``dynamic_buffering`` false every site gets ``buffer`` (at most
-    ``max_buffer``). Otherwise the radius depends on plant size only:
-    neighbour distance was tested on 3,200 real catchments (EPA sewersheds,
-    GB catchments) and explains 0.1 % of how far a catchment reaches.
-    Neighbours shape the service areas through the Voronoi split instead.
+    ``max_buffer``). Otherwise the radius grows with plant size in people. The
+    exponent and the radius at 10,000 people were chosen on US census
+    population in EPA sourced sewersheds (``src.calibration.service_radius``);
+    the GB catchments are the independent test.
     """
     max_buffer = kwargs['max_buffer']
     if not kwargs['dynamic_buffering']:
         fixed = float(min(kwargs['buffer'], max_buffer))
         return np.full(len(df), fixed, dtype=float)
-
-    if 'footprint_m2' in df.columns:
-        footprint = pd.to_numeric(df['footprint_m2'], errors='coerce')
-    elif 'total_area' in df.columns:
-        footprint = pd.to_numeric(df['total_area'], errors='coerce')
-    else:
-        footprint = pd.Series(0.0, index=df.index)
-    lagoon = _truthy(df[LAGOON_COLUMN]) if LAGOON_COLUMN in df.columns else pd.Series(False, index=df.index)
-    radius = service_radius_m(
-        footprint.to_numpy(), lagoon.to_numpy(),
-        kwargs['radius_coefficient_km'], kwargs['radius_exponent'], kwargs['radius_unsized_km'], max_buffer,
-    )
+    people = plant_size_people(df, **kwargs)
+    radius = service_radius_m(people, kwargs['radius_at_10k_people_km'], kwargs['radius_exponent'], max_buffer)
     logger.debug("Service radius %.0f-%.0f m (median %.0f m) for %d sites",
                  radius.min(), radius.max(), np.median(radius), len(df))
     return radius
@@ -1565,7 +1629,8 @@ def assign_sites_streaming(valid_points, points, weights, distance_fn, factor):
 
 def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, n_points=100, distance_fn=default_distance_multiplicative,
                       scipy_true=False, cv2_true=False, centroid_points=False, buffering=False, threshold=500,
-                      calculate_buffer_fn=calculate_buffer, buffer_fn_kwargs=None, site_id_col='WASTE_ID'):
+                      calculate_buffer_fn=calculate_buffer, buffer_fn_kwargs=None, site_id_col='WASTE_ID',
+                      size_weights=False):
     """
     Generate weighted Voronoi diagram from point sites with multiple contour methods.
     
@@ -1607,6 +1672,10 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
         Keyword arguments forwarded to ``calculate_buffer_fn``.
     site_id_col : str, default='WASTE_ID'
         Column on ``df`` used as the unique site identifier for region assembly.
+    size_weights : bool, default=False
+        Weight each site by the square root of its size in people
+        (``plant_size_people`` with ``buffer_fn_kwargs``), computed after
+        clustering. Requires the multiplicative distance.
 
     Returns
     -------
@@ -1665,6 +1734,13 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
             f"calculate_buffer_fn returned {len(buffer_lengths)} buffer lengths for {len(df)} rows"
         )
     df['buffer_length'] = buffer_lengths
+    if size_weights:
+        if distance_fn is not default_distance_multiplicative:
+            raise ValueError("size weights need the multiplicative distance (weight_func 'mult')")
+        # A multiplicatively weighted site's area grows with the square of its
+        # weight, so sqrt(people) gives areas in proportion to people at equal
+        # density. Computed here, after clustering, from the merged records.
+        weights = np.sqrt(plant_size_people(df, **fn_kwargs))
     # === PHASE 4: BUFFERED EXTENT FOR GRID DOMAIN ===
     # The clipping input may contain multiple geometries, so we unify it into
     # a single geometry and ensure it uses the same CRS as the sites.
@@ -1866,7 +1942,7 @@ def voronoi_worker(args):
     try:
         (sub_df, col, country_clip, scale_weights, clipping, n_points, distance_fn,
         scipy_true, cv2_true, centroid_points, buffering, threshold, calculate_buffer_fn,
-        buffer_fn_kwargs, site_id_col,) = args
+        buffer_fn_kwargs, site_id_col, size_weights) = args
         logger.debug(f"voronoi_worker: Unpacked arguments for {len(sub_df)} sites")
     except Exception as err:
         logger.error(f"voronoi_worker: Error unpacking arguments: {err}")
@@ -1874,7 +1950,7 @@ def voronoi_worker(args):
     return weighted_voronoi(
         sub_df, col, country_clip, scale_weights, clipping, n_points, distance_fn,
         scipy_true, cv2_true, centroid_points, buffering, threshold, calculate_buffer_fn,
-        buffer_fn_kwargs, site_id_col,)
+        buffer_fn_kwargs, site_id_col, size_weights)
 
 def create_weights(sub_df, sigma=3, percent_threshold=10, method='linear'):
     """Calculate normalized site weights from a detection-adjusted area proxy.
@@ -1889,8 +1965,10 @@ def create_weights(sub_df, sigma=3, percent_threshold=10, method='linear'):
         Standard-deviation multiplier used for upper clipping.
     percent_threshold : float, default=10
         Divisor used to derive the lower clipping threshold from the median.
-    method : {'linear', 'logarithmic', 'square_root', 'sigmoid'}, default='linear'
-        Transformation applied before normalization.
+    method : {'linear', 'logarithmic', 'square_root', 'sigmoid', 'size'}, default='linear'
+        Transformation applied before normalization. ``size`` returns equal
+        placeholder weights: ``weighted_voronoi`` sets sqrt(people) after
+        clustering (``size_weights``).
 
     Returns
     -------
@@ -1899,6 +1977,9 @@ def create_weights(sub_df, sigma=3, percent_threshold=10, method='linear'):
         ``weights`` columns.
     """
     df = sub_df.copy()
+    if method == 'size':
+        df['weights'] = 1.0 / len(df)
+        return df
 
     # 1. Base signal must be precomputed in area_fn.
     if 'base_values' not in df.columns:
@@ -2040,6 +2121,8 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
         area_fn_kwargs = {}
     if buffer_fn_kwargs is not None:
         buffer_fn_kwargs = dict(buffer_fn_kwargs)
+    # weight_method 'size': weighted_voronoi weights each site by sqrt(people)
+    size_weights = method == 'size'
 
     # Group both df and clipping by the same column
     if output_path:
@@ -2141,7 +2224,7 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
                 task = (sub_df, col, country_clip, scale_weights,
                         sub_clip, n_points, distance_fn, scipy_true,
                         cv2_true, centroid_points, buffering,
-                    threshold, calculate_buffer_fn, buffer_fn_kwargs, site_id_col,)
+                    threshold, calculate_buffer_fn, buffer_fn_kwargs, site_id_col, size_weights)
                 batch.append(task)
             else:
                 for country in country_iso_2:
@@ -2153,7 +2236,7 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
                     task = (country_sub_df, col, country_sub_clip,
                             scale_weights, sub_clip, n_points, distance_fn,
                             scipy_true, cv2_true, centroid_points,
-                            buffering, threshold, calculate_buffer_fn, buffer_fn_kwargs, site_id_col,)
+                            buffering, threshold, calculate_buffer_fn, buffer_fn_kwargs, site_id_col, size_weights)
                     batch.append(task)
 
             if len(batch) >= batch_size:
@@ -2349,7 +2432,7 @@ EXAMPLES:
   python -m src.create_voronoi --approach 0 1 --only-round
 
     # Run all approaches with config overrides
-    python -m src.create_voronoi --level 8 --version 2 --buffer 15000 --weight-method square_root --weight-func mult --dynamic-buffering true --radius-quantile 0.75
+    python -m src.create_voronoi --level 8 --version 2 --buffer 15000 --weight-method square_root --weight-func mult --dynamic-buffering true --size-measure reported
 
   # Run with verbose logging
   python -m src.create_voronoi --approach 1 --verbose

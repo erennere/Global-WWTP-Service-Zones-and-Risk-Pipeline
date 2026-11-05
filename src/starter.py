@@ -28,8 +28,10 @@ _OVERRIDE_FIELDS = (
     ("weight_method", 3, False),
     ("weight_func", 4, True),
     ("dynamic_buffering", 5, False),
-    ("radius_quantile", 6, False),
+    ("size_measure", 6, False),
 )
+# Path token for the service-radius mode when dynamic_buffering is on.
+SIZE_MEASURE_TOKENS = {"reported": "rep", "footprint": "fp"}
 _OVERRIDE_FLAG_TO_FIELD = {
     "--level": "level",
     "--version": "version",
@@ -37,7 +39,7 @@ _OVERRIDE_FLAG_TO_FIELD = {
     "--weight-method": "weight_method",
     "--weight-func": "weight_func",
     "--dynamic-buffering": "dynamic_buffering",
-    "--radius-quantile": "radius_quantile",
+    "--size-measure": "size_measure",
 }
 
 
@@ -49,7 +51,7 @@ def add_standard_override_arguments(parser):
     parser.add_argument("--weight-method", dest="weight_method", default=None, help="Optional config weight_method override")
     parser.add_argument("--weight-func", dest="weight_func", default=None, help="Optional config weight_func override: 'mult', 'add', or ''")
     parser.add_argument("--dynamic-buffering", dest="dynamic_buffering", default=None, help="Optional dynamic buffering override (true/false)")
-    parser.add_argument("--radius-quantile", dest="radius_quantile", default=None, help="Optional service-radius quantile override (one of the calibrated values in radius_calibration)")
+    parser.add_argument("--size-measure", dest="size_measure", default=None, help="Optional plant size measure override: 'reported' or 'footprint'")
     return parser
 
 
@@ -124,15 +126,14 @@ def _parse_optional_bool(value, field_name):
         return False
     raise ValueError(f"Invalid {field_name} '{value}'. Must be a boolean value.")
 
-def _parse_optional_float(value, field_name):
-    """Parse optional float overrides."""
+def _parse_optional_size_measure(value, field_name="size_measure"):
+    """Parse an optional size-measure override ('reported' or 'footprint')."""
     value = _normalize_optional_cli_value(value)
     if value is None:
         return None
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid {field_name} '{value}'. Must be a number.") from exc
+    if value not in SIZE_MEASURE_TOKENS:
+        raise ValueError(f"Invalid {field_name} '{value}'. Must be one of {sorted(SIZE_MEASURE_TOKENS)}.")
+    return value
 
 def _collect_raw_overrides(args: Any = None, argv: list[str] | None = None):
     argv_values: list[str] = list(sys.argv) if argv is None else list(argv)
@@ -201,7 +202,7 @@ def parse_config_overrides(args: Any = None, argv: list[str] | None = None):
         "weight_method": raw_overrides["weight_method"],
         "weight_func": _parse_optional_weight_func(raw_overrides["weight_func"], "weight_func"),
         "dynamic_buffering": _parse_optional_bool(raw_overrides["dynamic_buffering"], "dynamic_buffering"),
-        "radius_quantile": _parse_optional_float(raw_overrides["radius_quantile"], "radius_quantile"),
+        "size_measure": _parse_optional_size_measure(raw_overrides["size_measure"]),
     }
 
 
@@ -347,7 +348,7 @@ def _apply_runtime_overrides(
     weight_method=None,
     weight_func=None,
     dynamic_buffering=None,
-    radius_quantile=None,
+    size_measure=None,
 ) -> dict:
     cfg = deepcopy(resolved_cfg)
     _apply_optional_override(cfg, "level", level)
@@ -361,7 +362,7 @@ def _apply_runtime_overrides(
         _normalize_weight_func,
     )
     _apply_optional_override(cfg, "dynamic_buffering", dynamic_buffering, _parse_optional_bool)
-    _apply_optional_override(cfg, "radius_quantile", radius_quantile, _parse_optional_float)
+    _apply_optional_override(cfg, "size_measure", size_measure, _parse_optional_size_measure)
     return cfg
 
 
@@ -372,6 +373,7 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         "square_root": "sq",
         "logarithmic": "log",
         "sigmoid": "sig",
+        "size": "sz",
     }
     if "weight_method" in cfg:
         if cfg["weight_method"] not in weight_type_map:
@@ -394,47 +396,70 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
             else default_distance_additive
         )
 
+    if "weight_method" in cfg and cfg["weight_method"] == "size" and "weight_func" in cfg:
+        if _normalize_weight_func(cfg["weight_func"], "weight_func") != "mult":
+            raise ValueError("weight_method 'size' needs weight_func 'mult' (multiplicative weighted distance)")
+
+    if "size_measure" in cfg and cfg["size_measure"] is not None and cfg["size_measure"] not in SIZE_MEASURE_TOKENS:
+        raise ValueError(f"size_measure must be one of {sorted(SIZE_MEASURE_TOKENS)}, got {cfg['size_measure']!r}")
+
     if "buffer" in cfg and "dynamic_buffering" in cfg:
-        if cfg["dynamic_buffering"] and cfg["radius_quantile"] is None:
-            raise ValueError("radius_quantile must be configured when dynamic_buffering is true")
+        if cfg["dynamic_buffering"] and ("size_measure" not in cfg or cfg["size_measure"] is None):
+            raise ValueError("size_measure must be configured when dynamic_buffering is true")
 
         if cfg["dynamic_buffering"]:
-            derived["buffer_path_token"] = f"q{str(cfg['radius_quantile']).replace('.', '_')}"
+            derived["buffer_path_token"] = SIZE_MEASURE_TOKENS[cfg["size_measure"]]
         else:
             derived["buffer_path_token"] = str(int(cfg["buffer"]))
 
-    calculate_buffer_keys = {"buffer", "dynamic_buffering", "max_buffer", "radius_quantile",
-                             "radius_exponent", "radius_calibration"}
+    calculate_buffer_keys = {"buffer", "dynamic_buffering", "max_buffer", "size_measure", "footprint_to_people",
+                             "reported_size_columns", "reported_size_skip", "radius_calibration"}
     if calculate_buffer_keys.issubset(cfg):
         kwargs = {
             "buffer": cfg["buffer"],
             "dynamic_buffering": cfg["dynamic_buffering"],
             "max_buffer": cfg["max_buffer"],
         }
-        if cfg["dynamic_buffering"]:
-            row = _calibration_row(cfg["radius_calibration"], cfg["radius_quantile"])
+        if cfg["size_measure"] is not None:
+            # The plant size is needed by the radius and by weight_method 'size'.
             kwargs.update({
-                "radius_exponent": float(cfg["radius_exponent"]),
-                "radius_coefficient_km": float(row["coefficient_km"]),
-                "radius_unsized_km": float(row["unsized_km"]),
+                "size_measure": cfg["size_measure"],
+                "footprint_to_people": _footprint_to_people(cfg["footprint_to_people"]),
+                "reported_size_columns": list(cfg["reported_size_columns"]),
+                "reported_size_skip": dict(cfg["reported_size_skip"]),
+            })
+        if cfg["dynamic_buffering"]:
+            row = _calibration_row(cfg["radius_calibration"], cfg["size_measure"])
+            kwargs.update({
+                "radius_exponent": float(row["radius_exponent"]),
+                "radius_at_10k_people_km": float(row["radius_at_10k_people_km"]),
             })
         derived["calculate_buffer_kwargs"] = kwargs
 
     return derived
 
 
-def _calibration_row(table, quantile):
-    """The radius_calibration entry for ``quantile`` (keys compared to 4 decimals)."""
+def _footprint_to_people(value):
+    keys = ("intercept", "slope", "unsized_people")
+    if not isinstance(value, dict) or set(keys) - set(value):
+        raise ValueError(f"footprint_to_people must map {keys} to numbers")
+    return {key: float(value[key]) for key in keys}
+
+
+def _calibration_row(table, size_measure):
+    """The radius_calibration entry for ``size_measure``."""
+    keys = ("radius_exponent", "radius_at_10k_people_km")
     if not isinstance(table, dict) or not table:
-        raise ValueError("radius_calibration must map quantiles to {coefficient_km, unsized_km}")
-    rows = {round(float(key), 4): value for key, value in table.items()}
-    key = round(float(quantile), 4)
-    if key not in rows:
+        raise ValueError(f"radius_calibration must map each size measure to {keys}")
+    if size_measure not in table:
         raise ValueError(
-            f"radius_quantile {quantile} is not calibrated; choose one of {sorted(rows)} "
+            f"size_measure {size_measure!r} has no radius_calibration entry; choose one of {sorted(table)} "
             "or add it with src.calibration.service_radius"
         )
-    return rows[key]
+    row = table[size_measure]
+    if not isinstance(row, dict) or set(keys) - set(row):
+        raise ValueError(f"radius_calibration[{size_measure!r}] must have {keys}")
+    return row
 
 
 ################################################################################
@@ -551,7 +576,7 @@ def load_config(
     weight_method=None,
     weight_func=None,
     dynamic_buffering=None,
-    radius_quantile=None,
+    size_measure=None,
 ):
     """Load and resolve the per-script configuration section for a workflow."""
     try:
@@ -575,7 +600,7 @@ def load_config(
         weight_method=weight_method,
         weight_func=weight_func,
         dynamic_buffering=dynamic_buffering,
-        radius_quantile=radius_quantile,
+        size_measure=size_measure,
     )
 
     # Derive helper values and expand any templated output/input paths last.

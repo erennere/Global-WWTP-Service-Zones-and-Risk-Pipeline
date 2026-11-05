@@ -165,7 +165,7 @@
 - `src/config.yaml` is the single repository-wide default configuration source. The top-level and research-code READMEs both state that defaults live there rather than inside the Python modules.
 - `src/config.yaml` contains these explicit configuration sections: `arguments`, `paths`, `s3`, `params`, `annotations`, `booleans`, `figures`, `credentials`, `execution`, and `impact_polygons_pop_params`.
 - `src/starter.py` is the central config loader. It normalizes optional CLI values, parses optional integers, floats, and booleans, expands path templates, derives `weight_type` and `weight_func_suffix`, resolves dynamic-buffer path tokens, and returns the flattened runtime cfg dictionary.
-- The shared override interface, added by `starter.add_standard_override_arguments` and parsed by `starter.parse_config_overrides`, is the seven named flags `--level`, `--version`, `--buffer`, `--weight-method`, `--weight-func`, `--dynamic-buffering`, `--dynamic-buffer-k`. The legacy positional form has been removed, and `lib/utils.sh parse_overrides` now exits 2 on an unknown flag instead of shifting it away.
+- The shared override interface, added by `starter.add_standard_override_arguments` and parsed by `starter.parse_config_overrides`, is the seven named flags `--level`, `--version`, `--buffer`, `--weight-method`, `--weight-func`, `--dynamic-buffering`, `--size-measure`. The legacy positional form has been removed, and `lib/utils.sh parse_overrides` now exits 2 on an unknown flag instead of shifting it away.
 - The config explicitly supports swappable callable names through `calculate_area_fn`, `calculate_buffer_fn`, and `prepare_data_fn` in `src/config.yaml`, with deferred resolution handled in `src/pipelines.py`.
 - `src/create_voronoi.py` adds `--approach`, `--only-round`, and `--verbose` on top of the shared overrides.
 - `src/industrial_analysis/find_unconnected_industrial_areas.py` adds `--approach`, `--only-round`, and `--verbose`, but only accepts approach `0` or `1`.
@@ -175,7 +175,7 @@
 - `src/pop_at_risk_river_calculations/find_diff_pop.py` adds `--index` and `--is-parallel`.
 - `src/add_pop.py` adds a required `--index` (Voronoi file index).
 - `src/figures_scripts/composite_area_population_plots.py` adds `--approach`, `--color-col`, `--zonal-col`, `--hist-lower-q`, and `--hist-upper-q`.
-- `src/sensitivity_analysis_scripts/create_voronoi_parallel_sweep.py` adds `task_id`, `version`, `--approach`, `--num-jobs`, `--retry-failed-runs`, and `--shuffle-seed`. Its positional `dynamic_buffering` and `dynamic_buffer_k` arguments are explicitly accepted only for backward compatibility and ignored.
+- `src/sensitivity_analysis_scripts/create_voronoi_parallel_sweep.py` adds `task_id`, `version`, `--approach`, `--num-jobs`, `--retry-failed-runs`, and `--shuffle-seed`. Its positional `dynamic_buffering` and `size_measure` arguments are explicitly accepted only for backward compatibility and ignored.
 - `src/create_voronoi.sh` reads `execution.mode` from `src/config.yaml` to choose array, sequential, or parallel wrapper behavior.
 - `src/pop_at_risk_river_calculations/create_rasters.sh` reads `annotations.default_mode` from `src/config.yaml` to choose array, sequential, or parallel wrapper behavior.
 - The sweep wrappers use `SLURM_ARRAY_TASK_ID` and `SHUFFLE_SEED` as execution and sharding interfaces.
@@ -190,9 +190,9 @@
 - `src/data_merge/final_data_merge.py`: merges corrected points with country-specific datasets and model outputs.
 - The explicit implemented algorithmic model families are:
 - `src/create_voronoi.py`: Voronoi approach `0`, approach `1`, and approach `2`; optional `only_round` mode.
-- `src/config.yaml`: `weight_method` choices `linear`, `logarithmic`, `square_root`, `sigmoid`.
+- `src/config.yaml`: `weight_method` choices `size` (default), `linear`, `logarithmic`, `square_root`, `sigmoid`.
 - `src/config.yaml`: `weight_func` choices `mult`, `add`, or empty.
-- `src/config.yaml`: rigid buffering and dynamic buffering through `dynamic_buffering` and `dynamic_buffer_k`.
+- `src/config.yaml`: rigid buffering and dynamic buffering through `dynamic_buffering` and `size_measure` (`reported` or `footprint`; radius numbers in `radius_calibration`).
 - `src/pop_at_risk_river_calculations/impact_polygons_pop.py`: a configurable downstream impact model with `org_per_pop`, `width`, `c_limit`, `base_k`, `theta`, `step_m`, `least_discharge_cms`, and `impact_radii`.
 
 ## 7. Training, Evaluation, Merging, And Visualization Stages

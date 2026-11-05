@@ -275,7 +275,7 @@ def test_combine_watersheds_main_handles_missing_optional_overrides(monkeypatch,
             "weight_method": None,
             "weight_func": None,
             "dynamic_buffering": None,
-            "radius_quantile": None,
+            "size_measure": None,
         },
     )
     monkeypatch.setattr(combine_watersheds, "load_config", fake_load_config)

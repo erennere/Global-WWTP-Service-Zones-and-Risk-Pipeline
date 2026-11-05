@@ -89,29 +89,29 @@ print_task_combinations(int(sys.argv[1]), int(sys.argv[2]))
 )
 
 for combo in "${ASSIGNED_COMBOS[@]}"; do
-    IFS=$'\t' read -r level buffer weight_method weight_func dynamic_buffering radius_quantile <<< "${combo}"
+    IFS=$'\t' read -r level buffer weight_method weight_func dynamic_buffering size_measure <<< "${combo}"
     level=$(echo "${level}" | xargs)
     buffer=$(echo "${buffer}" | xargs)
     weight_method=$(echo "${weight_method}" | xargs)
     weight_func=$(echo "${weight_func}" | xargs)
     dynamic_buffering=$(echo "${dynamic_buffering}" | xargs)
-    radius_quantile=$(echo "${radius_quantile}" | xargs)
+    size_measure=$(echo "${size_measure}" | xargs)
 
     if [[ "${weight_func}" == "__EMPTY__" ]]; then
         weight_func=""
     fi
-    if [[ "${radius_quantile}" == "__EMPTY__" ]]; then
-        radius_quantile=""
+    if [[ "${size_measure}" == "__EMPTY__" ]]; then
+        size_measure=""
     fi
 
     run_count=$((run_count + 1))
-    log "Run ${run_count}: level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} radius_quantile=${radius_quantile}"
+    log "Run ${run_count}: level=${level} buffer=${buffer} weight_method=${weight_method} weight_func='${weight_func}' dynamic_buffering=${dynamic_buffering} size_measure=${size_measure}"
 
     # Download and vectorize
-    run_stage "${DOWNLOAD_SCRIPT}" ${PYTHON_CMD} -m "${DOWNLOAD_SCRIPT}" "${VERSION_ARGS[@]}" --level "${level}" --buffer "${buffer}" --weight-method "${weight_method}" --weight-func "${weight_func}" --dynamic-buffering "${dynamic_buffering}" --radius-quantile "${radius_quantile}"
+    run_stage "${DOWNLOAD_SCRIPT}" ${PYTHON_CMD} -m "${DOWNLOAD_SCRIPT}" "${VERSION_ARGS[@]}" --level "${level}" --buffer "${buffer}" --weight-method "${weight_method}" --weight-func "${weight_func}" --dynamic-buffering "${dynamic_buffering}" --size-measure "${size_measure}"
 
     # Find unconnected areas
-    run_stage "${FIND_UNCONNECTED_SCRIPT}" ${PYTHON_CMD} -m "${FIND_UNCONNECTED_SCRIPT}" "${VERSION_ARGS[@]}" --level "${level}" --buffer "${buffer}" --weight-method "${weight_method}" --weight-func "${weight_func}" --dynamic-buffering "${dynamic_buffering}" --radius-quantile "${radius_quantile}"
+    run_stage "${FIND_UNCONNECTED_SCRIPT}" ${PYTHON_CMD} -m "${FIND_UNCONNECTED_SCRIPT}" "${VERSION_ARGS[@]}" --level "${level}" --buffer "${buffer}" --weight-method "${weight_method}" --weight-func "${weight_func}" --dynamic-buffering "${dynamic_buffering}" --size-measure "${size_measure}"
 done
 
 log "Completed task ${TASK_ID}. Executed ${run_count} parameter combinations."

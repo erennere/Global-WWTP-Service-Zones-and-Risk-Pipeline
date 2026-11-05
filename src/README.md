@@ -83,10 +83,10 @@ The full parameter tables now live in the relevant module READMEs. This file kee
 | --- | --- | --- |
 | `correct_locations_w_OSM.rad` | `5000` | OSM fallback correction radius for the first merge stage |
 | `merge_seg_results.legacy_merge` | `true` | Whether the legacy segmentation branch runs during merge |
-| `create_voronoi.weight_method` | `logarithmic` | Global weighting transform for Voronoi stages |
+| `create_voronoi.weight_method` | `size` | Global weighting transform for Voronoi stages (`size`: sqrt of plant size in people) |
 | `create_voronoi.weight_func` | `mult` | Global weighted-distance mode for Voronoi stages |
 | `create_voronoi.dynamic_buffering` | `true` | Enables per-site dynamic buffers |
-| `create_voronoi.radius_quantile` | `0.5` | Dynamic-buffer scaling factor |
+| `create_voronoi.size_measure` | `reported` | Plant size in people for the service radius and `size` weights: `reported` (reported size, footprint estimate where missing) or `footprint` |
 | `create_voronoi.execution.mode` | `sequential` | Launcher mode for the Voronoi stage |
 | `create_rasters.annotations.default_mode` | `sequential` | Launcher mode for raster preparation |
 | `create_rasters.zoom_level` | `8` | Tile zoom used in raster/risk stages |
@@ -107,7 +107,7 @@ Every entry point accepts the same seven named override flags, added by
 `starter.parse_config_overrides`:
 
 ```bash
---level --version --buffer --weight-method --weight-func --dynamic-buffering --radius-quantile
+--level --version --buffer --weight-method --weight-func --dynamic-buffering --size-measure
 ```
 
 The shell wrappers collect whatever subset you pass and forward it verbatim as
@@ -115,7 +115,7 @@ The shell wrappers collect whatever subset you pass and forward it verbatim as
 
 ```bash
 cd src
-bash create_voronoi.sh --level 8 --buffer 9000 --radius-quantile 0.7
+bash create_voronoi.sh --level 8 --buffer 9000 --size-measure footprint
 ```
 
 The older positional form (`level version buffer …`) has been removed: a stray
@@ -190,7 +190,7 @@ Key controls:
 - `create_voronoi.weight_method`
 - `create_voronoi.weight_func`
 - `create_voronoi.dynamic_buffering`
-- `create_voronoi.radius_quantile`
+- `create_voronoi.size_measure`
 - `create_voronoi.execution.mode`
 - `create_voronoi.n_points`
 - `create_voronoi.threshold`
@@ -207,7 +207,7 @@ Typical runs:
 ```bash
 bash create_voronoi.sh
 python -m src.create_voronoi --approach 1 --verbose
-python -m src.create_voronoi 8 2 15000 square_root mult true 0.75
+python -m src.create_voronoi 8 2 15000 size mult true reported
 ```
 
 ### `add_pop`

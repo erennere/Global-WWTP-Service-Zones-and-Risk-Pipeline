@@ -21,9 +21,12 @@ BUFFER_KWARGS = {
     "buffer": 10000,
     "dynamic_buffering": True,
     "max_buffer": 50000,
-    "radius_exponent": 0.286,
-    "radius_coefficient_km": 1.025,
-    "radius_unsized_km": 9.85,
+    "size_measure": "reported",
+    "footprint_to_people": {"intercept": 1.369, "slope": 0.738, "unsized_people": 2014.0},
+    "reported_size_columns": ["POP_SERVED"],
+    "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
+    "radius_exponent": 0.35,
+    "radius_at_10k_people_km": 3.75,
 }
 
 

@@ -248,7 +248,7 @@ def test_create_voronoi_main_runs_all_approaches(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
     runpy.run_module("src.create_voronoi", run_name="__main__")
@@ -265,7 +265,7 @@ def test_create_voronoi_main_no_remaining_approaches_exits(monkeypatch, tmp_path
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=False)
 
@@ -301,7 +301,7 @@ def test_create_voronoi_main_run_path_import_fallback(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
 
@@ -435,7 +435,7 @@ def test_create_voronoi_main_invalid_approach_and_override_errors(monkeypatch, t
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: bad_args)
     with pytest.raises(SystemExit):
@@ -451,7 +451,7 @@ def test_create_voronoi_main_invalid_approach_and_override_errors(monkeypatch, t
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
 
@@ -475,7 +475,7 @@ def test_create_voronoi_main_city_country_enrichment_and_failure_exit(monkeypatc
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=True)
 
@@ -937,7 +937,7 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args, overwrite=False)
     import src.starter as starter
@@ -989,7 +989,7 @@ def test_dissolve_overlap_and_main_remaining_branches(monkeypatch, tmp_path):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
     )
     _patch_main_dependencies(monkeypatch, tmp_path, args2, overwrite=True)
     monkeypatch.setattr(pipelines, "prepare_data", lambda cfg_in: "not-dict")

@@ -603,7 +603,7 @@ def main(res=30, max_workers=8):
     -----
     The CLI entrypoint accepts the seven standard named config-override flags
     (``--level``, ``--version``, ``--buffer``, ``--weight-method``,
-    ``--weight-func``, ``--dynamic-buffering``, ``--radius-quantile``), plus
+    ``--weight-func``, ``--dynamic-buffering``, ``--size-measure``), plus
     its own ``--country``. Resolution and worker count remain direct
     Python-call parameters unless separate CLI support is added.
     """

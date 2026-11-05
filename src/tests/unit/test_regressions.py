@@ -181,26 +181,44 @@ def test_B8_straddling_industrial_area_is_connected():
 
 
 # --------------------------------------------------------------------------- #
-# Service radius: from plant size only, calibrated on real catchments         #
-# (replaces B9's NND x k rule and its area ceiling)                           #
+# Service radius and Voronoi weight: from plant size in people, calibrated on #
+# US census population in EPA sewersheds (replaces B9's NND x k rule, the     #
+# area ceiling and the footprint-only radius)                                 #
 # --------------------------------------------------------------------------- #
-RADIUS_KW = dict(buffer=9000, dynamic_buffering=True, max_buffer=50000,
-                 radius_exponent=0.286, radius_coefficient_km=0.568, radius_unsized_km=4.04)
+FOOTPRINT_TO_PEOPLE = {"intercept": 1.369, "slope": 0.738, "unsized_people": 2014.0}
+RADIUS_KW = dict(buffer=9000, dynamic_buffering=True, max_buffer=50000, size_measure="reported",
+                 footprint_to_people=FOOTPRINT_TO_PEOPLE, reported_size_columns=["POP_SERVED", "EPA POP 2022"],
+                 reported_size_skip={"POP_SERVED": {"QUAL_POP": [4]}},
+                 radius_exponent=0.35, radius_at_10k_people_km=3.75)
 
 
-def _plants(xs, footprint, lagoon=False):
-    return gpd.GeoDataFrame(
-        {"footprint_m2": [footprint] * len(xs), "lagoon_detected": [lagoon] * len(xs)},
-        geometry=[Point(x, 0) for x in xs],
-        crs=32632,
-    )
+def _plants(xs, footprint, lagoon=False, **columns):
+    data = {"footprint_m2": [footprint] * len(xs), "lagoon_detected": [lagoon] * len(xs)}
+    data.update({k: v if isinstance(v, list) else [v] * len(xs) for k, v in columns.items()})
+    return gpd.GeoDataFrame(data, geometry=[Point(x, 0) for x in xs], crs=32632)
 
 
-def test_radius_grows_with_footprint_as_calibrated():
-    small = cv.calculate_buffer(_plants([0], 1_000), None, **RADIUS_KW)[0]
-    large = cv.calculate_buffer(_plants([0], 100_000), None, **RADIUS_KW)[0]
-    assert small == pytest.approx(568 * 1_000 ** 0.286)  # ~4.1 km
-    assert large / small == pytest.approx(100 ** 0.286)  # 100x footprint -> 3.7x radius
+def test_radius_grows_with_people_as_calibrated():
+    small = cv.calculate_buffer(_plants([0], 1_000, POP_SERVED=10_000), None, **RADIUS_KW)[0]
+    large = cv.calculate_buffer(_plants([0], 1_000, POP_SERVED=1_000_000), None, **RADIUS_KW)[0]
+    assert small == pytest.approx(3750)
+    assert large / small == pytest.approx(100 ** 0.35)  # 100x people -> 5x radius
+
+
+def test_reported_size_wins_and_footprint_fills_the_gaps():
+    plants = _plants([0, 1, 2, 3], 10_000, POP_SERVED=[50_000, None, 7_000, None],
+                     **{"EPA POP 2022": [None, 20_000, 1, None]})
+    people = cv.plant_size_people(plants, **RADIUS_KW)
+    from_footprint = 10 ** (1.369 + 0.738 * 4)
+    assert people == pytest.approx([50_000, 20_000, 7_000, from_footprint])
+    only_footprint = cv.plant_size_people(plants, **{**RADIUS_KW, "size_measure": "footprint"})
+    assert only_footprint == pytest.approx([from_footprint] * 4)
+
+
+def test_hydrowaste_11km_estimates_are_not_used_as_size():
+    plants = _plants([0, 1], 10_000, POP_SERVED=900_000, QUAL_POP=[4, 2])
+    people = cv.plant_size_people(plants, **RADIUS_KW)
+    assert people[0] == pytest.approx(10 ** (1.369 + 0.738 * 4)) and people[1] == 900_000
 
 
 def test_radius_does_not_depend_on_neighbours():
@@ -209,26 +227,62 @@ def test_radius_does_not_depend_on_neighbours():
     assert np.allclose(crowded, alone[0])
 
 
-def test_lagoons_and_undetected_plants_get_the_size_free_radius():
+def test_lagoons_and_undetected_plants_get_the_size_free_people():
     lagoon = cv.calculate_buffer(_plants([0], 400_000, lagoon=True), None, **RADIUS_KW)[0]
     undetected = cv.calculate_buffer(_plants([0], 0), None, **RADIUS_KW)[0]
-    assert lagoon == undetected == pytest.approx(4040)
+    assert lagoon == undetected == pytest.approx(3750 * (2014 / 1e4) ** 0.35)
 
 
 def test_radius_never_exceeds_max_buffer():
     assert cv.calculate_buffer(_plants([0], 1e9), None, **RADIUS_KW)[0] == 50000
 
 
-def test_starter_reads_the_radius_for_the_configured_quantile():
+def test_unknown_size_measure_is_rejected():
+    with pytest.raises(ValueError, match="size_measure"):
+        cv.plant_size_people(_plants([0], 1), **{**RADIUS_KW, "size_measure": "capacity"})
+
+
+def test_size_weights_give_large_plants_proportionally_more_area():
+    """Two plants 20 km apart, 100x and 1x people: the boundary sits 10x closer to
+    the small one (multiplicatively weighted Voronoi with sqrt(people) weights)."""
+    plants = _plants([0, 20_000], 1, POP_SERVED=[1_000_000, 10_000])
+    plants["WASTE_ID"] = [1, 2]
+    plants["weights"] = 0.5
+    kw = {**RADIUS_KW, "max_buffer": 40_000, "radius_at_10k_people_km": 40.0}  # both circles reach past the other plant
+    regions, _ = cv.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, n_points=200, buffering=True,
+                                     buffer_fn_kwargs=kw, size_weights=True)
+    regions = regions.to_crs(32632).set_index("WASTE_ID")
+    # on the axis between the plants: the point at d/1000 = (20000-d)/100 -> d = 18182 m
+    assert regions.geometry[1].contains(Point(17_500, 0)) and regions.geometry[2].contains(Point(19_000, 0))
+    unweighted, _ = cv.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=False, n_points=200,
+                                        buffering=True, buffer_fn_kwargs=kw)
+    assert unweighted.to_crs(32632).set_index("WASTE_ID").geometry[2].contains(Point(11_000, 0))
+
+
+def test_size_weights_need_the_multiplicative_distance():
+    plants = _plants([0, 20_000], 1, POP_SERVED=[1_000_000, 10_000])
+    plants["WASTE_ID"] = [1, 2]
+    plants["weights"] = 0.5
+    with pytest.raises(ValueError, match="multiplicative"):
+        cv.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, distance_fn=cv.default_distance_additive,
+                            buffer_fn_kwargs=RADIUS_KW, size_weights=True)
+
+
+def test_starter_reads_the_radius_for_the_configured_size_measure():
     from src.starter import load_config
 
-    kw = load_config(script_name="create_voronoi")["calculate_buffer_kwargs"]
-    assert kw["radius_coefficient_km"] == pytest.approx(0.568) and kw["radius_unsized_km"] == pytest.approx(4.04)
-    other = load_config(script_name="create_voronoi", radius_quantile=0.5)
-    assert other["calculate_buffer_kwargs"]["radius_coefficient_km"] == pytest.approx(0.492)
-    assert other["buffer_path_token"] == "q0_5"
-    with pytest.raises(ValueError, match="not calibrated"):
-        load_config(script_name="create_voronoi", radius_quantile=0.65)
+    cfg = load_config(script_name="create_voronoi")
+    kw = cfg["calculate_buffer_kwargs"]
+    assert cfg["weight_method"] == "size" and cfg["weight_type"] == "sz" and cfg["buffer_path_token"] == "rep"
+    assert kw["size_measure"] == "reported" and kw["radius_exponent"] == pytest.approx(0.3)
+    assert kw["radius_at_10k_people_km"] == pytest.approx(3.75)
+    other = load_config(script_name="create_voronoi", size_measure="footprint")
+    assert other["calculate_buffer_kwargs"]["radius_exponent"] == pytest.approx(0.5)
+    assert other["buffer_path_token"] == "fp"
+    with pytest.raises(ValueError, match="size_measure"):
+        load_config(script_name="create_voronoi", size_measure="capacity")
+    with pytest.raises(ValueError, match="needs weight_func 'mult'"):
+        load_config(script_name="create_voronoi", weight_func="add")
 
 
 # --------------------------------------------------------------------------- #

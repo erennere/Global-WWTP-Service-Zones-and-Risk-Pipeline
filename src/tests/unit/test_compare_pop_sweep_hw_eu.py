@@ -96,7 +96,7 @@ def test_build_alias_order_can_prioritize_hw_source():
 
 
 
-def test_parse_pop_output_path_accepts_radius_quantile_buffer_token():
+def test_parse_pop_output_path_accepts_size_measure_buffer_token():
     parsed = parse_pop_output_path(
         "/tmp/pop_voronoi_layers/v2/lvl8/bfq0_6/log/pop_added_appr_1_v2_lvl8_bfq0_6_log_mult.gpkg"
     )

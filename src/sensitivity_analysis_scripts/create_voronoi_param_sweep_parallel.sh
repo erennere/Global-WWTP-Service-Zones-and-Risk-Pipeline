@@ -19,7 +19,7 @@ PYTHON_SCRIPT="src.sensitivity_analysis_scripts.create_voronoi_parallel_sweep"
 APPROACH="1"
 VERSION=""
 DYNAMIC_BUFFERING=""
-RADIUS_QUANTILE=""
+SIZE_MEASURE=""
 NUM_JOBS=16
 
 while [[ $# -gt 0 ]]; do
@@ -36,8 +36,8 @@ while [[ $# -gt 0 ]]; do
             DYNAMIC_BUFFERING="$2"
             shift 2
             ;;
-        --radius-quantile)
-            RADIUS_QUANTILE="$2"
+        --size-measure)
+            SIZE_MEASURE="$2"
             shift 2
             ;;
         --num-jobs)
@@ -46,7 +46,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "ERROR: Unknown argument '$1'" >&2
-            echo "Usage: $0 [--approach <n>] [--version <v>] [--dynamic-buffering <true|false>] [--radius-quantile <q>] [--num-jobs <n>]" >&2
+            echo "Usage: $0 [--approach <n>] [--version <v>] [--dynamic-buffering <true|false>] [--size-measure <reported|footprint>] [--num-jobs <n>]" >&2
             exit 1
             ;;
     esac
@@ -78,7 +78,7 @@ log "  - Total memory: ${MEM_PER_NODE}MB"
 log "  - Approach: ${APPROACH}"
 log "  - Version: ${VERSION:-default}"
 log "  - Dynamic buffering: ${DYNAMIC_BUFFERING:-default}"
-log "  - Dynamic buffer k: ${RADIUS_QUANTILE:-default}"
+log "  - Dynamic buffer k: ${SIZE_MEASURE:-default}"
 
 #install_package
 
@@ -87,7 +87,7 @@ ${PYTHON_CMD} -m "${PYTHON_SCRIPT}" \
     --task-id "${TASK_ID}" \
     --version "${VERSION}" \
     --dynamic-buffering "${DYNAMIC_BUFFERING}" \
-    --radius-quantile "${RADIUS_QUANTILE}" \
+    --size-measure "${SIZE_MEASURE}" \
     --approach "${APPROACH}" \
     --num-jobs "${NUM_JOBS}" \
     2>&1 | tee -a "${LOG_FILE}"

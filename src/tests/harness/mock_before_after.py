@@ -379,7 +379,7 @@ def main():
     parser.add_argument("--only", default=None, help="Comma-separated run labels to (re)run; others are kept")
     parser.add_argument("--variant", action="append", default=[], metavar="LABEL:section.key=value[,...]",
                         help="Extra run of --new-ref with config changes, to attribute a difference, "
-                             "e.g. 'q09:create_voronoi.radius_quantile=0.9'")
+                             "e.g. 'fp:create_voronoi.size_measure=footprint'")
     parser.add_argument("--python", default=sys.executable,
                         help="Interpreter for the stages, e.g. a venv that matches the cluster's package versions")
     args = parser.parse_args()

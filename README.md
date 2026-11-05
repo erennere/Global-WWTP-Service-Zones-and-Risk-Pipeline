@@ -82,6 +82,7 @@ Three distance functions are available:
 Weights are normalized within each buffer and computed from ML-derived tags such as the number of ponds and total treatment pond area, combined as `total_area * sqrt(number_of_ponds)`.
 
 Weight transformation functions are controlled by `create_voronoi.weight_method` and currently supported values are:
+- `size` (default): sqrt of the plant size in people (`create_voronoi.size_measure`); needs `weight_func: mult`
 - `linear`
 - `square_root`
 - `logarithmic`
@@ -92,7 +93,7 @@ Weight transformation functions are controlled by `create_voronoi.weight_method`
 To avoid disproportionately large Voronoi cells, especially in sparse areas, cells are clipped to a buffer around each location after creation.
 
 - Static buffering: disable dynamic buffering with `create_voronoi.dynamic_buffering: false`. The `--buffer` flag overrides the config value at runtime.
-- Dynamic buffering: enable with `create_voronoi.dynamic_buffering: true`. The scale factor is `create_voronoi.dynamic_buffer_k`.
+- Dynamic buffering: enable with `create_voronoi.dynamic_buffering: true`. Each plant's radius grows with its size in people (`create_voronoi.size_measure`: `reported` or `footprint`; numbers in `create_voronoi.radius_calibration`).
 
 The sweep analysis scripts support sensitivity analysis across combinations of model parameters. The configurable hooks that govern those runs are `create_voronoi.calculate_area_fn`, `create_voronoi.calculate_buffer_fn`, and `create_voronoi.prepare_data_fn`, which are resolved at runtime through `src/pipelines.py`.
 
@@ -310,7 +311,7 @@ The defaults are a mix of portable relative paths and environment-specific clust
 | `create_voronoi.weight_method` | Controls weight transformation |
 | `create_voronoi.weight_func` | Controls multiplicative vs additive weighted distance |
 | `create_voronoi.dynamic_buffering` | Switches between static and dynamic clipping |
-| `create_voronoi.dynamic_buffer_k` | Controls dynamic buffer scaling |
+| `create_voronoi.size_measure` | Plant size in people (`reported` or `footprint`) for the service radius and `size` weights |
 | `create_rasters.zoom_level` | Controls raster/tile resolution used in the risk workflow |
 | `find_unserved_pop.figures.pop_threshold` | Controls thresholding of non-served population polygons |
 | `find_intersection_river.x_distance` | Controls maximum river-match distance for non-served polygons |
@@ -322,7 +323,7 @@ The defaults are a mix of portable relative paths and environment-specific clust
 The canonical shared override order used across the wrappers is:
 
 ```bash
-[level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [dynamic_buffer_k]
+[level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [size_measure]
 ```
 
 ## What Is Missing Or External To The Repository

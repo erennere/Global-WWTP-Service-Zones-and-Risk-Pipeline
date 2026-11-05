@@ -18,10 +18,10 @@ PYTHON_SCRIPT="src.figures_scripts.composite_area_population_plots"
 
 #
 # Usage:
-#   ./composite_area_population_plots.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [radius_quantile] [approach] [color_col]
+#   ./composite_area_population_plots.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [size_measure] [approach] [color_col]
 #
 # Optional config overrides:
-#   level, version, buffer, weight_method, weight_func, dynamic_buffering, radius_quantile
+#   level, version, buffer, weight_method, weight_func, dynamic_buffering, size_measure
 # Optional plotting args:
 #   approach  - key from create_pop_output_paths: 0 | 1 | 2 | 0_only_round | 1_only_round
 #   color_col - boundary column used for color coding (default: ECONOMY)

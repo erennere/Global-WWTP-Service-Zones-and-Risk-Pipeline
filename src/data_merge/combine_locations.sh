@@ -5,7 +5,7 @@
 # Orchestrates multiple sequential data processing steps
 #
 # Usage:
-#   ./combine_locations.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [radius_quantile]
+#   ./combine_locations.sh [level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [size_measure]
 #   sbatch combine_locations.sh (SLURM job)
 #
 # SLURM Configuration

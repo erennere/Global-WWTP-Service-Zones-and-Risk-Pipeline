@@ -716,8 +716,8 @@ def test_parse_args_parses_index_parallel_flag_and_optional_overrides(monkeypatc
             "",
             "--dynamic-buffering",
             "true",
-            "--radius-quantile",
-            "0.75",
+            "--size-measure",
+            "footprint",
         ],
     )
 
@@ -731,7 +731,7 @@ def test_parse_args_parses_index_parallel_flag_and_optional_overrides(monkeypatc
     assert args.weight_method == "linear"
     assert args.weight_func == ""
     assert args.dynamic_buffering == "true"
-    assert args.radius_quantile == "0.75"
+    assert args.size_measure == "footprint"
 
 
 def test_find_diff_pop_main_selects_sorted_input_and_writes_output(

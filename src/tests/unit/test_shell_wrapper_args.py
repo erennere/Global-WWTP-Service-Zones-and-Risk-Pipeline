@@ -90,7 +90,7 @@ def test_parse_overrides_accepts_the_seven_standard_flags():
     result = _run_bash(
         "./pop_at_risk_river_calculations/find_unserved_pop.sh "
         "--level 8 --version 2 --buffer 9000 --weight-method linear "
-        "--weight-func mult --dynamic-buffering false --radius-quantile 0.7"
+        "--weight-func mult --dynamic-buffering false --size-measure footprint"
     )
 
     assert result.returncode == 0

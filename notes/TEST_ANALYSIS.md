@@ -251,7 +251,7 @@ Generates diagnostic histograms and scatter plots comparing facility-level vs co
 - **Parameters**: None (reads sys.argv)
 - **Returns**: argparse.Namespace with parsed arguments
 - **Key Logic**:
-  - Positional args: level, version, buffer, weight_method, weight_func, dynamic_buffering, dynamic_buffer_k
+  - Positional args: level, version, buffer, weight_method, weight_func, dynamic_buffering, size_measure
   - Optional args: --approach, --color-col, --zonal-col, --hist-lower-q, --hist-upper-q
 - **Edge Cases**:
   - Missing positional args â†’ defaults to None

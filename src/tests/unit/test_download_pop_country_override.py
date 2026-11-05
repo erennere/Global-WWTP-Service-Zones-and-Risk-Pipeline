@@ -30,7 +30,7 @@ def _fake_args(country=None):
         weight_method=None,
         weight_func=None,
         dynamic_buffering=None,
-        radius_quantile=None,
+        size_measure=None,
         country=country,
     )
 
