@@ -4,7 +4,7 @@ Pipeline orchestration for Voronoi-based spatial analysis.
 Functions are grouped by purpose:
 
 **Internal helpers**
-  - ``_compute_mean_2_nnd_web_mercator`` — per-site nearest-neighbour spacing
+  - ``_compute_mean_2_nnd_m`` — per-site nearest-neighbour spacing in metres
   - ``_resolve_configured_callable``    — resolve a config string or callable
     to an actual function in a given module
 
@@ -38,43 +38,33 @@ import shapely
 import logging
 
 try:
-    from .geo_utils import nearest_neighbor_distances
+    from .geo_utils import nearest_distances_m
 except ImportError:  # Support running/importing as a top-level module
-    from geo_utils import nearest_neighbor_distances
+    from geo_utils import nearest_distances_m
 
 logger = logging.getLogger(__name__)
 
 
-def _compute_mean_2_nnd_web_mercator(gdf):
-    """Compute mean distance to the next two neighbors in EPSG:3857.
+def _compute_mean_2_nnd_m(gdf):
+    """Mean great-circle distance (metres) from each site to its two nearest sites.
 
-    Distances are calculated only for rows with valid, non-empty geometries.
-    Values are written to ``mean_2_nnd``; rows without enough valid neighbors
-    remain ``NaN``.
+    Values are written to ``mean_2_nnd``; rows with missing/empty geometry,
+    or without a neighbour, stay ``NaN``. The previous version measured in
+    EPSG:3857, which inflates distances by 1/cos(latitude) (x1.56 at 50 deg N,
+    x2 at 60 deg N), and those distances set the dynamic buffer sizes.
     """
-    gdf['mean_2_nnd'] = np.nan
     if gdf is None or gdf.empty:
         return gdf
-
+    gdf['mean_2_nnd'] = np.nan
     valid_mask = gdf['geometry'].notna() & gdf['geometry'].is_valid & (~gdf['geometry'].is_empty)
     valid_idx = gdf.index[valid_mask]
     if len(valid_idx) < 2:
         return gdf
 
-    # Use representative points so non-point valid geometries can still participate.
-    valid_geom = gdf.loc[valid_idx, 'geometry'].map(
-        lambda geom: geom if geom.geom_type == 'Point' else geom.representative_point()
-    )
-    tmp = gpd.GeoDataFrame({'geometry': valid_geom}, geometry='geometry', crs=gdf.crs)
-    if tmp.crs is None:
-        tmp = tmp.set_crs('epsg:4326')
-    tmp = tmp.to_crs('epsg:3857')
-
-    coords = np.column_stack((tmp.geometry.x.to_numpy(), tmp.geometry.y.to_numpy()))
-    if len(coords) < 2:
-        return gdf
-
-    gdf.loc[valid_idx, 'mean_2_nnd'] = nearest_neighbor_distances(coords, neighbors=2)
+    sites = gpd.GeoDataFrame(geometry=gdf.loc[valid_idx, 'geometry'], crs=gdf.crs or 'epsg:4326')
+    k = min(3, len(sites))  # the site itself plus up to two neighbours
+    distances, _ = nearest_distances_m(sites, sites, k=k)
+    gdf.loc[valid_idx, 'mean_2_nnd'] = np.nanmean(np.where(np.isfinite(distances[:, 1:k]), distances[:, 1:k], np.nan), axis=1)
     return gdf
 
 
@@ -383,7 +373,7 @@ def prepare_data(cfg):
     old_site_id_col = cfg['old_site_id_column']
     gdf_bbox[old_site_id_col] = gdf_bbox[site_id_col]
     gdf_bbox[site_id_col] = np.arange(len(gdf_bbox))
-    gdf_bbox = _compute_mean_2_nnd_web_mercator(gdf_bbox)
+    gdf_bbox = _compute_mean_2_nnd_m(gdf_bbox)
 
     if cfg['remove_industrial']:
         # Discard direction: industrial and mixed-use sites both leave the layer.

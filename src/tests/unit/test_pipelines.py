@@ -59,8 +59,8 @@ def test_create_output_paths_and_pop_output_paths_use_config_tokens(tmp_path):
     assert Path(pop_output_paths["voronoi"]["1"]).name == "pop_added_appr_1_v2_lvl7_bfk0_75_log.gpkg"
 
 
-def test_compute_mean_2_nnd_web_mercator_assigns_positive_distances(sample_sites_gdf):
-    result = pipelines._compute_mean_2_nnd_web_mercator(sample_sites_gdf.copy())
+def test_compute_mean_2_nnd_m_assigns_positive_distances(sample_sites_gdf):
+    result = pipelines._compute_mean_2_nnd_m(sample_sites_gdf.copy())
 
     assert result["mean_2_nnd"].notna().all()
     assert (result["mean_2_nnd"] > 0).all()

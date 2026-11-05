@@ -622,6 +622,7 @@ def test_create_rasters_main_smoke(monkeypatch, tmp_path):
     cfg = {
         "annotations": {"max_workers": 2, "random_seed": 11},
         "min_pixels": 3,
+        "served_all_touched": False,
         "zoom_level": 8,
         "figures": {"approach": "1"},
         "paths": {

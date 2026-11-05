@@ -13,7 +13,7 @@ import pandas as pd
 from shapely import from_wkt, to_wkt
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..geo_utils import ensure_duckdb_spatial
+from ..geo_utils import buffer_meters, ensure_duckdb_spatial
 from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
 from .find_pop_in_danger_pop import finding_tiles
 
@@ -51,153 +51,52 @@ def add_bbox(gdf, zoom_level, max_workers, is_parallel):
         gdf['tiles'] = gdf['geometry'].map(lambda geom: finding_tiles(geom, zoom_level))
     return gdf
 
-def add_buffers_to_WWTP(gdf, wwtp_filepath, wwtp_buffer, zoom_level, 
+def add_buffers_to_WWTP(gdf, wwtp_filepath, wwtp_buffer, zoom_level,
                         max_workers, is_parallel, wwtp_country_col):
-    logger.info(
-        "Starting add_buffers_to_WWTP: input_rows=%s wwtp_path=%s wwtp_buffer=%s zoom_level=%s max_workers=%s is_parallel=%s",
-        len(gdf),
-        wwtp_filepath,
-        wwtp_buffer,
-        zoom_level,
-        max_workers,
-        is_parallel,
-    )
+    """Keep the non-served polygons that lie within ``wwtp_buffer`` metres of a plant.
 
+    Each plant is buffered by ``wwtp_buffer`` metres in its own UTM zone and
+    the polygons that intersect any buffer are returned once each, with
+    their ORIGINAL geometry and attributes.
+
+    The previous DuckDB version buffered both sides in EPSG:3857 (so the test
+    was 2 x ``wwtp_buffer``, shrunk by cos(latitude)), returned the polygons
+    with the 50 km buffer still applied, missed matches across zoom-8 tile
+    edges, and wrote a polygon once per country of the nearby plants, which
+    double-counted its population.
+
+    ``zoom_level``, ``max_workers`` and ``is_parallel`` are accepted for call
+    compatibility; the spatial join does not need tiles.
+    """
+    logger.info(
+        "Starting add_buffers_to_WWTP: input_rows=%s wwtp_path=%s wwtp_buffer=%s m",
+        len(gdf), wwtp_filepath, wwtp_buffer,
+    )
     wwtp_gdf = gpd.read_file(wwtp_filepath)
-    logger.info(
-        "WWTP read complete: rows=%s cols=%s crs=%s",
-        len(wwtp_gdf),
-        len(wwtp_gdf.columns),
-        wwtp_gdf.crs,
-    )
-
     if 'geometry' not in wwtp_gdf.columns:
-        logger.error("WWTP file has no geometry column: %s", wwtp_filepath)
         raise ValueError(f"WWTP file has no geometry column: {wwtp_filepath}")
     if wwtp_country_col not in wwtp_gdf.columns:
-        logger.error("WWTP file is missing configured country column '%s': %s", wwtp_country_col, wwtp_filepath)
         raise KeyError(f"WWTP file is missing configured country column '{wwtp_country_col}': {wwtp_filepath}")
 
-    wwtp_geom = wwtp_gdf['geometry']
-    wwtp_null_count = int(wwtp_geom.isna().sum())
-    wwtp_invalid_count = int((~wwtp_geom.is_valid.fillna(False)).sum())
-    countries_before = sorted(wwtp_gdf[wwtp_country_col].dropna().astype(str).str.strip().unique().tolist())
-    logger.info(
-        "WWTP geometry quality before filtering: null=%s invalid=%s",
-        wwtp_null_count,
-        wwtp_invalid_count,
-    )
-    logger.info(
-        "WWTP countries before filtering (%s): %s",
-        len(countries_before),
-        countries_before,
-    )
-    before_filter_rows = len(wwtp_gdf)
-    wwtp_gdf = wwtp_gdf[(wwtp_gdf['geometry'].notna()) 
-                        & (wwtp_gdf['geometry'].is_valid)]
-    dropped_rows = before_filter_rows - len(wwtp_gdf)
-    countries_after = sorted(wwtp_gdf[wwtp_country_col].dropna().astype(str).str.strip().unique().tolist())
-    logger.info(
-        "WWTP filtering complete: kept_rows=%s dropped_rows=%s",
-        len(wwtp_gdf),
-        dropped_rows,
-    )
-    logger.info(
-        "WWTP countries after filtering (%s): %s",
-        len(countries_after),
-        countries_after,
-    )
-    if wwtp_gdf.empty:
-        logger.warning("All WWTP geometries were filtered out before buffering.")
-    
-    wwtp_gdf = add_bbox(wwtp_gdf, zoom_level=zoom_level, max_workers=max_workers, is_parallel=is_parallel)
-    if not ('tiles' in wwtp_gdf.columns and not wwtp_gdf.empty):
-        logger.warning("WWTP tile assignment produced no rows or missing tiles column.")
+    before = len(wwtp_gdf)
+    wwtp_gdf = wwtp_gdf[wwtp_gdf.geometry.notna() & wwtp_gdf.geometry.is_valid & ~wwtp_gdf.geometry.is_empty]
+    logger.info("WWTP rows kept for buffering: %s of %s", len(wwtp_gdf), before)
+    if gdf.empty or wwtp_gdf.empty:
+        return gdf.iloc[0:0].copy() if wwtp_gdf.empty else gdf
 
-    wwtp_gdf = wwtp_gdf.to_crs(3857)
-    logger.info("WWTP CRS transformed to EPSG:3857")
-    wwtp_gdf['geometry'] = wwtp_gdf.geometry.buffer(wwtp_buffer)
-    wwtp_buffer_null_count = int(wwtp_gdf['geometry'].isna().sum())
-    wwtp_buffer_empty_count = int(wwtp_gdf['geometry'].is_empty.fillna(False).sum())
-    logger.info(
-        "WWTP buffering complete: rows=%s null_after_buffer=%s empty_after_buffer=%s",
-        len(wwtp_gdf),
-        wwtp_buffer_null_count,
-        wwtp_buffer_empty_count,
-    )
-    wwtp_gdf['geometry'] = wwtp_gdf['geometry'].map(to_wkt)
-    logger.info("WWTP geometry converted to WKT for DuckDB join")
-    logger.info("Input non-served frame before WWTP join prep: rows=%s crs=%s", len(gdf), gdf.crs)
+    if gdf.crs is None:
+        raise ValueError("Non-served polygons need a CRS")
+    wwtp_zones = gpd.GeoDataFrame(geometry=buffer_meters(wwtp_gdf, float(wwtp_buffer)), crs=wwtp_gdf.crs).to_crs(gdf.crs)
 
-    gdf = add_bbox(gdf, zoom_level=zoom_level, max_workers=max_workers, is_parallel=is_parallel)
-    gdf = gdf.to_crs(3857)
-    logger.info("Input non-served frame CRS transformed to EPSG:3857")
-    gdf['geometry'] = gdf.geometry.buffer(wwtp_buffer).map(to_wkt)
-    logger.info("Input non-served geometries buffered and converted to WKT for DuckDB join")
+    probe = gpd.GeoDataFrame(geometry=gdf.geometry.values, crs=gdf.crs)
+    probe['_row'] = range(len(probe))
+    hits = gpd.sjoin(probe, wwtp_zones, how='inner', predicate='intersects')
+    keep = sorted(set(hits['_row'].tolist()))
+    result = gdf.iloc[keep].copy()
+    logger.info("Non-served polygons within %s m of a plant: %s of %s", wwtp_buffer, len(result), len(gdf))
+    return result
 
-    country_col_quoted = wwtp_country_col.replace('"', '""')
-    
-    query = f"""
-    WITH wwtp AS (
-        SELECT
-            row_number() OVER () AS wwtp_idx,
-            * REPLACE (ST_GeomFromText(geometry) AS geometry),
-            CAST("{country_col_quoted}" AS VARCHAR) AS "{country_col_quoted}",
-            UNNEST(tiles) AS tile
-        FROM wwtp_gdf
-    ),
-    data_gdf AS (
-        SELECT
-            row_number() OVER () AS data_idx,
-            * REPLACE (ST_GeomFromText(geometry) AS geometry)
-        FROM gdf
-    ),
-    data_tiles AS (
-        SELECT *, UNNEST(tiles) AS tile
-        FROM data_gdf
-    ),
-    matches AS (
-        SELECT DISTINCT
-            a.data_idx,
-            b."{country_col_quoted}" AS "{country_col_quoted}"
-        FROM data_tiles a
-        JOIN wwtp b
-        ON CAST(a.tile AS VARCHAR) = CAST(b.tile AS VARCHAR)
-        AND ST_Intersects(a.geometry, b.geometry)
-    )
-    SELECT d.* REPLACE (ST_AsText(d.geometry) AS geometry), m."{country_col_quoted}"
-    FROM data_gdf d
-    JOIN matches m
-    ON CAST(d.data_idx AS BIGINT) = CAST(m.data_idx AS BIGINT)
-    """
-    try:
-        # Shared helper owns the scratch DB: the previous fixed 'temp_duckdb.db'
-        # was reused by every concurrent worker in this module.
-        with duckdb_connection() as conn:
-            ensure_duckdb_spatial(conn)
-            gdf = conn.execute(query).df()
-            logger.info(
-                "DuckDB WWTP intersection complete: rows=%s cols=%s",
-                len(gdf),
-                len(gdf.columns),
-            )
-            if wwtp_country_col in gdf.columns:
-                matched_countries = sorted(gdf[wwtp_country_col].dropna().astype(str).str.strip().unique().tolist())
-                logger.info(
-                    "WWTP countries matched by query (%s): %s",
-                    len(matched_countries),
-                    matched_countries,
-                )
-                gdf = gdf.drop(columns=[wwtp_country_col])
-            if gdf.empty:
-                logger.warning("DuckDB WWTP intersection returned zero rows.")
-            gdf = gpd.GeoDataFrame(gdf, geometry=gdf['geometry'].map(from_wkt), crs=3857).to_crs(4326)
-            logger.info("WWTP output GeoDataFrame prepared: rows=%s crs=%s", len(gdf), gdf.crs)
-            return gdf
-    except Exception as e:
-        logger.error("Error during buffer addition: %s", e)
-        raise Exception("Error during buffer addition") from e
-    
+
 def orchestrate_urban_intersection(unserved_gdf, urban_filepath, zoom_level=8, max_workers=32, is_parallel=True,
                                    urban_buffer=10000, tolerance=0.0001):
     if int(max_workers) < 1:
@@ -210,9 +109,9 @@ def orchestrate_urban_intersection(unserved_gdf, urban_filepath, zoom_level=8, m
 
     unserved_gdf = add_bbox(unserved_gdf, zoom_level=zoom_level, max_workers=max_workers, is_parallel=is_parallel)
     urban_areas_gdf = read_urban_areas(urban_filepath)
-    urban_areas_gdf = urban_areas_gdf.to_crs(3857)
-    urban_areas_gdf['geometry'] = urban_areas_gdf.geometry.buffer(urban_buffer)
+    # Buffer in metres in each area's UTM zone (EPSG:3857 shrank it by cos(lat)).
     urban_areas_gdf = urban_areas_gdf.to_crs(4326)
+    urban_areas_gdf['geometry'] = buffer_meters(urban_areas_gdf, float(urban_buffer))
     urban_areas_gdf = add_bbox(urban_areas_gdf, zoom_level=zoom_level, max_workers=max_workers, is_parallel=False)
 
     urban_areas_gdf = urban_areas_gdf.to_crs(3857)

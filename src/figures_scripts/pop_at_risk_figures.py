@@ -254,11 +254,9 @@ def create_impact_polygon_plots(
     ]
 
     for idx, col in enumerate(plot_columns):
+        # Every '*_zonal_sum' name splits into at least 3 parts, so only the
+        # numeric parse can fail.
         parts = col.split('_')
-        if len(parts) < 3:
-            logger.warning("Skipping unrecognized zonal-sum column format: %s", col)
-            continue
-
         try:
             radius = int(parts[0])
             year = int(parts[1])

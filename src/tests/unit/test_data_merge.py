@@ -29,7 +29,7 @@ def test_cluster_point_indices_merges_transitive_neighbors():
     assert normalized == {frozenset({0, 1, 2}), frozenset({3})}
 
 
-def test_cluster_points_sums_population_and_keeps_richest_geometry():
+def test_cluster_points_keeps_max_population_and_richest_geometry():
     df = gpd.GeoDataFrame(
         {
             "meter_geometry": [Point(0, 0).wkt, Point(3, 0).wkt, Point(25, 0).wkt],
@@ -49,7 +49,8 @@ def test_cluster_points_sums_population_and_keeps_richest_geometry():
     assert len(result) == 2
 
     merged_row = result[result["name"] == "richest"].iloc[0]
-    assert merged_row["POP_SERVED"] == 350
+    assert merged_row["POP_SERVED"] == 250
+    assert merged_row["n_merged_records"] == 2
     assert merged_row["wwtp_area_square"] == "[15.0]"
     assert merged_row["round_area"] == pytest.approx((1.0**2 * 3.141592653589793) + (2.0**2 * 3.141592653589793))
     assert merged_row["geometry"].equals(Point(20, 20))

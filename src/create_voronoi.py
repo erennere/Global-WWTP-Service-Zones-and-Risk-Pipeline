@@ -124,7 +124,13 @@ def geometry_contains_points(geometry, points):
 ################################################################################
 
 def normalize_plane(a, b):
-    """Normalize 2-D coordinate arrays to a shared [0, 1] bounding box.
+    """Normalize 2-D coordinates by one isotropic scale (the larger extent).
+
+    Both axes are shifted by their minimum and divided by the SAME scalar,
+    the larger of the x and y extents, so Euclidean distances keep their
+    shape: the result is ``(points - min) / max(width, height)``. Scaling the
+    axes separately (the previous behaviour) stretched the shorter axis and
+    moved Voronoi boundaries whenever the grid was not square.
 
     Parameters
     ----------
@@ -136,19 +142,16 @@ def normalize_plane(a, b):
     Returns
     -------
     tuple[numpy.ndarray, numpy.ndarray]
-        ``(a_normalized, b_normalized)`` scaled to ``[0, 1]``.
-        When ``max == min`` on an axis the denominator is clamped to 1 to
-        avoid division by zero.
+        ``(a_normalized, b_normalized)``; the longer axis spans ``[0, 1]``.
+        A degenerate extent of 0 is treated as 1.
     """
-    b = np.array(b)  # Convert tuple to array
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
     all_points = np.vstack([a, b.reshape(1, 2)])
     min_vals = np.min(all_points, axis=0)
-    max_vals = np.max(all_points, axis=0)
-    denom = np.where(max_vals - min_vals == 0, 1, max_vals - min_vals)
-    a_norm = (a - min_vals) / denom
-    b_norm = (b - min_vals) / denom
-    logger.debug(f"Normalized {len(a)} points to [0,1] range")
-    return a_norm, b_norm
+    extent = float(np.max(np.max(all_points, axis=0) - min_vals))
+    scale = extent if extent > 0 else 1.0
+    return (a - min_vals) / scale, (b - min_vals) / scale
 
 def is_valid_geom(geom):
     """Return ``True`` if a geometry is non-``None``, topologically valid, and has finite coordinates.
@@ -257,8 +260,10 @@ def cluster_points(df, threshold):
         threshold (float): Maximum distance for clustering in same CRS units
         
     Returns:
-        pd.GeoDataFrame: Input df with new 'cluster_id' column (integer cluster assignments)
-        
+        pd.GeoDataFrame: One row per cluster: the most complete record, with
+        ``weights`` summed, ``POP_SERVED`` the cluster maximum (never the sum)
+        and ``n_merged_records`` the number of records merged.
+
     Notes:
         Uses centroid-to-centroid distance for clustering
         Union-Find ensures transitive closure (A~B and B~C → A~C)
@@ -273,7 +278,7 @@ def cluster_points(df, threshold):
     for cluster_set in cluster_sets:
         sub_df = df.iloc[list(cluster_set)]
         if len(sub_df) == 1:
-            data.append(sub_df)
+            data.append(sub_df.assign(n_merged_records=1))
         else:
             weights = sub_df['weights'].sum()
             # Get the row(s) with the fewest NaNs
@@ -282,8 +287,10 @@ def cluster_points(df, threshold):
             best_row = best_rows.iloc[0].copy()  # Choose the first one if there's a tie
             best_row['weights'] = weights
             if 'POP_SERVED' in sub_df.columns:
-                pop_served = sub_df['POP_SERVED'].sum()
-                best_row['POP_SERVED'] = pop_served
+                # Records this close are the same plant reported by several
+                # sources; adding their populations double-counts it.
+                best_row['POP_SERVED'] = pd.to_numeric(sub_df['POP_SERVED'], errors='coerce').max()
+            best_row['n_merged_records'] = len(sub_df)
             data.append(pd.DataFrame([best_row]))
     df = pd.concat(data, ignore_index=True)
     df = df.drop(columns=['num_missing'])
@@ -294,40 +301,31 @@ def cluster_points(df, threshold):
 ################################################################################
 
 def create_ranges(x, y, step, min_step=100):
-    """
-    Create adaptive coordinate range between two values with flexible step size.
-    
-    Creates a range of coordinates from min(x,y) to max(x,y) using the
-    specified step size. If step is too large, adaptively reduces it until
-    fitting minimum step size requirement.
-    
+    """Grid coordinates from ``min(x, y)`` in steps of exactly ``step``.
+
+    The last coordinate is the first one at or beyond ``max(x, y)``, so the
+    grid covers the whole range and the spacing is exactly ``step``. Contour
+    extraction scales pixel indices by ``step``; a grid whose real spacing
+    differed from it (the previous ``linspace``) shifted and stretched every
+    extracted polygon.
+
     Args:
         x, y (float): Boundary coordinates
-        step (float): Desired step size (can be adjusted downward)
-        min_step (float): Minimum step size threshold (default 1e-6)
-        
+        step (float): Grid spacing in CRS units (metres)
+        min_step (float): Kept for call compatibility; unused.
+
     Returns:
-        np.ndarray: Linear spaced coordinates from min to max
-        
-    Notes:
-        INEFFICIENCY: No max iteration limit on adaptive loop.
-        Can cause performance issues if min_step is very small.
+        np.ndarray: ``min + step * [0, 1, ..., n]``
     """
     min_val = min(x, y)
     max_val = max(x, y)
     n_range = max_val - min_val
-
+    if step <= 0:
+        raise ValueError(f"step must be > 0, got {step}")
     if n_range == 0:
         return np.array([x, y])
-
-    while True:
-        if n_range >= step:
-            n_steps = int(np.ceil(n_range / step))
-            return np.linspace(min_val, max_val, n_steps + 1)
-        else:
-            step /= 2
-            if step < min_step:
-                return np.array([min_val, max_val])
+    n_steps = max(1, int(np.ceil(n_range / step - 1e-9)))
+    return min_val + step * np.arange(n_steps + 1, dtype=float)
 
 def nearest_neighbor_distances_and_median(df):
     """Return nearest-neighbor distances and their median from a dataframe.
@@ -399,8 +397,11 @@ def default_distance_additive(a, b, weight, factor):
     """
     Additive weighted distance function for Voronoi weighting.
     
-    Computes distance in normalized space: sqrt(sum((a-b)^2) - w_eff^2)
-    Acts as a contraction/expansion based on weight values.
+    Returns the power distance in the normalized plane, ``|a - b|^2 - w^2``
+    (Laguerre / power-diagram weighting): a site with weight ``w`` claims a
+    disc of radius ``w`` (a fraction of the grid's longer extent) outright and
+    competes beyond it. The value can be negative inside that disc; it is only
+    ever compared, never used as a length.
     
     Args:
         a (np.ndarray): Grid points array shape (n, 2)
@@ -410,16 +411,17 @@ def default_distance_additive(a, b, weight, factor):
             effective additive weight is computed as ``weight / factor``.
         
     Returns:
-        np.ndarray: Weighted distances for all points in a
-        
+        np.ndarray: Power distances for all points in a (smaller = closer)
+
     Notes:
-        Result is clipped to minimum 0.01 for numerical stability.
+        The previous ``sqrt(max(d^2 - w^2, 0.01))`` replaced every point inside
+        a site's own disc by 0.1, so those points ranked *behind* points just
+        outside the disc. The signed power distance is monotonic in true
+        distance for every site.
     """
     a, b = normalize_plane(a, b)
     effective_weight = weight / factor if factor and factor > 0 else weight
-    result = np.sum((a - b) ** 2, axis=-1)
-    result -= effective_weight**2
-    return np.sqrt(np.where(result >= 0, result, 0.01))
+    return np.sum((a - b) ** 2, axis=-1) - effective_weight ** 2
 
 def default_distance_multiplicative(a, b, weight, factor):
     """
@@ -891,10 +893,16 @@ def intersects_with_country_db(df, filepath, polygon_country_col='country', outp
     quoted_polygon_country_col = quote_sql_identifier(polygon_country_col)
     quoted_output_country_col = quote_sql_identifier(output_country_col)
     logger.info(f"Starting DuckDB country boundary intersection for {len(df)} points")
+    # One country per input row. A plain LEFT JOIN returned one row per
+    # matching polygon, so a point inside a country stored as both a land and
+    # a maritime polygon, or a basin crossing a border, came back duplicated;
+    # and requiring the feature's bbox to lie inside the country's bbox left
+    # cross-border features unmatched. Rows with several candidate countries
+    # take the one with the largest overlap (ties: lowest code).
     query2 = f"""
-    WITH 
+    WITH
     data AS (
-        SELECT *, 
+        SELECT *,
         ST_XMax(geometry) AS LON_MAX,
         ST_XMin(geometry) AS LON_MIN,
         ST_YMax(geometry) AS LAT_MAX,
@@ -905,25 +913,51 @@ def intersects_with_country_db(df, filepath, polygon_country_col='country', outp
         )
     ),
     countries AS (
-        SELECT *, 
+        SELECT {quoted_polygon_country_col} AS __country, geometry,
         ST_XMax(geometry) AS LON_MAX,
         ST_XMin(geometry) AS LON_MIN,
         ST_YMax(geometry) AS LAT_MAX,
         ST_YMin(geometry) AS LAT_MIN
-        FROM ( SELECT * REPLACE(ST_GeomFromWKB(geometry)) AS geometry 
+        FROM ( SELECT * REPLACE(ST_GeomFromWKB(geometry)) AS geometry
             FROM read_parquet('{filepath}')
         )
-    )
-    SELECT 
-        a.* REPLACE(ST_AsText(a.geometry)) AS geometry, 
-        b.{quoted_polygon_country_col} AS {quoted_output_country_col}
-    FROM data a 
-    LEFT JOIN countries b ON 
-        a.LON_MIN >= b.LON_MIN 
-        AND a.LON_MAX <= b.LON_MAX 
-        AND a.LAT_MIN >= b.LAT_MIN 
-        AND a.LAT_MAX <= b.LAT_MAX
-        AND ST_Intersects(a.geometry, b.geometry)
+    ),
+    matches AS (
+        SELECT a.__rid, b.__country, b.geometry AS __cgeom
+        FROM data a
+        JOIN countries b ON
+            a.LON_MIN <= b.LON_MAX
+            AND a.LON_MAX >= b.LON_MIN
+            AND a.LAT_MIN <= b.LAT_MAX
+            AND a.LAT_MAX >= b.LAT_MIN
+            AND ST_Intersects(a.geometry, b.geometry)
+    ),
+    distinct_matches AS (SELECT DISTINCT __rid, __country FROM matches),
+    counts AS (SELECT __rid, count(*) AS __n FROM distinct_matches GROUP BY __rid),
+    single AS (
+        SELECT d.__rid, d.__country FROM distinct_matches d JOIN counts c USING (__rid) WHERE c.__n = 1
+    ),
+    multi AS (
+        SELECT m.__rid, m.__country, sum(ST_Area(ST_Intersection(a.geometry, m.__cgeom))) AS __overlap
+        FROM matches m
+        JOIN counts c USING (__rid)
+        JOIN data a USING (__rid)
+        WHERE c.__n > 1
+        GROUP BY m.__rid, m.__country
+    ),
+    multi_best AS (
+        SELECT __rid, __country FROM (
+            SELECT *, row_number() OVER (PARTITION BY __rid ORDER BY __overlap DESC, __country) AS __rn
+            FROM multi
+        ) WHERE __rn = 1
+    ),
+    chosen AS (SELECT * FROM single UNION ALL SELECT * FROM multi_best)
+    SELECT
+        a.* EXCLUDE (__rid, LON_MAX, LON_MIN, LAT_MAX, LAT_MIN) REPLACE (ST_AsText(a.geometry) AS geometry),
+        ch.__country AS {quoted_output_country_col}
+    FROM data a
+    LEFT JOIN chosen ch USING (__rid)
+    ORDER BY a.__rid
     """
     if df is None or df.empty:
         logger.warning("Input dataframe is empty, returning as-is")
@@ -937,7 +971,9 @@ def intersects_with_country_db(df, filepath, polygon_country_col='country', outp
             df = df.to_crs(epsg=4326)
 
         logger.debug(f"Converting {len(df)} geometries to WKT format")
+        df = pd.DataFrame(df)
         df['geometry'] = df['geometry'].map(safe_to_wkt)
+        df['__rid'] = np.arange(len(df))
         # duckdb_connection owns the scratch database: unique name, always removed.
         with duckdb_connection() as con:
             ensure_duckdb_spatial(con)
@@ -1147,31 +1183,32 @@ def resolve_polygon_overlaps(region_polygons):
     from the smaller polygon when overlaps are detected.
     """
     logger.debug(f"Starting polygon overlap resolution for {len(region_polygons)} geometries")
-    
-    # Create working copy of geometries
-    non_intersecting_polygons = region_polygons.geometry.to_numpy()
-    
-    for i, _ in enumerate(region_polygons.geometry):
-        geom = non_intersecting_polygons[i]
-        if geom is None:
+
+    non_intersecting_polygons = region_polygons.geometry.to_numpy().copy()
+    present = [k for k, g in enumerate(non_intersecting_polygons) if g is not None and not g.is_empty]
+    if len(present) < 2:
+        return non_intersecting_polygons
+
+    # Candidate pairs from the original footprints: differences only shrink
+    # polygons, so no pair outside this set can overlap later.
+    tree = shapely.STRtree(non_intersecting_polygons[present])
+    left, right = tree.query(non_intersecting_polygons[present], predicate="intersects")
+    pairs = sorted({(present[i], present[j]) for i, j in zip(left, right) if present[i] < present[j]})
+
+    for i, j in pairs:
+        geom_i = non_intersecting_polygons[i]
+        geom_j = non_intersecting_polygons[j]
+        if geom_i is None or geom_j is None or geom_i.is_empty or geom_j.is_empty:
             continue
-        
-        # Compare with all other geometries
-        for j, _ in enumerate(region_polygons.geometry):
-            geom_j = non_intersecting_polygons[j]
-            # Skip: same geometry, already processed, or invalid geometry
-            if i == j or i > j or geom_j is None:
-                continue
-            
-            # Remove overlapping area from smaller geometry
-            if geom.area >= geom_j.area:
-                geom = buffer_geometry(geom.difference(geom_j))
-            else:
-                non_intersecting_polygons[j] = buffer_geometry(geom_j.difference(geom))
-        
-        non_intersecting_polygons[i] = geom
-    
-    logger.debug(f"Polygon overlap resolution complete: {len(non_intersecting_polygons)} geometries processed")
+        if not geom_i.intersects(geom_j):
+            continue
+        # The shared area stays with the larger polygon and is cut from the smaller.
+        if geom_i.area >= geom_j.area:
+            non_intersecting_polygons[j] = buffer_geometry(geom_j.difference(geom_i))
+        else:
+            non_intersecting_polygons[i] = buffer_geometry(geom_i.difference(geom_j))
+
+    logger.debug(f"Polygon overlap resolution complete: {len(pairs)} candidate pairs checked")
     return non_intersecting_polygons
 
 def extract_site_coordinates(df, centroid_points):
@@ -1233,9 +1270,10 @@ def calculate_buffer(df, weights, *args, **kwargs):
         min_buffer : float, default=1500
             Absolute floor for any buffer length in metres.
         max_buffer : float | None
-            Absolute ceiling for any buffer length in metres.
-            When None, derived per-site from ``total_area`` via
-            ``_size_ceiling``.
+            Global ceiling for any buffer length in metres.
+        area_ceiling : bool
+            When true, each site's buffer is also capped by ``_size_ceiling``
+            of its detected ``total_area`` (m2); the lower cap wins.
         k_min : float, default=0.40
             Lower bound of the k scaling range.
         k_max : float, default=0.90
@@ -1276,6 +1314,7 @@ def calculate_buffer(df, weights, *args, **kwargs):
     dynamic_buffering    = kwargs['dynamic_buffering']
     min_buffer           = kwargs['min_buffer']
     max_buffer_global    = kwargs['max_buffer']
+    area_ceiling         = kwargs['area_ceiling']
     k_min                = kwargs['k_min']
     k_max                = kwargs['k_max']
     conf_threshold       = kwargs['detection_confidence_threshold']
@@ -1377,9 +1416,9 @@ def calculate_buffer(df, weights, *args, **kwargs):
     # ------------------------------------------------------------------ #
     # Basin-level fallbacks (computed once, reused per site)              #
     # ------------------------------------------------------------------ #
-    if 'base_values' in df.columns:
-        area_source = df['base_values']
-    elif 'total_area' in df.columns:
+    # The ceiling table is in m2 of detected infrastructure, so it reads
+    # total_area; base_values is area x sqrt(detections), not an area.
+    if 'total_area' in df.columns:
         area_source = df['total_area']
     else:
         area_source = pd.Series(0.0, index=df.index)
@@ -1422,30 +1461,20 @@ def calculate_buffer(df, weights, *args, **kwargs):
         )
         site_nnds = np.where(np.isnan(mean_2_nnd_col), buffer, mean_2_nnd_col)
 
-    # ------------------------------------------------------------------ #
-    # SINGLE-SITE case                                                     #
-    # ------------------------------------------------------------------ #
-    if len(df) == 1:
-        row        = df.iloc[0]
-        circles, rects = _site_detection_counts(row)
-        confidence = _detection_confidence(circles, rects)
-        nnd_val    = float(site_nnds[0])
-        k          = _compute_k(nnd_val, circles, rects, confidence)
-
-        area       = float(total_area_series.iloc[0]) if total_area_series.iloc[0] > 0 else basin_median_area
-        ceiling    = max_buffer_global if max_buffer_global is not None else _size_ceiling(area)
-
-        # Single isolated site: use fallback buffer scaled by k as base
-        raw        = buffer * k
-        result     = float(np.clip(raw, min_buffer, ceiling))
-        logger.debug(
-            "Single-site buffer: %.1f m (k=%.3f, circles=%d, rects=%d, confidence=%.2f)",
-            result, k, circles, rects, confidence,
-        )
-        return np.array([result], dtype=float)
+    def _ceiling(area: float) -> float:
+        """Area-based ceiling (if enabled), never above the global max_buffer."""
+        caps = []
+        if area_ceiling:
+            caps.append(_size_ceiling(area))
+        if max_buffer_global is not None:
+            caps.append(float(max_buffer_global))
+        return min(caps) if caps else 50_000.0
 
     # ------------------------------------------------------------------ #
-    # MULTI-SITE case                                                      #
+    # One formula for every site: buffer = NND x k, clipped to             #
+    # [min_buffer, ceiling]. A site alone in its group takes its NND from   #
+    # the global mean_2_nnd column (falling back to `buffer`), so it is     #
+    # treated like any other site instead of getting buffer x k.            #
     # ------------------------------------------------------------------ #
     buffer_lengths = np.empty(len(df), dtype=float)
 
@@ -1456,7 +1485,7 @@ def calculate_buffer(df, weights, *args, **kwargs):
         k              = _compute_k(nnd_val, circles, rects, confidence)
 
         area    = float(total_area_series.iloc[i]) if total_area_series.iloc[i] > 0 else basin_median_area
-        ceiling = max_buffer_global if max_buffer_global is not None else _size_ceiling(area)
+        ceiling = _ceiling(area)
 
         # Core formula: nnd × k
         # sqrt(weight) deliberately excluded — weights already act on the
@@ -1648,9 +1677,11 @@ def extract_contours_rasterio(region_mask_2d, n_points, grid_minx, grid_miny):
     results = shapes(region_mask_2d.astype(np.uint8), mask=region_mask_2d > 0)
     for geom, val in results:
         poly = shape(geom)
-        # Apply scaling and translation transforms
+        # Pixel (i, j) covers index space [i, i+1] x [j, j+1] while its grid
+        # node sits at index i: shift by half a cell so each cell is centred
+        # on its node, then scale by the grid step.
         poly = shapely.affinity.scale(poly, xfact=n_points, yfact=n_points, origin=(0, 0))
-        poly = shapely.affinity.translate(poly, xoff=grid_minx, yoff=grid_miny)
+        poly = shapely.affinity.translate(poly, xoff=grid_minx - n_points / 2.0, yoff=grid_miny - n_points / 2.0)
         poly = poly.buffer(0)
         
         if poly.is_valid and not poly.is_empty:
@@ -1990,12 +2021,8 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     non_intersecting_polygons = resolve_polygon_overlaps(region_polygons)
     region_polygons['geometry'] = non_intersecting_polygons 
     region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
-    region_polygons['area'] = region_polygons.geometry.area
 
     # === PHASE 13: FINAL BOUNDARY CLIPPING ===
-    # Filter sites that appear in final regions (have valid geometry)
-    point_df = df[df[col].isin(region_polygons[col])].reset_index(drop=True)
-    
     # Clip regions to computed bounding box
     region_polygons = gpd.clip(region_polygons, actual_clipping_object)  # type: ignore[arg-type]
     region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
@@ -2004,7 +2031,19 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     if country_clip is not None and not country_clip.empty:
         region_polygons = gpd.clip(region_polygons, country_clip)
         region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
-    
+
+    # Area is measured on the final (clipped) polygons, in the metric CRS,
+    # so it matches the geometry that is actually written out.
+    region_polygons = region_polygons[
+        region_polygons.geometry.notna() & ~region_polygons.geometry.is_empty
+    ].copy()
+    region_polygons['area'] = region_polygons.geometry.area
+
+    # Keep the sites whose region survived clipping. Matching is by site id:
+    # matching on the weight column would keep/drop sites that merely share a
+    # weight value with a surviving region.
+    point_df = df[df[site_id_col].isin(region_polygons[site_id_col])].reset_index(drop=True)
+
     # === PHASE 14: CRS STANDARDIZATION & RETURN ===
     # Convert all outputs to WGS84 for standard geographic format
     region_polygons = region_polygons.to_crs(4326)

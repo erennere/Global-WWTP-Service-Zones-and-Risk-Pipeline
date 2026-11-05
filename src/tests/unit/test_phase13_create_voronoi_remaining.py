@@ -782,7 +782,7 @@ def test_remaining_small_helper_branches(monkeypatch):
     assert cv.create_centroid_points(fp) is None
 
     rng = cv.create_ranges(0, 1, step=10, min_step=2)
-    assert np.allclose(rng, np.array([0.0, 1.0]))
+    assert np.allclose(rng, np.array([0.0, 10.0]))
 
     empty_dist, empty_med = cv.nearest_neighbor_distances_and_median(None)
     assert empty_dist.size == 0
@@ -1023,7 +1023,9 @@ def test_remaining_cluster_and_db_crs_branches(monkeypatch):
     monkeypatch.setattr(cv, "cluster_point_indices", lambda geoms, threshold: [{0, 1}])
     c = cv.cluster_points(df, threshold=1)
     assert len(c) == 1
-    assert c["POP_SERVED"].iloc[0] == 30
+    # Merged duplicates keep the larger reported population; never the sum.
+    assert c["POP_SERVED"].iloc[0] == 20
+    assert c["n_merged_records"].iloc[0] == 2
 
     # Force execution through df.crs is None and polygons.crs is None branches.
     df2 = gpd.GeoDataFrame({"ISO_2": ["DE"], "utm": [32632], "geometry": [Point(10, 50)]}, geometry="geometry", crs=None)
@@ -1054,6 +1056,7 @@ def test_remaining_calculate_buffer_size_ceiling_branches():
         "dynamic_buffering": True,
         "min_buffer": 500,
         "max_buffer": None,
+        "area_ceiling": True,
         "k_min": 0.4,
         "k_max": 0.9,
         "detection_confidence_threshold": 3,

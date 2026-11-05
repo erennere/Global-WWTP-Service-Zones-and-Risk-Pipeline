@@ -20,14 +20,17 @@ except ImportError:
     from src.utils import configure_logging, ensure_output_dir_for_file, requests_session_with_retries
     from src.geo_utils import repair_geometry
 
-queries = {
-    "man_made": "wastewater_plant",
-    "waterway": "stream",
-    "waterway": "river",
-    "landuse": "",
-    "power": "plant",
-    "industrial": ""
-}
+# (key, value) pairs; a list, not a dict, because one key ("waterway") is
+# queried with two values - a dict literal silently kept only the last one,
+# so streams were never requested. An empty value means "any value".
+queries = [
+    ("man_made", "wastewater_plant"),
+    ("waterway", "stream"),
+    ("waterway", "river"),
+    ("landuse", ""),
+    ("power", "plant"),
+    ("industrial", ""),
+]
 
 urls = [
     "https://overpass.kumi.systems/api/interpreter",
@@ -68,7 +71,8 @@ def query_overpass(bbox, queries, url, retries=3, pause_seconds=0.1):
     q = f"""
     [out:json][timeout:180];
     ("""
-    for key, value in queries.items():
+    pairs = queries.items() if isinstance(queries, dict) else queries
+    for key, value in pairs:
         if value:
             filter_expr = f'["{key}"="{value}"]'
         else:

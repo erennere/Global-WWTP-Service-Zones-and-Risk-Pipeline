@@ -144,12 +144,8 @@ def test_create_impact_polygon_plots_skip_paths(monkeypatch, tmp_path):
     assert any("non-numeric radius/year" in msg for msg in warnings)
 
 
-def test_create_impact_polygon_plots_unrecognized_column_format(monkeypatch, tmp_path):
-    class _ShortSplitCol(str):
-        def split(self, sep=None, maxsplit=-1):  # noqa: D401
-            return ["bad"]
-
-    short_col = _ShortSplitCol("weird_zonal_sum")
+def test_create_impact_polygon_plots_skips_non_numeric_column(monkeypatch, tmp_path):
+    short_col = "weird_zonal_sum"
     warnings = []
     monkeypatch.setattr(prf.logger, "warning", lambda *args, **kwargs: warnings.append(args[0]))
 
@@ -169,7 +165,7 @@ def test_create_impact_polygon_plots_unrecognized_column_format(monkeypatch, tmp
     )
 
     prf.create_impact_polygon_plots(pop, tiles, str(tmp_path))
-    assert any("unrecognized zonal-sum column format" in msg for msg in warnings)
+    assert any("non-numeric radius/year" in msg for msg in warnings)
 
 
 def test_pop_at_risk_main_orchestrates_with_patched_io(monkeypatch, tmp_path):

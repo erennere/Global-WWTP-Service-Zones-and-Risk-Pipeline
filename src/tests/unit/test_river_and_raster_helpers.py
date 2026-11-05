@@ -333,6 +333,7 @@ def test_create_rasters_main_requires_watershed_crs(monkeypatch, tmp_path):
     cfg = {
         "annotations": {"max_workers": 1, "random_seed": 1},
         "min_pixels": 9,
+        "served_all_touched": False,
         "zoom_level": 8,
         "figures": {"approach": "1"},
         "country_output_column": "ISO_2",
@@ -379,6 +380,7 @@ def test_create_rasters_main_enriches_watershed_when_country_column_missing(monk
     cfg = {
         "annotations": {"max_workers": 2, "random_seed": 7},
         "min_pixels": 9,
+        "served_all_touched": False,
         "zoom_level": 8,
         "figures": {"approach": "1"},
         "country_output_column": "ISO_2",

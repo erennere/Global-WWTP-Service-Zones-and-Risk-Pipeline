@@ -82,7 +82,8 @@ def geotiff_exists_and_valid(path):
     except Exception:
         return False
     
-def extract_worldpop_universal(raster_path, hybas_gdf, exclude_gdf, min_pixels=9, zoom_level=8, basin_col='HYBAS_ID'):
+def extract_worldpop_universal(raster_path, hybas_gdf, exclude_gdf, min_pixels=9, zoom_level=8, basin_col='HYBAS_ID',
+                               all_touched=False):
     """
     Extracts population islands from WorldPop rasters with strict RAM management.
     Designed for 64GB / 4 processes (16GB per worker).
@@ -156,7 +157,8 @@ def extract_worldpop_universal(raster_path, hybas_gdf, exclude_gdf, min_pixels=9
                         rel_excl.geometry,
                         (window.height, window.width),
                         w_transform,
-                        invert=True
+                        invert=True,
+                        all_touched=all_touched,
                     )
                     binary_data[excl_mask] = 0
                     del excl_mask, rel_excl
@@ -326,7 +328,7 @@ def extract_worldpop_universal(raster_path, hybas_gdf, exclude_gdf, min_pixels=9
         logger.exception("[%s] CRITICAL FAILURE: %s", country_code, str(e))
         return None
     
-def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path):
+def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path, all_touched=False):
     """Write a signed raster that is positive inside served polygons and negative outside.
 
     Parameters
@@ -355,7 +357,7 @@ def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path):
             nodata_val = src.nodata
 
             profile.update(
-                dtype="int32",
+                dtype="float32",
                 count=1,
                 nodata=None,
                 compress="lzw",
@@ -364,8 +366,10 @@ def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path):
                 blockysize=256
             )
 
-            sum_positive = np.int64(0)
-            sum_negative = np.int64(0)
+            # WorldPop counts are fractional (most rural pixels hold < 1
+            # person); keep them as floats and sum in float64.
+            sum_positive = 0.0
+            sum_negative = 0.0
 
             ensure_output_dir_for_file(output_path)
             with rasterio.open(output_path, "w", **profile) as dst:
@@ -379,10 +383,12 @@ def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path):
                     # Read the data block
                     data = src.read(1, window=window)
                     
-                    # Convert nodata/NaN to 0 and cast to int32
+                    # Convert nodata/NaN to 0 (no integer cast: that truncated
+                    # every pixel below 1 person to 0)
+                    data = data.astype(np.float64)
                     if nodata_val is not None:
-                        data = np.where(np.isclose(data, nodata_val), 0, data)
-                    data = np.nan_to_num(data, nan=0).astype(np.int32)
+                        data = np.where(np.isclose(data, nodata_val), 0.0, data)
+                    data = np.nan_to_num(data, nan=0.0)
                     
                     # Force strictly positive to avoid sign errors
                     data = np.abs(data)
@@ -398,7 +404,7 @@ def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path):
                             transform=windows.transform(window, transform),
                             fill=0,
                             dtype=np.uint8,
-                            all_touched=True
+                            all_touched=all_touched
                         )
                         
                         # Within polygons = positive, Outside = negative
@@ -407,18 +413,19 @@ def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path):
                         # No polygons in this window? Everything is negative
                         signed = -data
 
-                    # 4. Global Statistics (using int64 to prevent overflow)
-                    sum_positive += signed[signed > 0].astype(np.int64).sum()
-                    sum_negative += signed[signed < 0].astype(np.int64).sum()
+                    # 4. Global statistics
+                    sum_positive += float(signed[signed > 0].sum())
+                    sum_negative += float(signed[signed < 0].sum())
 
-                    dst.write(signed.astype(np.int32), 1, window=window)
-        return output_path, int(sum_positive), int(sum_negative)
+                    dst.write(signed.astype(np.float32), 1, window=window)
+        return output_path, sum_positive, sum_negative
 
     except Exception as err:
         logger.exception("Error processing raster %s: %s", raster_path, err)
         return output_path, None, None
 
-def orchestrate_country_intersection(raster_path, polygons_gdf, watershed_gdf, output_path, min_pixels=9, zoom_level=8, basin_col='HYBAS_ID'): 
+def orchestrate_country_intersection(raster_path, polygons_gdf, watershed_gdf, output_path, min_pixels=9, zoom_level=8, basin_col='HYBAS_ID',
+                                     all_touched=False):
     """Process one country raster and return signed-raster stats plus extracted islands.
 
     Parameters
@@ -442,9 +449,12 @@ def orchestrate_country_intersection(raster_path, polygons_gdf, watershed_gdf, o
         Tuple ``(filepath, sum_pos, sum_neg, gdf)`` containing signed-raster
         statistics and the extracted island GeoDataFrame.
     """
-    filepath, sum_pos, sum_neg = polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path)
+    # One 'served' rule for both outputs: a pixel is served when its centre
+    # (or, with all_touched, any part) lies in a service area.
+    filepath, sum_pos, sum_neg = polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path, all_touched=all_touched)
     #gdf = extract_worldpop_optimized_v2(raster_path, polygons_gdf)
-    gdf = extract_worldpop_universal(raster_path, watershed_gdf, polygons_gdf, min_pixels=min_pixels, zoom_level=zoom_level, basin_col=basin_col)
+    gdf = extract_worldpop_universal(raster_path, watershed_gdf, polygons_gdf, min_pixels=min_pixels, zoom_level=zoom_level, basin_col=basin_col,
+                                     all_touched=all_touched)
     return filepath, sum_pos, sum_neg, gdf
 
 def _append_csv(df, filepath):
@@ -455,7 +465,7 @@ def _append_csv(df, filepath):
 
 
 def orchestrate_intersections(tif_dict, gdf, watershed_gdf, output_dir, csv_output_filepath, non_served_outpath, max_workers=4,
-                              min_pixels=9, zoom_level=8, country_col='ISO_2', basin_col='HYBAS_ID'):
+                              min_pixels=9, zoom_level=8, country_col='ISO_2', basin_col='HYBAS_ID', all_touched=False):
     """
     Process multiple raster files in parallel, intersecting with polygons
     and creating signed rasters (+ inside polygons, - outside).
@@ -522,6 +532,7 @@ def orchestrate_intersections(tif_dict, gdf, watershed_gdf, output_dir, csv_outp
                 min_pixels=min_pixels,
                 zoom_level=zoom_level,
                 basin_col=basin_col,
+                all_touched=all_touched,
             )
             future_to_country[future] = country
         # Collect results with a progress bar
@@ -671,7 +682,8 @@ def main():
         watershed_gdf.to_file(cfg['paths']['watershed_with_countries'], driver='GPKG', index=False)
     
     logger.info("Starting country intersection workflow with max_workers=%s", max_workers)
-    orchestrate_intersections(tif_dict, gdf, watershed_gdf, output_tif_dir, csv_output_filepath, non_served_outpath, max_workers, min_pixels=min_pixels, zoom_level=zoom_level, country_col=country_output_col, basin_col=cfg['basin_column_name'])
+    orchestrate_intersections(tif_dict, gdf, watershed_gdf, output_tif_dir, csv_output_filepath, non_served_outpath, max_workers, min_pixels=min_pixels, zoom_level=zoom_level, country_col=country_output_col, basin_col=cfg['basin_column_name'],
+                              all_touched=bool(cfg['served_all_touched']))
 if __name__ == '__main__':
     configure_logging()
     main()

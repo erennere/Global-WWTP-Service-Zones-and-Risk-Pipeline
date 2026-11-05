@@ -22,6 +22,7 @@ dependencies = [
   "opencv-python",
   "networkx",
   "duckdb",
+  "pyarrow",
   "tqdm",
   "requests",
   "pycountry",

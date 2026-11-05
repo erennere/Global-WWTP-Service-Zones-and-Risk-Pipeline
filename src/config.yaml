@@ -155,8 +155,10 @@ sample_annotations_by_class:
   sampling:
     n_per_class: 10
   paths:
+    data_dir: null
     annotations_results_filepath: null
-    sampled_images_output_filepath: null
+    # Previously null with nothing to inherit from, so the script could not start.
+    sampled_images_output_filepath: '{data_dir}/annotations/sampled_images_by_class.json'
 
 NEW_03_WASTEWATERJOIN_GEOJSON:
   version: null
@@ -191,7 +193,9 @@ create_voronoi:
   dynamic_buffer_k: 0.8
   max_workers: 16
   n_points: 100
-  threshold: null
+  # Sites closer than this (m) are merged before the Voronoi run. Was
+  # inherited from final_data_merge.threshold; same value, now explicit.
+  threshold: 500
   sigma: 3
   percent_threshold: 10
   basin_column_name: 'HYBAS_ID'
@@ -212,6 +216,10 @@ create_voronoi:
   flush_size: 1000
   min_buffer: 2000
   max_buffer: 50000
+  # Cap each dynamic buffer by the plant's detected area (total_area, m2):
+  # <100k -> 8 km, <200k -> 15 km, <300k -> 25 km, <400k -> 40 km, else 50 km,
+  # never above max_buffer. false = max_buffer is the only cap.
+  area_ceiling: true
   k_min: 0.32
   k_max: 0.92
   detection_confidence_threshold: 3
@@ -274,11 +282,16 @@ create_rasters:
   dynamic_buffer_k: null
   zoom_level: 8
   min_pixels: 9
+  # A pixel counts as served when its centre lies in a service area
+  # (false), or when any part of it does (true). Used for both outputs.
+  served_all_touched: false
   basin_column_name: null
   country_boundary_column: null
   country_output_column: null
   annotations:
-    max_workers: null
+    # Worker processes for rasterising countries. Was inherited from the
+    # OSM extraction step's annotations.max_workers; same value, now explicit.
+    max_workers: 8
     random_seed: null
     default_mode: 'array'
   figures:
@@ -413,7 +426,8 @@ find_pop_in_danger_pop:
   country_boundary_column: null
   country_output_column: null
   annotations:
-    max_workers: null
+    # Same value as create_rasters, set explicitly instead of inherited.
+    max_workers: 8
   paths:
     data_dir: null
     pop_tif_dir: null
@@ -469,6 +483,7 @@ find_unconnected_industrial_areas:
   flush_size: null
   min_buffer: null
   max_buffer: null
+  area_ceiling: null
   k_min: null
   k_max: null
   detection_confidence_threshold: null
@@ -537,7 +552,9 @@ eu_comparison:
   weight_func: null
   dynamic_buffering: null
   dynamic_buffer_k: null
-  threshold: null
+  # Max distance (m) between a service area and a UWWTD plant to pair them.
+  # Was inherited from final_data_merge.threshold; same value, now explicit.
+  threshold: 500
   # Multiplier applied to uwwCapacity by the shared EU reference loader. Declared
   # here because eu_comparison is the earliest of its three consumers.
   eu_reference_factor: 1
@@ -709,7 +726,7 @@ create_voronoi_parallel_sweep:
 
 compare_pop_sweep_hw_eu:
   max_workers: null
-  threshold: null
+  threshold: 500  # UWWTD match distance (m), as in eu_comparison
   hw_weight: 0.7
   eu_reference_factor: null
   paths:
@@ -721,7 +738,7 @@ compare_pop_sweep_hw_eu:
 # compare_pop_sweep_hw_eu above, so it is declared after it and inherits from it.
 sweep_ver_ranking:
   max_workers: null
-  threshold: null
+  threshold: 500  # UWWTD match distance (m), as in eu_comparison
   hw_weight: null
   eu_reference_factor: null
   percent_verification: null

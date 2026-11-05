@@ -48,8 +48,10 @@ def test_default_distance_functions_match_normalized_plane_math():
     additive = create_voronoi.default_distance_additive(a, b, weight=0.5, factor=1.0)
     multiplicative = create_voronoi.default_distance_multiplicative(a, b, weight=0.5, factor=1.0)
 
-    assert additive == pytest.approx(np.array([0.1, np.sqrt(1.75)]))
-    assert multiplicative == pytest.approx(np.array([0.0, np.sqrt(2.0) / 0.5]))
+    # Isotropic normalisation: both axes divided by the larger extent (4).
+    # Additive returns the signed power distance |a-b|^2 - w^2.
+    assert additive == pytest.approx(np.array([-0.25, 1.5625 - 0.25]))
+    assert multiplicative == pytest.approx(np.array([0.0, 1.25 / 0.5]))
 
 
 def test_cluster_point_indices_merges_transitive_neighbors():
@@ -75,6 +77,7 @@ def test_calculate_buffer_fixed_branch_clips_requested_buffer():
         dynamic_buffering=False,
         min_buffer=2000,
         max_buffer=5000,
+        area_ceiling=False,
         k_min=0.32,
         k_max=0.92,
         detection_confidence_threshold=3,
@@ -108,6 +111,7 @@ def test_calculate_buffer_single_site_dynamic_uses_buffer_fallback(monkeypatch):
         dynamic_buffering=True,
         min_buffer=2000,
         max_buffer=20000,
+        area_ceiling=False,
         k_min=0.32,
         k_max=0.92,
         detection_confidence_threshold=3,
@@ -147,6 +151,7 @@ def test_calculate_buffer_uses_mean_2_nnd_when_nnd_length_mismatches(monkeypatch
         dynamic_buffering=True,
         min_buffer=1000,
         max_buffer=20000,
+        area_ceiling=False,
         k_min=0.32,
         k_max=0.92,
         detection_confidence_threshold=3,
@@ -344,9 +349,12 @@ def test_normalize_plane_and_create_ranges_cover_edge_paths():
     assert b_norm.min() >= 0 and b_norm.max() <= 1
 
     same = create_voronoi.create_ranges(2.0, 2.0, step=10.0)
-    adaptive = create_voronoi.create_ranges(0.0, 1.0, step=10.0, min_step=0.2)
+    short = create_voronoi.create_ranges(0.0, 1.0, step=10.0, min_step=0.2)
+    exact = create_voronoi.create_ranges(0.0, 250.0, step=100.0)
     assert same.tolist() == [2.0, 2.0]
-    assert adaptive[0] == 0.0 and adaptive[-1] == 1.0
+    # The spacing is always exactly `step`; the last node reaches past max.
+    assert short.tolist() == [0.0, 10.0]
+    assert exact.tolist() == [0.0, 100.0, 200.0, 300.0]
 
 
 def test_is_valid_geom_and_create_centroid_points_handles_invalid_inputs():

@@ -17,6 +17,7 @@ dependencies:
   - opencv
   - networkx
   - duckdb
+  - pyarrow  # pd.read_parquet / to_parquet (Overture countries, risk outputs)
   - joblib
   - tqdm
   - requests

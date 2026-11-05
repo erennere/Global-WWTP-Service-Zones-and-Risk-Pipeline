@@ -18,7 +18,7 @@ try:
         cluster_point_indices as _cluster_point_indices,
         estimate_utm_epsg_for_geom,
         parse_diameters_to_round_area,
-        nearest_within_threshold,
+        nearest_distances_m,
     )
 except ImportError:
     from src.data_merge.correct_locations_w_OSM import coordinate_corr_locations_wOSM
@@ -28,7 +28,7 @@ except ImportError:
         cluster_point_indices as _cluster_point_indices,
         estimate_utm_epsg_for_geom,
         parse_diameters_to_round_area,
-        nearest_within_threshold,
+        nearest_distances_m,
     )
 
 def cluster_point_indices(geoms, threshold):
@@ -53,7 +53,10 @@ def cluster_points(df, threshold):
             lambda col: col.dropna().iloc[0] if col.notna().any() else pd.NA
         )
         if 'POP_SERVED' in sub_df:
-            merged['POP_SERVED'] = sub_df['POP_SERVED'].sum()
+            # Records this close are one plant reported by several sources;
+            # summing their populations would double-count it.
+            merged['POP_SERVED'] = pd.to_numeric(sub_df['POP_SERVED'], errors='coerce').max()
+        merged['n_merged_records'] = len(sub_df)
         if 'wwtp_area_square' in sub_df:
             merged['wwtp_area_square'] = '[' + str(sub_df['wwtp_area_square'].apply(
             lambda x: np.sum([
@@ -69,18 +72,18 @@ def cluster_points(df, threshold):
     return result
 
 def find_unmatched_targets(gdf_source, gdf_target, threshold):
-    """Return target rows that have no nearby source match within `threshold`."""
-    # Work in same CRS
-    gdf_source = gdf_source.copy().to_crs(gdf_target.crs)
-    sindex_source = gdf_source.sindex
-    matched_target_indices = {
-        idx for idx, geom in gdf_target.geometry.items()
-        if nearest_within_threshold(sindex_source, geom, threshold) is not None
-    }
+    """Return target rows with no source feature within ``threshold`` metres.
 
-    # Keep only target rows NOT in matched indices
-    unmatched_targets = gdf_target[~gdf_target.index.isin(matched_target_indices)].copy()
-    return unmatched_targets
+    Distances are great-circle metres, whatever the inputs' CRS. Measuring in
+    the target CRS (EPSG:4326 for the German GeoJSON) made ``threshold=500``
+    mean 500 degrees, so every target counted as matched.
+    """
+    if gdf_target is None or gdf_target.empty:
+        return gdf_target
+    if gdf_source is None or gdf_source.empty:
+        return gdf_target.copy()
+    distances, _ = nearest_distances_m(gdf_source, gdf_target)
+    return gdf_target[~(distances <= float(threshold))].copy()
 
 def get_best_points(gdf):
     """Split points into high- and low-confidence sets after geometry override."""

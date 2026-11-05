@@ -212,8 +212,13 @@ def _sjoin_chunk_unconnected(
     chunk: gpd.GeoDataFrame,
     voronoi_geom: gpd.GeoDataFrame,
 ) -> gpd.GeoDataFrame:
-    """Run a left-within sjoin on one chunk and return only unmatched rows."""
-    joined = gpd.sjoin(chunk, voronoi_geom, how='left', predicate='within')
+    """Return the rows of ``chunk`` that touch no service area at all.
+
+    ``intersects``, not ``within``: an industrial area that straddles two
+    adjacent service areas lies within neither, yet it is served, so
+    ``within`` wrongly reported it as unconnected.
+    """
+    joined = gpd.sjoin(chunk, voronoi_geom, how='left', predicate='intersects')
     unmatched = joined[joined['index_right'].isna()].copy()
     return unmatched.drop(columns=['index_right'])
 

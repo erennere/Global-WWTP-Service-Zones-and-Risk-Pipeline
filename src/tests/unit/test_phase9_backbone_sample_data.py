@@ -22,6 +22,7 @@ BUFFER_KWARGS = {
     "dynamic_buffering": True,
     "min_buffer": 1500,
     "max_buffer": 50000,
+    "area_ceiling": False,
     "k_min": 0.40,
     "k_max": 0.90,
     "detection_confidence_threshold": 3,

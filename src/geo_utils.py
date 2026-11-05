@@ -378,3 +378,107 @@ def repair_geometry(geom):
     if repaired is None or repaired.is_empty or not repaired.is_valid:
         return None
     return repaired
+
+
+# --------------------------------------------------------------------------- #
+# Metric distances and buffers on geographic data                             #
+# --------------------------------------------------------------------------- #
+# EPSG:3857 and EPSG:4326 are not metric: a "500 m" threshold in Web Mercator is
+# 321 m on the ground at 50 deg N and 250 m at 60 deg N, and the same number in
+# EPSG:4326 means 500 degrees. These helpers measure on the sphere (distances)
+# or in each feature's own UTM zone (buffers), so thresholds in metres mean
+# metres everywhere.
+
+EARTH_RADIUS_M = 6_371_008.8  # mean Earth radius (IUGG)
+
+
+def _lonlat_of(gdf):
+    """Return an (n, 2) lon/lat array (NaN for missing/empty geometries)."""
+    if gdf.crs is None:
+        raise ValueError("GeoDataFrame needs a CRS to measure distances in metres")
+    geoms = gdf.geometry.to_crs(4326)
+    out = np.full((len(geoms), 2), np.nan, dtype=float)
+    valid = geoms.notna().to_numpy() & ~geoms.is_empty.to_numpy()
+    if valid.any():
+        sub = geoms[valid]
+        is_point = (sub.geom_type == "Point").to_numpy()
+        pts = sub.where(is_point, sub.representative_point())
+        out[valid, 0] = pts.x.to_numpy()
+        out[valid, 1] = pts.y.to_numpy()
+    return out
+
+
+def _unit_vectors(lonlat):
+    lon = np.radians(lonlat[:, 0])
+    lat = np.radians(lonlat[:, 1])
+    return np.column_stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
+
+
+def _chord_to_metres(chord):
+    return 2.0 * EARTH_RADIUS_M * np.arcsin(np.clip(np.asarray(chord, dtype=float) / 2.0, 0.0, 1.0))
+
+
+def nearest_distances_m(source_gdf, target_gdf, k=1):
+    """Great-circle distance in metres from each target feature to its ``k`` nearest sources.
+
+    Points are used as they are, other geometries by their representative
+    point. Returns ``(distances, indices)``: arrays of shape ``(n_target,)``
+    for ``k == 1`` and ``(n_target, k)`` otherwise; positional indices into
+    ``source_gdf``. Missing results are ``inf`` / ``-1``.
+    """
+    target_ll = _lonlat_of(target_gdf)
+    source_ll = _lonlat_of(source_gdf)
+    shape = (len(target_ll),) if k == 1 else (len(target_ll), k)
+    distances = np.full(shape, np.inf, dtype=float)
+    indices = np.full(shape, -1, dtype=int)
+
+    src_ok = ~np.isnan(source_ll).any(axis=1)
+    tgt_ok = ~np.isnan(target_ll).any(axis=1)
+    if not src_ok.any() or not tgt_ok.any():
+        return distances, indices
+
+    src_pos = np.flatnonzero(src_ok)
+    kk = min(int(k), len(src_pos))
+    chord, idx = cKDTree(_unit_vectors(source_ll[src_ok])).query(_unit_vectors(target_ll[tgt_ok]), k=kk)
+    chord = np.asarray(chord, dtype=float).reshape(-1, kk)
+    idx = np.asarray(idx).reshape(-1, kk)
+    found = np.isfinite(chord)
+    metres = np.where(found, _chord_to_metres(np.where(found, chord, 0.0)), np.inf)
+    mapped = np.where(found, src_pos[np.clip(idx, 0, len(src_pos) - 1)], -1)
+
+    if k == 1:
+        distances[tgt_ok] = metres[:, 0]
+        indices[tgt_ok] = mapped[:, 0]
+    else:
+        distances[tgt_ok, :kk] = metres
+        indices[tgt_ok, :kk] = mapped
+    return distances, indices
+
+
+def buffer_meters(gdf, distance_m):
+    """Buffer every geometry by ``distance_m`` metres in its own UTM zone.
+
+    Returns a GeoSeries in the input CRS. Features are grouped by the UTM zone
+    of their centroid, buffered there and projected back, so the radius is
+    within 0.1 % of ``distance_m`` wherever the feature lies (Web Mercator, by
+    contrast, shrinks a buffer by cos(latitude)).
+    """
+    if gdf.crs is None:
+        raise ValueError("GeoDataFrame needs a CRS to buffer in metres")
+    geoms = gdf.geometry
+    out = geoms.copy()
+    valid = geoms.notna().to_numpy() & ~geoms.is_empty.to_numpy()
+    if not valid.any():
+        return out
+    lonlat = _lonlat_of(gdf)
+    zones = (np.floor((lonlat[:, 0] + 180.0) / 6.0) + 1).clip(1, 60)
+    epsg = np.where(lonlat[:, 1] >= 0, 32600, 32700) + np.nan_to_num(zones, nan=1).astype(int)
+    # Polar caps fall outside UTM: use the polar stereographic projections there.
+    epsg = np.where(lonlat[:, 1] > 84, 3413, epsg)
+    epsg = np.where(lonlat[:, 1] < -80, 3031, epsg)
+    for code in np.unique(epsg[valid]):
+        mask = valid & (epsg == code)
+        part = geoms[mask].to_crs(int(code)).buffer(float(distance_m)).to_crs(gdf.crs)
+        out[mask] = part.to_numpy()
+    return out
+
