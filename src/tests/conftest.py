@@ -224,3 +224,12 @@ def _no_run_manifests(request, monkeypatch):
     from src import provenance
 
     monkeypatch.setattr(provenance, "write_run_manifest", lambda cfg, stage, argv=None: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_config_overlays(monkeypatch):
+    """Tests see the repository config only: no overlay files from the environment or the machine."""
+    from src import starter
+
+    monkeypatch.delenv(starter.OVERLAYS_ENV_VAR, raising=False)
+    monkeypatch.setattr(starter, "LOCAL_OVERLAY_FILENAME", "__tests_ignore_config.local.yaml")

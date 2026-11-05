@@ -1,0 +1,10 @@
+# Example overlay for the cluster. Copy to config.cluster.yaml (or any name) and
+# point WWTP_CONFIG_OVERLAYS at it, e.g. in the job script or ~/.bashrc:
+#   export WWTP_CONFIG_OVERLAYS=$HOME/plant_capacity/src/config.cluster.yaml
+# An overlay only changes keys that config.yaml already has; a typo fails at load.
+# Check the result with: python -m src.starter show create_voronoi
+correct_locations_w_OSM:
+  paths:
+    data_dir: '/path/to/cluster/data'   # every section inherits data_dir from here
+create_voronoi:
+  max_workers: 32

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 import os
 from string import Formatter
 import sys
@@ -21,6 +22,13 @@ _FORMATTER = Formatter()
 _PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG_FILENAME = "config.yaml"
 CONFIG_PATH_ENV_VAR = "WWTP_SERVICE_PIPELINE_CONFIG"
+# Overlays: YAML files that change values of the base config, applied in order:
+# the files in WWTP_CONFIG_OVERLAYS (os.pathsep-separated, e.g. config.cluster.yaml
+# on the cluster), then config.local.yaml next to the base config if it exists
+# (git-ignored, per machine), then --set SECTION.KEY=VALUE from the command line.
+# An overlay may only change keys the base config has, so a typo fails at load.
+OVERLAYS_ENV_VAR = "WWTP_CONFIG_OVERLAYS"
+LOCAL_OVERLAY_FILENAME = "config.local.yaml"
 _OVERRIDE_FIELDS = (
     ("level", 0, False),
     ("version", 1, False),
@@ -52,6 +60,8 @@ def add_standard_override_arguments(parser):
     parser.add_argument("--weight-func", dest="weight_func", default=None, help="Optional config weight_func override: 'mult', 'add', or ''")
     parser.add_argument("--dynamic-buffering", dest="dynamic_buffering", default=None, help="Optional dynamic buffering override (true/false)")
     parser.add_argument("--size-measure", dest="size_measure", default=None, help="Optional plant size measure override: 'reported' or 'footprint'")
+    parser.add_argument("--set", dest="sets", action="append", default=None, metavar="SECTION.KEY=VALUE",
+                        help="Change any config value for this run (repeatable), e.g. --set create_voronoi.n_points=200")
     return parser
 
 
@@ -144,10 +154,20 @@ def _collect_raw_overrides(args: Any = None, argv: list[str] | None = None):
     # parse those first so wrappers can standardize on one CLI style.
     if args is None:
         named_values: dict[str, Any] = {}
+        named_sets: list[str] = []
         idx = 1
         while idx < len(argv_values):
             token = argv_values[idx]
             if not isinstance(token, str):
+                idx += 1
+                continue
+
+            if token == "--set" and idx + 1 < len(argv_values):
+                named_sets.append(argv_values[idx + 1])
+                idx += 2
+                continue
+            if isinstance(token, str) and token.startswith("--set="):
+                named_sets.append(token.split("=", 1)[1])
                 idx += 1
                 continue
 
@@ -174,6 +194,7 @@ def _collect_raw_overrides(args: Any = None, argv: list[str] | None = None):
                 named_values.get(field_name),
                 preserve_empty=preserve_empty,
             )
+        raw_overrides["sets"] = named_sets
         return raw_overrides
 
     for field_name, _, preserve_empty in _OVERRIDE_FIELDS:
@@ -181,6 +202,7 @@ def _collect_raw_overrides(args: Any = None, argv: list[str] | None = None):
             getattr(args, field_name, None),
             preserve_empty=preserve_empty,
         )
+    raw_overrides["sets"] = list(getattr(args, "sets", None) or [])
     return raw_overrides
 
 
@@ -203,7 +225,20 @@ def parse_config_overrides(args: Any = None, argv: list[str] | None = None):
         "weight_func": _parse_optional_weight_func(raw_overrides["weight_func"], "weight_func"),
         "dynamic_buffering": _parse_optional_bool(raw_overrides["dynamic_buffering"], "dynamic_buffering"),
         "size_measure": _parse_optional_size_measure(raw_overrides["size_measure"]),
+        "sets": parse_set_assignments(raw_overrides["sets"]),
     }
+
+
+def parse_set_assignments(assignments):
+    """``["create_voronoi.n_points=200", ...]`` -> ``[(("create_voronoi", "n_points"), 200), ...]`` (values as YAML)."""
+    parsed = []
+    for item in assignments or []:
+        key, sep, value = str(item).partition("=")
+        parts = tuple(p for p in key.strip().split(".") if p)
+        if not sep or len(parts) < 2:
+            raise ValueError(f"Invalid --set {item!r}. Use SECTION.KEY=VALUE, e.g. create_voronoi.n_points=200.")
+        parsed.append((parts, yaml.safe_load(value)))
+    return parsed
 
 
 ################################################################################
@@ -217,6 +252,42 @@ def _load_raw_config(config_path: str) -> dict:
     if not isinstance(raw_config, dict):
         raise TypeError("config.yaml must contain a top-level mapping of script sections")
     return raw_config
+
+
+def config_overlay_paths(config_path: str) -> list[str]:
+    """Overlay files for ``config_path``, in the order they are applied."""
+    paths = [resolve_config_path(p) for p in os.environ.get(OVERLAYS_ENV_VAR, "").split(os.pathsep) if p.strip()]
+    local = os.path.join(os.path.dirname(config_path), LOCAL_OVERLAY_FILENAME)
+    if os.path.isfile(local):
+        paths.append(local)
+    return paths
+
+
+def _overlay(base: dict, overlay: dict, origin: str, where: tuple = ()) -> None:
+    for key, value in overlay.items():
+        if key not in base:
+            raise KeyError(f"{origin}: {'.'.join(where + (key,))} is not a key of the base config")
+        if isinstance(value, dict) and isinstance(base[key], dict):
+            _overlay(base[key], value, origin, where + (key,))
+        else:
+            base[key] = value
+
+
+def load_layered_config(config_path: str, sets=None) -> tuple[dict, list[str]]:
+    """Base config with overlay files and ``--set`` assignments applied; also the layers used."""
+    raw_config = _load_raw_config(config_path)
+    layers = [config_path]
+    for path in config_overlay_paths(config_path):
+        overlay = _load_raw_config(path)
+        _overlay(raw_config, overlay, path)
+        layers.append(path)
+    for parts, value in sets or []:
+        nested = value
+        for part in reversed(parts):
+            nested = {part: nested}
+        _overlay(raw_config, nested, "--set " + ".".join(parts))
+        layers.append("--set " + ".".join(parts) + "=" + json.dumps(value, default=str))
+    return raw_config, layers
 
 
 def _require_mapping_section(section_name: str, section_cfg) -> dict:
@@ -577,8 +648,14 @@ def load_config(
     weight_func=None,
     dynamic_buffering=None,
     size_measure=None,
+    sets=None,
 ):
-    """Load and resolve the per-script configuration section for a workflow."""
+    """Load and resolve the per-script configuration section for a workflow.
+
+    The base config (``config``, ``WWTP_SERVICE_PIPELINE_CONFIG`` or
+    ``config.yaml``) gets the overlay files and ``sets`` (parsed ``--set``
+    assignments) first; ``cfg["config_layers"]`` lists what was applied.
+    """
     try:
         from .service_areas import default_distance_additive, default_distance_multiplicative
     except ImportError:
@@ -586,7 +663,7 @@ def load_config(
 
     config_path = resolve_config_path(config)
     config_dir = os.path.dirname(config_path)
-    raw_config = _load_raw_config(config_path)
+    raw_config, layers = load_layered_config(config_path, sets)
 
     # Resolve the script section against earlier canonical sections first.
     script_cfg = resolve_config(script_name, raw_config)
@@ -608,4 +685,24 @@ def load_config(
     if "paths" in script_cfg:
         script_cfg["paths"] = _expand_paths(script_name, script_cfg["paths"], config_dir, script_cfg, derived)
     script_cfg.update(derived)
+    script_cfg["config_layers"] = layers
     return script_cfg
+
+
+def main(argv=None):
+    """``python -m src.starter show <section> [--set ...]``: print the resolved config of a stage."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="python -m src.starter", description=main.__doc__)
+    parser.add_argument("command", choices=["show"])
+    parser.add_argument("section", help="config section, e.g. create_voronoi")
+    add_standard_override_arguments(parser)
+    args = parser.parse_args(argv)
+    overrides = parse_config_overrides(args=args)
+    cfg = load_config(script_name=args.section, **overrides)
+    printable = {k: (f"<{getattr(v, '__qualname__', v)}>" if callable(v) else v) for k, v in cfg.items()}
+    print(yaml.safe_dump(printable, sort_keys=False, allow_unicode=True), end="")
+
+
+if __name__ == "__main__":
+    main()

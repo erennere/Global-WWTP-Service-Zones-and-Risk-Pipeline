@@ -59,6 +59,7 @@ def test_parse_config_overrides_from_argv_parses_all_supported_types():
         "weight_func": "",
         "dynamic_buffering": True,
         "size_measure": "footprint",
+        "sets": [],
     }
 
 
@@ -83,6 +84,7 @@ def test_parse_config_overrides_from_namespace_normalizes_optional_values():
         "weight_func": "add",
         "dynamic_buffering": False,
         "size_measure": "reported",
+        "sets": [],
     }
 
 
@@ -109,6 +111,7 @@ def test_add_standard_override_arguments_parses_named_flags():
         "weight_func": "mult",
         "dynamic_buffering": True,
         "size_measure": "footprint",
+        "sets": [],
     }
 
 
@@ -126,6 +129,7 @@ def test_parse_config_overrides_ignores_positional_tokens():
         "weight_func": None,
         "dynamic_buffering": None,
         "size_measure": None,
+        "sets": [],
     }
 
 
@@ -147,6 +151,7 @@ def test_parse_config_overrides_reads_named_flags_from_argv():
         "weight_func": "mult",
         "dynamic_buffering": False,
         "size_measure": "reported",
+        "sets": [],
     }
 
 
@@ -217,6 +222,7 @@ def test_load_config_dynamic_buffering_uses_size_measure_token_and_empty_weight_
                 "weight_func": "mult",
                 "dynamic_buffering": True,
                 "size_measure": "reported",
+                "sets": [],
             },
         }
     )

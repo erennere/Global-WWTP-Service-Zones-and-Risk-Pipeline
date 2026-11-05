@@ -320,6 +320,16 @@ The defaults are a mix of portable relative paths and environment-specific clust
 
 `src/starter.py` resolves values in canonical YAML order. Earlier sections define shared values and later sections inherit them with `null`. Positional CLI overrides always take precedence over the resolved config.
 
+### Config layers
+
+`src/config.yaml` is the portable base. On top of it, in this order:
+
+1. overlay files listed in `WWTP_CONFIG_OVERLAYS` (separated by `:`), e.g. a `config.cluster.yaml` with cluster paths and worker counts (see `src/config.cluster.example.yaml`);
+2. `src/config.local.yaml` if it exists (git-ignored, per machine);
+3. `--set SECTION.KEY=VALUE` on any stage's command line (repeatable).
+
+An overlay can only change keys the base already has, so a typo fails at load. `python -m src.starter show <section> [--set ...]` prints what a stage will use, including `config_layers`; every run manifest records the same list.
+
 The canonical shared override order used across the wrappers is:
 
 ```bash
