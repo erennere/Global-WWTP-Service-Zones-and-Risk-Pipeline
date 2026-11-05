@@ -822,3 +822,17 @@ sweep_ver_ranking:
     data_dir: null
     eu_ref_filepath: null
     output_dir: '{data_dir}/sensitivity/ver_ranking'
+
+# Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
+# unit, and the served-population cartogram. Scripts read these through
+# figures/fig1/fig1_config.py; their outputs and inputs live under data_dir.
+figure1:
+  # Units with fewer matched plants than this are hatched instead of coloured.
+  min_plants: 5
+  # A HeiGIT and a reference plant closer than this are the same plant.
+  match_radius_m: 10000
+  paths:
+    data_dir: null
+    match_dir: '{data_dir}/figures/fig1/match'
+    cartogram_dir: '{data_dir}/figures/fig1/cartogram'
+    combined_dir: '{data_dir}/figures/fig1/combined'
