@@ -19,6 +19,8 @@ from shapely import box
 from tqdm import tqdm
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+
+from .. import provenance
 from ..geo_utils import estimate_utm_epsg_for_geom
 from ..utils import configure_logging, ensure_output_dir_for_file
 
@@ -270,6 +272,7 @@ def main():
     args = parser.parse_args()
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="find_intersection_river", **overrides)
+    provenance.write_run_manifest(cfg, "find_intersection_river")
 
     polygons_path = cfg['paths']['non_served_above_threshold_outpath']
     rivers_path = cfg['paths']['rivershed_output_path']

@@ -13,6 +13,8 @@ import pandas as pd
 from shapely import from_wkt, to_wkt
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+
+from .. import provenance
 from ..geo_utils import buffer_meters, ensure_duckdb_spatial
 from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
 from .find_pop_in_danger_pop import finding_tiles
@@ -282,6 +284,7 @@ def main():
     args = parse_args()
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="find_unserved_pop", **overrides)
+    provenance.write_run_manifest(cfg, "find_unserved_pop")
 
     threshold = int(cfg["threshold_value"])
     max_workers = int(cfg["max_workers"])

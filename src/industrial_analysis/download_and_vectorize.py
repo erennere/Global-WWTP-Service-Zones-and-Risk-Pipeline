@@ -29,6 +29,7 @@ import pandas as pd
 
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from .. import provenance
     from ..create_voronoi import (
         dissolve_overlapping_geometries_fast,
         download_overture_maps,
@@ -44,6 +45,7 @@ try:
     )
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from src import provenance
     from src.create_voronoi import (
         dissolve_overlapping_geometries_fast,
         download_overture_maps,
@@ -628,6 +630,7 @@ def main():
     """Download, vectorize, and merge industrial land data."""
     overrides = parse_config_overrides(args=parse_args())
     cfg = load_config(script_name="download_and_vectorize", **overrides)
+    provenance.write_run_manifest(cfg, "download_and_vectorize")
 
     vectorized_path = cfg['paths']['industrial_merged_filepath']
     overwrite = cfg['overwrite_existing']

@@ -19,11 +19,13 @@ try:
     from ..add_pop import intersect_all_files
     from ..create_voronoi import intersects_with_country_db
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from .. import provenance
     from ..utils import configure_logging, ensure_output_dir_for_file
 except ImportError:
     from src.add_pop import intersect_all_files
     from src.create_voronoi import intersects_with_country_db
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from src import provenance
     from src.utils import configure_logging, ensure_output_dir_for_file
 
 # Configure logging
@@ -234,6 +236,7 @@ def main():
     """Load impact polygons, tile them, attach population sums, and export parquet."""
     overrides = parse_config_overrides(args=parse_args())
     cfg = load_config(script_name="find_pop_in_danger_pop", **overrides)
+    provenance.write_run_manifest(cfg, "find_pop_in_danger_pop")
     zoom_level = int(cfg['zoom_level'])
     max_workers = int(cfg['annotations']['max_workers'])
     tif_dir = cfg['paths']['pop_tif_dir']

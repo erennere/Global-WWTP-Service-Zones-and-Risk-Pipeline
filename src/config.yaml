@@ -20,6 +20,15 @@ correct_locations_w_OSM:
     overture: '{data_dir}/overture_maps_countries.parquet'
     overture_s3_url: 's3://overturemaps-us-west-2/release/2025-01-22.0/theme=divisions/type=division_area/*'
 
+# Run manifests (src/provenance.py): every stage writes one YAML per run with
+# the resolved config, git commit, package versions and input fingerprints.
+run_manifest:
+  # Inputs up to this size get a SHA-256; larger ones only size and time.
+  hash_max_mb: 200
+  paths:
+    data_dir: null
+    manifest_dir: '{data_dir}/run_manifests'
+
 merge_seg_results:
   version: null
   legacy_merge: true

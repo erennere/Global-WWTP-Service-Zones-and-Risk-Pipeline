@@ -694,6 +694,9 @@ def test_add_pop_import_fallback_block_executes(monkeypatch):
     monkeypatch.setitem(sys.modules, "starter", starter_stub)
     monkeypatch.setitem(sys.modules, "utils", utils_stub)
     monkeypatch.setitem(sys.modules, "geo_utils", geo_utils_stub)
+    provenance_stub = ModuleType("provenance")
+    provenance_stub.write_run_manifest = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "provenance", provenance_stub)
 
     module_globals = runpy.run_path(str(module_path), run_name="not_main")
 
@@ -719,6 +722,9 @@ def test_add_pop_script_entrypoint_runs_main_guard(monkeypatch):
     monkeypatch.setitem(sys.modules, "starter", starter_stub)
     monkeypatch.setitem(sys.modules, "utils", utils_stub)
     monkeypatch.setitem(sys.modules, "geo_utils", geo_utils_stub)
+    provenance_stub = ModuleType("provenance")
+    provenance_stub.write_run_manifest = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "provenance", provenance_stub)
     monkeypatch.setattr(sys, "argv", [str(module_path), "--index", "0"])
 
     with pytest.raises(KeyError, match="voronoi_dir"):

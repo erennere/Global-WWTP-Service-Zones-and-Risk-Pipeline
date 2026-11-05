@@ -18,10 +18,12 @@ from tqdm import tqdm
 from shapely.geometry import Polygon
 try:
     from ..starter import add_standard_override_arguments, get_runtime_params, load_config, parse_config_overrides
+    from .. import provenance
     from ..utils import configure_logging, ensure_output_dir_for_file
     from ..geo_utils import batch_estimate_utm_epsg
 except ImportError:
     from src.starter import add_standard_override_arguments, get_runtime_params, load_config, parse_config_overrides
+    from src import provenance
     from src.utils import configure_logging, ensure_output_dir_for_file
     from src.geo_utils import batch_estimate_utm_epsg
 
@@ -627,6 +629,7 @@ def main():
 
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="impact_polygons_pop", **overrides)
+    provenance.write_run_manifest(cfg, "impact_polygons_pop")
     model_params = get_runtime_params(cfg)
 
     if args.radius is not None:

@@ -28,6 +28,7 @@ import pandas as pd
 
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from .. import provenance
     from ..utils import configure_logging, default_cpu_workers, select_industrial_categories
     from .. import pipelines as _pipelines_module
     from ..pipelines import (
@@ -39,6 +40,7 @@ try:
     from ..create_voronoi import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from src import provenance
     from src.utils import configure_logging, default_cpu_workers, select_industrial_categories
     import src.pipelines as _pipelines_module
     from src.pipelines import (
@@ -333,6 +335,7 @@ def main():
 
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="find_unconnected_industrial_areas", **overrides)
+    provenance.write_run_manifest(cfg, "find_unconnected_industrial_areas")
     only_round = args.only_round
     paths_dict = industrial_output_paths(cfg)
 

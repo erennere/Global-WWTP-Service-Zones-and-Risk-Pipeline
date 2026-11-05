@@ -8,9 +8,11 @@ import os
 import geopandas as gpd
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from .. import provenance
     from ..utils import configure_logging, ensure_output_dir_for_file
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from src import provenance
     from src.utils import configure_logging, ensure_output_dir_for_file
 
 def find_verification_watersheds(gdf, percent_verification, watershed_col='HYBAS_ID'):
@@ -49,6 +51,7 @@ def main():
     """Split each population output into verification, non-verification, and single-site files."""
     overrides = parse_config_overrides(args=parse_args())
     cfg = load_config(script_name="verification_script", **overrides)
+    provenance.write_run_manifest(cfg, "verification_script")
     verification_dir = cfg['paths']['verification_dir']
     pop_dir = cfg['paths']['pop_output_dir']
     percent_verification = cfg['percent_verification']

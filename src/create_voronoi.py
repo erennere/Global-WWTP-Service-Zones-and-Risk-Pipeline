@@ -2454,8 +2454,10 @@ EXAMPLES:
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     try:
         from .starter import add_standard_override_arguments
+        from . import provenance
     except ImportError:
         from starter import add_standard_override_arguments
+        import provenance
     add_standard_override_arguments(parser)
 
     args = parser.parse_args()
@@ -2490,6 +2492,7 @@ EXAMPLES:
         parser.error(str(exc))
 
     cfg = load_config(script_name="create_voronoi", **overrides)
+    provenance.write_run_manifest(cfg, "create_voronoi")
     paths_dict = create_output_paths(cfg)
 
     # Ensure output directory exists

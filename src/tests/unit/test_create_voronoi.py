@@ -4,6 +4,7 @@ import contextlib
 import math
 import runpy
 import sys
+import types
 from pathlib import Path
 import geopandas as gpd
 import numpy as np
@@ -358,6 +359,9 @@ def test_create_voronoi_main_run_path_import_fallback(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "pipelines", pipelines)
     monkeypatch.setitem(sys.modules, "geo_utils", geo_utils_module)
     monkeypatch.setitem(sys.modules, "utils", utils_module)
+    provenance_stub = types.ModuleType("provenance")
+    provenance_stub.write_run_manifest = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "provenance", provenance_stub)
 
     args = argparse.Namespace(
         approach=["0"],

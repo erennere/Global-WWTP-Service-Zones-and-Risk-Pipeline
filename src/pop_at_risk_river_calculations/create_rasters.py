@@ -30,6 +30,7 @@ from shapely.ops import unary_union
 try:
     from ..add_pop import find_newest_country_tif_files
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from .. import provenance
     from ..create_voronoi import download_overture_maps, intersects_with_country_db
     from ..pipelines import create_pop_output_paths
     from ..utils import configure_logging, ensure_output_dir_for_file
@@ -38,6 +39,7 @@ try:
 except ImportError:
     from src.add_pop import find_newest_country_tif_files
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from src import provenance
     from src.create_voronoi import download_overture_maps, intersects_with_country_db
     from src.pipelines import create_pop_output_paths
     from src.utils import configure_logging, ensure_output_dir_for_file
@@ -622,6 +624,7 @@ def main():
     args = parse_args()
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="create_rasters", **overrides)
+    provenance.write_run_manifest(cfg, "create_rasters")
     max_workers = cfg['annotations']['max_workers']
     seed = int(cfg['annotations']['random_seed'])
     min_pixels = int(cfg['min_pixels'])

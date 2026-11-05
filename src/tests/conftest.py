@@ -212,3 +212,15 @@ def write_test_config(tmp_path, base_config):
         return _write_config_file(tmp_path, cfg)
 
     return _write
+
+@pytest.fixture(autouse=True)
+def _no_run_manifests(request, monkeypatch):
+    """Stage mains called inside tests must not write manifests into ../data.
+
+    Tests marked ``run_manifest`` get the real writer (and point it at tmp_path).
+    """
+    if request.node.get_closest_marker("run_manifest"):
+        return
+    from src import provenance
+
+    monkeypatch.setattr(provenance, "write_run_manifest", lambda cfg, stage, argv=None: None)

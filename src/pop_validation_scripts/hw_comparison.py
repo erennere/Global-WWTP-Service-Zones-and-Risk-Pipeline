@@ -14,9 +14,11 @@ import seaborn as sns
 import numpy as np
 try:
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from .. import provenance
     from ..utils import configure_logging, ensure_output_dir_for_file, reported_population_mask
 except ImportError:
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from src import provenance
     from src.utils import configure_logging, ensure_output_dir_for_file, reported_population_mask
 
 logger = logging.getLogger(__name__)
@@ -263,6 +265,7 @@ def main():
     """
     overrides = parse_config_overrides(args=parse_args())
     cfg = load_config(script_name="hw_comparison", **overrides)
+    provenance.write_run_manifest(cfg, "hw_comparison")
     ver_dir = cfg['paths']['verification_dir']
     plots_dir = cfg['paths']['hw_plots_dir']
     if not os.path.isdir(ver_dir):

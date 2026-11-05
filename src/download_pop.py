@@ -32,6 +32,7 @@ from rasterio.merge import merge
 import logging
 try:
     from .starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from . import provenance
     from .geo_utils import estimate_utm_crs
     from .utils import (
         DEFAULT_REQUEST_TIMEOUT_SECONDS,
@@ -42,6 +43,7 @@ try:
     )
 except ImportError:  # Support running as a top-level script
     from starter import add_standard_override_arguments, load_config, parse_config_overrides
+    import provenance
     from geo_utils import estimate_utm_crs
     from utils import (
         DEFAULT_REQUEST_TIMEOUT_SECONDS,
@@ -610,6 +612,7 @@ def main(res=30, max_workers=8):
     args = parse_args()
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="download_pop", **overrides)
+    provenance.write_run_manifest(cfg, "download_pop")
     data_dir = os.path.abspath(cfg["paths"]["pop_dir"])
 
     logger.info('Retrieving population data URLs')

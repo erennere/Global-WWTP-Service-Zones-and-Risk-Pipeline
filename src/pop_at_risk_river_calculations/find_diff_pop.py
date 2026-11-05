@@ -15,6 +15,7 @@ import geopandas as gpd
 from shapely import from_wkt, to_wkt
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from .. import provenance
 from ..geo_utils import buffer_geometry, ensure_duckdb_spatial, estimate_utm_epsg_for_geom
 from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
 from ..add_pop import intersect_all_files
@@ -162,6 +163,7 @@ def main():
     args = parse_args()
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="find_diff_pop", **overrides)
+    provenance.write_run_manifest(cfg, "find_diff_pop")
 
     watershed_filepath = cfg['paths']['watershed']
     max_workers = cfg['max_workers']

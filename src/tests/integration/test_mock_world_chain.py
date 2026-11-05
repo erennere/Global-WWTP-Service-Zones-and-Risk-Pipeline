@@ -112,3 +112,10 @@ def test_outputs_match_the_golden_run(chain):
     assert sorted(current) == sorted(golden), set(current) ^ set(golden)
     for key, value in golden.items():
         assert current[key] == pytest.approx(value, rel=1e-6, abs=1e-6), key
+
+
+def test_every_stage_run_left_a_manifest(chain):
+    manifests = glob.glob(os.path.join(str(chain["data_dir"]), "run_manifests", "*.yaml"))
+    stages = {os.path.basename(m).rsplit("_", 2)[0] for m in manifests}
+    expected = {name for name, _ in harness.STAGES}
+    assert expected <= stages, expected - stages

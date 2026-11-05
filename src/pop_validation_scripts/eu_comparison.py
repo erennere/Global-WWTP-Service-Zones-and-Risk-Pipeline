@@ -12,12 +12,14 @@ import geopandas as gpd
 try:
     from .hw_comparison import extract_voronoi_parameters, orchestrate_single
     from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from .. import provenance
     from ..utils import configure_logging
     from ..geo_utils import load_eu_reference_layer
     from ..data_merge.merge_seg_results import assign_to_nearest
 except ImportError:
     from src.pop_validation_scripts.hw_comparison import extract_voronoi_parameters, orchestrate_single
     from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from src import provenance
     from src.utils import configure_logging
     from src.geo_utils import load_eu_reference_layer
     from src.data_merge.merge_seg_results import assign_to_nearest
@@ -42,6 +44,7 @@ def main():
     """
     overrides = parse_config_overrides(args=parse_args())
     cfg = load_config(script_name="eu_comparison", **overrides)
+    provenance.write_run_manifest(cfg, "eu_comparison")
     ver_dir = cfg['paths']['verification_dir']
     plots_dir = cfg['paths']['eu_plots_dir']
     if not os.path.isdir(ver_dir):

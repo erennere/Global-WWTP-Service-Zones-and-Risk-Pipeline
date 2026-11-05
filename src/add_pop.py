@@ -29,10 +29,12 @@ from shapely.ops import unary_union
 from shapely.validation import explain_validity
 try:
     from .starter import load_config, parse_config_overrides, add_standard_override_arguments
+    from . import provenance
     from .utils import configure_logging, ensure_output_dir_for_file, get_iso_codes
     from .geo_utils import repair_geometry
 except ImportError:  # Support running as a top-level script
     from starter import load_config, parse_config_overrides, add_standard_override_arguments
+    import provenance
     from utils import configure_logging, ensure_output_dir_for_file, get_iso_codes
     from geo_utils import repair_geometry
 from exactextract import exact_extract
@@ -541,6 +543,7 @@ def main():
     
     # Switch to the package directory so the relative config path resolves correctly.
     cfg = load_config(script_name="add_pop", **overrides)
+    provenance.write_run_manifest(cfg, "add_pop")
     
     paths = cfg['paths']
     max_workers = cfg['add_pop_max_workers']
