@@ -25,18 +25,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, reported_population_mask, resolve_latest_zonal_sum_column
-    from ..geo_utils import load_eu_reference_layer
-    from ..pop_validation_scripts.hw_comparison import ndvi, multiples, replace_inf
-    from ..data_merge.merge_seg_results import assign_to_nearest
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, reported_population_mask, resolve_latest_zonal_sum_column
-    from src.geo_utils import load_eu_reference_layer
-    from src.pop_validation_scripts.hw_comparison import ndvi, multiples, replace_inf
-    from src.data_merge.merge_seg_results import assign_to_nearest
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, reported_population_mask, resolve_latest_zonal_sum_column
+from ..geo_utils import load_eu_reference_layer
+from ..pop_validation_scripts.hw_comparison import ndvi, multiples, replace_inf
+from ..data_merge.merge_seg_results import assign_to_nearest
 
 
 logger = logging.getLogger(__name__)

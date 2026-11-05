@@ -6,14 +6,9 @@ basin exceeds the configured `percent_verification` threshold.
 import argparse
 import os
 import geopandas as gpd
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from .. import provenance
-    from ..utils import configure_logging, ensure_output_dir_for_file
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src import provenance
-    from src.utils import configure_logging, ensure_output_dir_for_file
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from .. import provenance
+from ..utils import configure_logging, ensure_output_dir_for_file
 
 def find_verification_watersheds(gdf, percent_verification, watershed_col='HYBAS_ID'):
     """Mark each row with verification flags derived from basin-level validity rates."""

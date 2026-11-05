@@ -656,10 +656,7 @@ def load_config(
     ``config.yaml``) gets the overlay files and ``sets`` (parsed ``--set``
     assignments) first; ``cfg["config_layers"]`` lists what was applied.
     """
-    try:
-        from .service_areas import default_distance_additive, default_distance_multiplicative
-    except ImportError:
-        from src.service_areas import default_distance_additive, default_distance_multiplicative
+    from .service_areas import default_distance_additive, default_distance_multiplicative
 
     config_path = resolve_config_path(config)
     config_dir = os.path.dirname(config_path)

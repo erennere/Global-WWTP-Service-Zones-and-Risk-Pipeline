@@ -11,14 +11,9 @@ import pandas as pd
 from shapely.geometry import LineString, Polygon
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, ensure_output_dir_for_file, requests_session_with_retries
-    from ..geo_utils import repair_geometry
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, ensure_output_dir_for_file, requests_session_with_retries
-    from src.geo_utils import repair_geometry
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import configure_logging, ensure_output_dir_for_file, requests_session_with_retries
+from ..geo_utils import repair_geometry
 
 # (key, value) pairs; a list, not a dict, because one key ("waterway") is
 # queried with two values - a dict literal silently kept only the last one,

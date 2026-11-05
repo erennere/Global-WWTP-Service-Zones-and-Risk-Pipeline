@@ -10,26 +10,15 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from shapely import Point, from_wkt
-try:
-    from .correct_locations_w_OSM import coordinate_corr_locations_wOSM
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, ensure_output_dir_for_file
-    from ..geo_utils import (
-        cluster_point_indices as _cluster_point_indices,
-        estimate_utm_epsg_for_geom,
-        parse_diameters_to_round_area,
-        nearest_distances_m,
-    )
-except ImportError:
-    from src.data_merge.correct_locations_w_OSM import coordinate_corr_locations_wOSM
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, ensure_output_dir_for_file
-    from src.geo_utils import (
-        cluster_point_indices as _cluster_point_indices,
-        estimate_utm_epsg_for_geom,
-        parse_diameters_to_round_area,
-        nearest_distances_m,
-    )
+from .correct_locations_w_OSM import coordinate_corr_locations_wOSM
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import configure_logging, ensure_output_dir_for_file
+from ..geo_utils import (
+    cluster_point_indices as _cluster_point_indices,
+    estimate_utm_epsg_for_geom,
+    parse_diameters_to_round_area,
+    nearest_distances_m,
+)
 
 def cluster_point_indices(geoms, threshold):
     """Group point geometries (given as WKT strings) into connected components within a distance threshold."""

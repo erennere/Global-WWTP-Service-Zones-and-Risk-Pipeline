@@ -12,12 +12,8 @@ import tempfile
 from pathlib import Path
 import geopandas as gpd
 import pandas as pd
-try:
-    from .starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from .utils import configure_logging, ensure_output_dir_for_file
-except ImportError:  # Support running as a top-level script
-    from starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from utils import configure_logging, ensure_output_dir_for_file
+from .starter import add_standard_override_arguments, load_config, parse_config_overrides
+from .utils import configure_logging, ensure_output_dir_for_file
 
 def extract_and_merge_geodata(zip_dir, output_path, output_filename="merged.gpkg"):
     """Extract readable geospatial files from zip archives and merge them."""

@@ -26,30 +26,17 @@ import numpy as np
 import geopandas as gpd
 import pandas as pd
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from .. import provenance
-    from ..utils import configure_logging, default_cpu_workers, select_industrial_categories
-    from .. import pipelines as _pipelines_module
-    from ..pipelines import (
-        run_voronoi_approach,
-        prepare_data,
-        create_output_paths,
-        _resolve_configured_callable,
-    )
-    from ..service_areas import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src import provenance
-    from src.utils import configure_logging, default_cpu_workers, select_industrial_categories
-    import src.pipelines as _pipelines_module
-    from src.pipelines import (
-        run_voronoi_approach,
-        prepare_data,
-        create_output_paths,
-        _resolve_configured_callable,
-    )
-    from src.service_areas import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from .. import provenance
+from ..utils import configure_logging, default_cpu_workers, select_industrial_categories
+from .. import pipelines as _pipelines_module
+from ..pipelines import (
+    run_voronoi_approach,
+    prepare_data,
+    create_output_paths,
+    _resolve_configured_callable,
+)
+from ..service_areas import intersect_with_polygon_sindex, orchestrate_overlaps, drop_duplicates
 
 logger = logging.getLogger(__name__)
 

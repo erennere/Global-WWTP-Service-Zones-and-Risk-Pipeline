@@ -148,12 +148,6 @@ def test_new03_main_clusters_output(monkeypatch):
     assert captured["rows"] == 2
 
 
-def test_new03_import_fallback_block_executes():
-    module_path = Path(__file__).resolve().parents[3] / "src" / "annotation_scripts" / "NEW_03_WASTEWATERJOIN_GEOJSON.py"
-
-    module_globals = runpy.run_path(str(module_path), run_name="not_main")
-
-    assert "merge_bboxes_sql" in module_globals
 
 
 def test_write_geodata_ensures_parent_and_writes(monkeypatch, tmp_path):

@@ -19,14 +19,9 @@ import duckdb
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..geo_utils import ensure_duckdb_spatial
-    from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.geo_utils import ensure_duckdb_spatial
-    from src.utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..geo_utils import ensure_duckdb_spatial
+from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
 
 # Configure logging to flush output immediately (important for HPC batch jobs)
 logger = logging.getLogger(__name__)

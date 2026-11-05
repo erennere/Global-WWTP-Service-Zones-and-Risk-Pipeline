@@ -108,12 +108,6 @@ def _reset_globals():
     ipp.discharge_dict = original["discharge_dict"]
 
 
-def test_import_fallback_block_executes():
-    module_path = Path(__file__).resolve().parents[3] / "src" / "pop_at_risk_river_calculations" / "impact_polygons_pop.py"
-
-    module_globals = runpy.run_path(str(module_path), run_name="not_main")
-
-    assert "create_impact_polygons" in module_globals
 
 
 def test_batch_estimate_utm_epsg_marks_invalid_coordinates():
@@ -574,13 +568,13 @@ def test_main_rejects_radius_not_in_configured_list(monkeypatch, tmp_path):
 def test_impact_polygons_script_entrypoint_runs_main_guard(monkeypatch):
     import src.starter as starter_mod
 
-    module_path = Path(__file__).resolve().parents[3] / "src" / "pop_at_risk_river_calculations" / "impact_polygons_pop.py"
+    module_name = "src.pop_at_risk_river_calculations.impact_polygons_pop"
 
     monkeypatch.setattr(starter_mod, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(starter_mod, "load_config", lambda **kwargs: {"paths": {}, "impact_polygons_pop_params": _runtime_params()})
 
     with pytest.raises(KeyError, match="non_served_nxt_river_outpath"):
-        runpy.run_path(str(module_path), run_name="__main__")
+        runpy.run_module(module_name, run_name="__main__")
 
 
 # --- moved from the coverage-campaign files ---

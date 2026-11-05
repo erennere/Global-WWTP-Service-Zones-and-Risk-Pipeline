@@ -27,38 +27,21 @@ from shapely.geometry import shape
 from shapely.ops import unary_union
 import pandas as pd
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from .. import provenance
-    from ..service_areas import (
-        dissolve_overlapping_geometries_fast,
-        download_overture_maps,
-        intersects_with_country_db,
-        intersect_with_polygon_sindex,
-    )
-    from ..geo_utils import estimate_utm_epsg, repair_geometry
-    from ..utils import (
-        DEFAULT_REQUEST_TIMEOUT_SECONDS,
-        configure_logging,
-        default_cpu_workers,
-        requests_session_with_retries,
-    )
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src import provenance
-    from src.service_areas import (
-        dissolve_overlapping_geometries_fast,
-        download_overture_maps,
-        intersects_with_country_db,
-        intersect_with_polygon_sindex,
-    )
-    from src.geo_utils import estimate_utm_epsg, repair_geometry
-    from src.utils import (
-        DEFAULT_REQUEST_TIMEOUT_SECONDS,
-        configure_logging,
-        default_cpu_workers,
-        requests_session_with_retries,
-    )
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from .. import provenance
+from ..service_areas import (
+    dissolve_overlapping_geometries_fast,
+    download_overture_maps,
+    intersects_with_country_db,
+    intersect_with_polygon_sindex,
+)
+from ..geo_utils import estimate_utm_epsg, repair_geometry
+from ..utils import (
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    configure_logging,
+    default_cpu_workers,
+    requests_session_with_retries,
+)
 
 logger = logging.getLogger(__name__)
 

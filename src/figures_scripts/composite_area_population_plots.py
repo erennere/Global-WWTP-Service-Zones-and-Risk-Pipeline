@@ -19,14 +19,9 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..pipelines import create_pop_output_paths
-    from ..utils import clip_to_robust_bounds, configure_logging, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.pipelines import create_pop_output_paths
-    from src.utils import clip_to_robust_bounds, configure_logging, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..pipelines import create_pop_output_paths
+from ..utils import clip_to_robust_bounds, configure_logging, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
 
 
 logger = logging.getLogger(__name__)

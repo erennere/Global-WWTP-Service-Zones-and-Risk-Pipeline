@@ -27,24 +27,14 @@ from shapely.geometry import shape, box
 from shapely import to_wkt
 from shapely.ops import unary_union
 
-try:
-    from ..add_pop import find_newest_country_tif_files
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from .. import provenance
-    from ..service_areas import download_overture_maps, intersects_with_country_db
-    from ..pipelines import create_pop_output_paths
-    from ..utils import configure_logging, ensure_output_dir_for_file
-    from ..geo_utils import repair_geometry
-    from .find_pop_in_danger_pop import find_bbox, finding_tiles
-except ImportError:
-    from src.add_pop import find_newest_country_tif_files
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src import provenance
-    from src.service_areas import download_overture_maps, intersects_with_country_db
-    from src.pipelines import create_pop_output_paths
-    from src.utils import configure_logging, ensure_output_dir_for_file
-    from src.geo_utils import repair_geometry
-    from src.pop_at_risk_river_calculations.find_pop_in_danger_pop import find_bbox, finding_tiles
+from ..add_pop import find_newest_country_tif_files
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from .. import provenance
+from ..service_areas import download_overture_maps, intersects_with_country_db
+from ..pipelines import create_pop_output_paths
+from ..utils import configure_logging, ensure_output_dir_for_file
+from ..geo_utils import repair_geometry
+from .find_pop_in_danger_pop import find_bbox, finding_tiles
 
 logger = logging.getLogger(__name__)
 

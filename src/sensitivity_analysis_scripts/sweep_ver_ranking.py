@@ -35,30 +35,17 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, default_cpu_workers, reported_population_mask
-    from ..geo_utils import load_eu_reference_layer
-    from ..pop_validation_scripts.verification_script import find_verification_watersheds
-    from ..sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
-    from ..sensitivity_analysis_scripts.compare_pop_sweep_hw_eu import (
-        get_latest_year_column,
-        compute_sensitivity_metrics,
-        _safe_zscore,
-    )
-    from ..data_merge.merge_seg_results import assign_to_nearest
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, default_cpu_workers, reported_population_mask
-    from src.geo_utils import load_eu_reference_layer
-    from src.pop_validation_scripts.verification_script import find_verification_watersheds
-    from src.sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
-    from src.sensitivity_analysis_scripts.compare_pop_sweep_hw_eu import (
-        get_latest_year_column,
-        compute_sensitivity_metrics,
-        _safe_zscore,
-    )
-    from src.data_merge.merge_seg_results import assign_to_nearest
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import configure_logging, default_cpu_workers, reported_population_mask
+from ..geo_utils import load_eu_reference_layer
+from ..pop_validation_scripts.verification_script import find_verification_watersheds
+from ..sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
+from ..sensitivity_analysis_scripts.compare_pop_sweep_hw_eu import (
+    get_latest_year_column,
+    compute_sensitivity_metrics,
+    _safe_zscore,
+)
+from ..data_merge.merge_seg_results import assign_to_nearest
 
 logger = logging.getLogger(__name__)
 

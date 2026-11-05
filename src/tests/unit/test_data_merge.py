@@ -1061,15 +1061,6 @@ def test_corr_locations_wosm_skips_missing_source_and_empty_candidates(monkeypat
     assert result["matched_osm_geometry"].isna().all()
 
 
-def test_correct_locations_import_fallback_block_executes():
-    import runpy
-    from pathlib import Path
-
-    module_path = Path(__file__).resolve().parents[3] / "src" / "data_merge" / "correct_locations_w_OSM.py"
-
-    module_globals = runpy.run_path(str(module_path), run_name="not_main")
-
-    assert "corr_locations_wOSM" in module_globals
 
 
 def test_correct_locations_script_entrypoint_runs_main_guard(monkeypatch):
@@ -1078,58 +1069,12 @@ def test_correct_locations_script_entrypoint_runs_main_guard(monkeypatch):
 
     import src.starter as starter_mod
 
-    module_path = Path(__file__).resolve().parents[3] / "src" / "data_merge" / "correct_locations_w_OSM.py"
+    module_name = "src.data_merge.correct_locations_w_OSM"
 
     monkeypatch.setattr(starter_mod, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(starter_mod, "load_config", lambda **overrides: {"paths": {}, "rad": 10})
 
     with pytest.raises(KeyError, match="data_dir"):
-        runpy.run_path(str(module_path), run_name="__main__")
+        runpy.run_module(module_name, run_name="__main__")
 
 
-def test_merge_seg_results_script_entrypoint_runs_new_variant_via_run_path(monkeypatch, tmp_path):
-    import runpy
-    import sys
-    from pathlib import Path
-
-    import src.starter as starter_mod
-
-    corrected_path = str(tmp_path / "corrected_all.gpkg")
-    seg_csv_path = str(tmp_path / "seg_results.csv")
-    cfg = {
-        "legacy_merge": False,
-        "paths": {
-            "corrected_all_filepath": corrected_path,
-            "seg_results_filepath": seg_csv_path,
-        },
-    }
-    captured = {}
-    points_df = gpd.GeoDataFrame(
-        {"idx": [1], "geometry": [Point(0, 0)]},
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    seg_results = pd.DataFrame({"img_name": ["1.png"]})
-    module_path = Path(__file__).resolve().parents[3] / "src" / "data_merge" / "merge_seg_results.py"
-
-    monkeypatch.setattr(sys, "argv", [str(module_path), "--variant", "new"])
-    monkeypatch.setattr(os, "chdir", lambda path: None)
-    monkeypatch.setattr(starter_mod, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(starter_mod, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr("src.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
-    monkeypatch.setattr(gpd, "read_file", lambda path: points_df.copy())
-    monkeypatch.setattr(pd, "read_csv", lambda path: seg_results.copy())
-
-    original_to_file = gpd.GeoDataFrame.to_file
-
-    def fake_to_file(self, filename=None, driver=None, index=None, **kwargs):
-        captured["write"] = {"filename": filename, "driver": driver, "index": index, "rows": len(self)}
-
-    try:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
-        runpy.run_path(str(module_path), run_name="__main__")
-    finally:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", original_to_file)
-
-    assert captured["ensured"] == corrected_path
-    assert captured["write"] == {"filename": corrected_path, "driver": "GPKG", "index": False, "rows": 1}

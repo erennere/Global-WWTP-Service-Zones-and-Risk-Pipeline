@@ -352,10 +352,6 @@ def test_pop_at_risk_main_orchestrates_with_patched_io(monkeypatch, tmp_path):
     assert "duckdb_query" not in seen
 
 
-def test_piechart_interactive_import_fallback_block_executes():
-    module_path = Path(__file__).resolve().parents[3] / "src" / "figures_scripts" / "piechart_interactive.py"
-    module_globals = runpy.run_path(str(module_path), run_name="not_main")
-    assert "aggregate_by_country" in module_globals
 
 
 def test_pop_at_risk_module_main_guard_executes(monkeypatch, tmp_path):
@@ -422,5 +418,5 @@ def test_pop_at_risk_module_main_guard_executes(monkeypatch, tmp_path):
     monkeypatch.setattr(fpip, "find_tiles_in_countries", lambda *args, **kwargs: tiles.copy())
     monkeypatch.setattr(duckdb, "sql", lambda q: _DuckResult())
 
-    module_path = Path(__file__).resolve().parents[3] / "src" / "figures_scripts" / "pop_at_risk_figures.py"
-    runpy.run_path(str(module_path), run_name="__main__")
+    module_name = "src.figures_scripts.pop_at_risk_figures"
+    runpy.run_module(module_name, run_name="__main__")

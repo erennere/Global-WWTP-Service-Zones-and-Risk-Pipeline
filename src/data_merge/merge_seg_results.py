@@ -11,14 +11,9 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import zipfile
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, ensure_output_dir_for_file
-    from ..geo_utils import nearest_within_threshold
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, ensure_output_dir_for_file
-    from src.geo_utils import nearest_within_threshold
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import configure_logging, ensure_output_dir_for_file
+from ..geo_utils import nearest_within_threshold
 
 def assign_to_nearest(gdf_source, gdf_target, threshold=None, one_to_one=False):
     """Attach nearest target attributes to each source geometry.

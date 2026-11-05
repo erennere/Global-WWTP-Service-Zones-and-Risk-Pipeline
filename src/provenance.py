@@ -19,10 +19,7 @@ from importlib import metadata
 
 import yaml
 
-try:
-    from .starter import load_config
-except ImportError:  # run as a script from src/
-    from starter import load_config
+from .starter import load_config
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGES = ("numpy", "pandas", "geopandas", "shapely", "pyproj", "pyogrio", "rasterio", "exactextract", "duckdb",

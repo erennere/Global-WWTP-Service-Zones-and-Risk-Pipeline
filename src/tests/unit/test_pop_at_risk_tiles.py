@@ -478,15 +478,6 @@ def test_main_writes_empty_tile_groups_when_grouping_drops_tile_column(monkeypat
     assert saved["final"]["frame"].columns.tolist() == ["tile", "geometry"]
 
 
-def test_find_pop_in_danger_import_fallback_block_executes():
-    import runpy
-    from pathlib import Path
-
-    module_path = Path(__file__).resolve().parents[3] / "src" / "pop_at_risk_river_calculations" / "find_pop_in_danger_pop.py"
-
-    module_globals = runpy.run_path(str(module_path), run_name="not_main")
-
-    assert "find_tiles_in_a_country" in module_globals
 
 
 def test_find_pop_in_danger_script_entrypoint_runs_main_guard(monkeypatch):
@@ -495,10 +486,10 @@ def test_find_pop_in_danger_script_entrypoint_runs_main_guard(monkeypatch):
 
     import src.starter as starter_mod
 
-    module_path = Path(__file__).resolve().parents[3] / "src" / "pop_at_risk_river_calculations" / "find_pop_in_danger_pop.py"
+    module_name = "src.pop_at_risk_river_calculations.find_pop_in_danger_pop"
 
     monkeypatch.setattr(starter_mod, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(starter_mod, "load_config", lambda **overrides: {"zoom_level": 8, "annotations": {"max_workers": 1}, "paths": {}})
 
     with pytest.raises(KeyError, match="pop_tif_dir"):
-        runpy.run_path(str(module_path), run_name="__main__")
+        runpy.run_module(module_name, run_name="__main__")

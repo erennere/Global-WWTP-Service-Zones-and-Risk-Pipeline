@@ -21,22 +21,13 @@ from pyproj import Transformer
 import logging
 import shapely.wkt
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..geo_utils import ensure_duckdb_spatial
-    from ..utils import (
-        configure_logging,
-        duckdb_connection,
-        ensure_output_dir_for_file,
-    )
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.geo_utils import ensure_duckdb_spatial
-    from src.utils import (
-        configure_logging,
-        duckdb_connection,
-        ensure_output_dir_for_file,
-    )
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..geo_utils import ensure_duckdb_spatial
+from ..utils import (
+    configure_logging,
+    duckdb_connection,
+    ensure_output_dir_for_file,
+)
 
 logger = logging.getLogger(__name__)
 

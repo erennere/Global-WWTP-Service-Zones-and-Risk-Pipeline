@@ -20,14 +20,9 @@ import pandas as pd
 from shapely.errors import GEOSException
 from shapely.geometry import box, mapping
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, ensure_output_dir_for_file
-    from ..geo_utils import repair_geometry
-except ImportError:
-    from starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from utils import configure_logging, ensure_output_dir_for_file
-    from geo_utils import repair_geometry
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import configure_logging, ensure_output_dir_for_file
+from ..geo_utils import repair_geometry
 
 
 def _load_unconnected_industrial_input(cfg: dict) -> gpd.GeoDataFrame:

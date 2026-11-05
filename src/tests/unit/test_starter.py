@@ -531,7 +531,7 @@ def test_new03_script_entrypoint_runs_merge_tasks_and_calls_main(monkeypatch, tm
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
     monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", lambda max_workers=None: _Executor(max_workers=max_workers, eager_results=False))
 
-    runpy.run_path(str(Path(ww3.__file__).resolve()), run_name="__main__")
+    runpy.run_module(ww3.__name__, run_name="__main__")
 
     assert captured["ensured"] == output_geojson
     assert captured["written"]["path"] == output_geojson
@@ -575,4 +575,4 @@ def test_new03_script_skips_main_when_output_file_missing(monkeypatch, tmp_path)
     monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
     monkeypatch.setattr(os.path, "exists", _exists)
 
-    runpy.run_path(str(ww3.__file__), run_name="__main__")
+    runpy.run_module(ww3.__name__, run_name="__main__")

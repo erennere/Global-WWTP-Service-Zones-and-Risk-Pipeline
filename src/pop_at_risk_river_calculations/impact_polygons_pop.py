@@ -16,16 +16,10 @@ from shapely.ops import unary_union
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from shapely.geometry import Polygon
-try:
-    from ..starter import add_standard_override_arguments, get_runtime_params, load_config, parse_config_overrides
-    from .. import provenance
-    from ..utils import configure_logging, ensure_output_dir_for_file
-    from ..geo_utils import batch_estimate_utm_epsg
-except ImportError:
-    from src.starter import add_standard_override_arguments, get_runtime_params, load_config, parse_config_overrides
-    from src import provenance
-    from src.utils import configure_logging, ensure_output_dir_for_file
-    from src.geo_utils import batch_estimate_utm_epsg
+from ..starter import add_standard_override_arguments, get_runtime_params, load_config, parse_config_overrides
+from .. import provenance
+from ..utils import configure_logging, ensure_output_dir_for_file
+from ..geo_utils import batch_estimate_utm_epsg
 
 logger = logging.getLogger(__name__)
 

@@ -30,28 +30,16 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rasterio.features
 from rasterio.merge import merge
 import logging
-try:
-    from .starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from . import provenance
-    from .geo_utils import estimate_utm_crs
-    from .utils import (
-        DEFAULT_REQUEST_TIMEOUT_SECONDS,
-        configure_logging,
-        ensure_output_dir_for_file,
-        get_iso_codes,
-        requests_session_with_retries,
-    )
-except ImportError:  # Support running as a top-level script
-    from starter import add_standard_override_arguments, load_config, parse_config_overrides
-    import provenance
-    from geo_utils import estimate_utm_crs
-    from utils import (
-        DEFAULT_REQUEST_TIMEOUT_SECONDS,
-        configure_logging,
-        ensure_output_dir_for_file,
-        get_iso_codes,
-        requests_session_with_retries,
-    )
+from .starter import add_standard_override_arguments, load_config, parse_config_overrides
+from . import provenance
+from .geo_utils import estimate_utm_crs
+from .utils import (
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    configure_logging,
+    ensure_output_dir_for_file,
+    get_iso_codes,
+    requests_session_with_retries,
+)
 
 logger = logging.getLogger(__name__)
 

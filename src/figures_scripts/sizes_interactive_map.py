@@ -13,14 +13,9 @@ from typing import Optional
 import geopandas as gpd
 import pandas as pd
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..pipelines import create_pop_output_paths
-    from ..utils import configure_logging, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.pipelines import create_pop_output_paths
-    from src.utils import configure_logging, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..pipelines import create_pop_output_paths
+from ..utils import configure_logging, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
 
 
 def _resolve_population_column(gdf: gpd.GeoDataFrame) -> Optional[str]:

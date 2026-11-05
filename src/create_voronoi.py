@@ -105,12 +105,8 @@ EXAMPLES:
     parser.add_argument('--only-round', action='store_true',
                        help='Use only round-area weights (default: all points)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
-    try:
-        from .starter import add_standard_override_arguments
-        from . import provenance
-    except ImportError:
-        from starter import add_standard_override_arguments
-        import provenance
+    from .starter import add_standard_override_arguments
+    from . import provenance
     add_standard_override_arguments(parser)
 
     args = parser.parse_args()
@@ -127,14 +123,9 @@ EXAMPLES:
         approaches_to_run = VALID_APPROACHES
     
     # Setup paths and logging
-    try:
-        from .starter import add_standard_override_arguments, load_config, parse_config_overrides
-        from . import pipelines as _pipelines_module
-        from .pipelines import create_output_paths, prepare_data, run_voronoi_approach, _resolve_configured_callable
-    except ImportError:  # Support running as a top-level script
-        from starter import add_standard_override_arguments, load_config, parse_config_overrides
-        import pipelines as _pipelines_module
-        from pipelines import create_output_paths, prepare_data, run_voronoi_approach, _resolve_configured_callable
+    from .starter import add_standard_override_arguments, load_config, parse_config_overrides
+    from . import pipelines as _pipelines_module
+    from .pipelines import create_output_paths, prepare_data, run_voronoi_approach, _resolve_configured_callable
     
     if args.verbose:
         logger.setLevel(logging.DEBUG)

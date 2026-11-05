@@ -490,17 +490,3 @@ def test_create_rasters_main_watershed_requires_crs_and_read_file_no_crs_kwarg(m
     assert calls["watershed_kwargs"] == {}
 
 
-def test_create_rasters_script_entrypoint_runs_main_guard(monkeypatch):
-    from pathlib import Path
-    import sys
-
-    import src.starter as starter_mod
-
-    module_path = Path(__file__).resolve().parents[3] / "src" / "pop_at_risk_river_calculations" / "create_rasters.py"
-
-    monkeypatch.setattr(starter_mod, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(starter_mod, "load_config", lambda **kwargs: {})
-    monkeypatch.setattr(sys, "argv", [str(module_path)])
-
-    with pytest.raises(KeyError, match="annotations"):
-        runpy.run_path(str(module_path), run_name="__main__")

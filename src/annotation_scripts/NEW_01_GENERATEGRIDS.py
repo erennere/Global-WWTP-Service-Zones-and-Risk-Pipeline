@@ -12,12 +12,8 @@ import pandas as pd
 from shapely.geometry import box
 from shapely import Point
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..utils import configure_logging, ensure_output_dir_for_file
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.utils import configure_logging, ensure_output_dir_for_file
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import configure_logging, ensure_output_dir_for_file
 
 logger = logging.getLogger(__name__)
 

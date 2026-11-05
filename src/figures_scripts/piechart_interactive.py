@@ -13,18 +13,11 @@ import folium
 from branca.element import Template, MacroElement
 import math
 
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from ..pipelines import create_pop_output_paths
-    from ..utils import configure_logging, ensure_output_dir_for_file, industrial_category_mask, resolve_latest_zonal_sum_column
-    from ._shared import SUM_ONLY, ensure_population_percentage_column
-    from . import _shared
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src.pipelines import create_pop_output_paths
-    from src.utils import configure_logging, ensure_output_dir_for_file, industrial_category_mask, resolve_latest_zonal_sum_column
-    from src.figures_scripts._shared import SUM_ONLY, ensure_population_percentage_column
-    from src.figures_scripts import _shared
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..pipelines import create_pop_output_paths
+from ..utils import configure_logging, ensure_output_dir_for_file, industrial_category_mask, resolve_latest_zonal_sum_column
+from ._shared import SUM_ONLY, ensure_population_percentage_column
+from . import _shared
 
 def aggregate_by_country(gdf, country_column, agg_column, industrial_column=None, is_pop=False):
     """Aggregate per-facility metrics to country-level totals for mapping."""

@@ -25,14 +25,9 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple
 
-try:
-    from ..starter import load_config
-    from ..utils import configure_logging
-    from ..pipelines import create_output_paths
-except ImportError:
-    from src.starter import load_config
-    from src.utils import configure_logging
-    from src.pipelines import create_output_paths
+from ..starter import load_config
+from ..utils import configure_logging
+from ..pipelines import create_output_paths
 
 # Setup logging
 def setup_logging(log_dir: str, task_id: int) -> logging.Logger:

@@ -48,12 +48,8 @@ import pandas as pd
 import shapely
 from scipy.spatial import cKDTree
 
-try:
-    from ..service_areas import calculate_area, plant_size_people, reported_size_people
-    from ..starter import load_config
-except ImportError:  # run as a script from src/
-    from src.service_areas import calculate_area, plant_size_people, reported_size_people
-    from starter import load_config
+from ..service_areas import calculate_area, plant_size_people, reported_size_people
+from ..starter import load_config
 
 US_ALBERS = 5070
 DEFAULT_STATES = {"MA": "25", "CT": "09", "RI": "44", "VT": "50", "NH": "33", "UT": "49", "KY": "21"}

@@ -12,14 +12,9 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-try:
-    from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from .. import provenance
-    from ..utils import configure_logging, ensure_output_dir_for_file, reported_population_mask
-except ImportError:
-    from src.starter import add_standard_override_arguments, load_config, parse_config_overrides
-    from src import provenance
-    from src.utils import configure_logging, ensure_output_dir_for_file, reported_population_mask
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from .. import provenance
+from ..utils import configure_logging, ensure_output_dir_for_file, reported_population_mask
 
 logger = logging.getLogger(__name__)
 

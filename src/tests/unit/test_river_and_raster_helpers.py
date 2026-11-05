@@ -219,15 +219,6 @@ def test_sanitize_polygon_geom_handles_make_valid_fallback_and_nonpolygon_result
     assert create_rasters._sanitize_polygon_geom(LineString([(0, 0), (1, 1)])) is None
 
 
-def test_create_rasters_import_fallback_block_executes():
-    import runpy
-    from pathlib import Path
-
-    module_path = Path(__file__).resolve().parents[3] / "src" / "pop_at_risk_river_calculations" / "create_rasters.py"
-
-    module_globals = runpy.run_path(str(module_path), run_name="not_main")
-
-    assert "extract_worldpop_universal" in module_globals
 
 
 def test_geotiff_exists_valid_and_polygon_raster_sign(tmp_path):
