@@ -884,8 +884,11 @@ def intersects_with_country_db(df, filepath, polygon_country_col='country', outp
             FROM read_parquet('{filepath}')
         )
     ),
+    -- No geometry here: carrying the country polygon per matched row copied a
+    -- whole country boundary for every feature (out of memory on detailed
+    -- boundaries). Multi-country rows re-read it below.
     matches AS (
-        SELECT a.__rid, b.__country, b.geometry AS __cgeom
+        SELECT a.__rid, b.__country
         FROM data a
         JOIN countries b ON
             a.LON_MIN <= b.LON_MAX
@@ -900,10 +903,13 @@ def intersects_with_country_db(df, filepath, polygon_country_col='country', outp
         SELECT d.__rid, d.__country FROM distinct_matches d JOIN counts c USING (__rid) WHERE c.__n = 1
     ),
     multi AS (
-        SELECT m.__rid, m.__country, sum(ST_Area(ST_Intersection(a.geometry, m.__cgeom))) AS __overlap
-        FROM matches m
+        SELECT m.__rid, m.__country, sum(ST_Area(ST_Intersection(a.geometry, b.geometry))) AS __overlap
+        FROM distinct_matches m
         JOIN counts c USING (__rid)
         JOIN data a USING (__rid)
+        JOIN countries b ON b.__country = m.__country
+            AND a.LON_MIN <= b.LON_MAX AND a.LON_MAX >= b.LON_MIN
+            AND a.LAT_MIN <= b.LAT_MAX AND a.LAT_MAX >= b.LAT_MIN
         WHERE c.__n > 1
         GROUP BY m.__rid, m.__country
     ),
