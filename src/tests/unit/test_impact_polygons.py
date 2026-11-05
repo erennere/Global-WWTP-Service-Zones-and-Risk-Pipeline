@@ -21,6 +21,8 @@ def _runtime_params(impact_radii=None):
         "theta": 1.047,
         "step_m": 5000.0,
         "least_discharge_cms": 0.269,
+        "velocity_m_s": 1.0,
+        "water_temp_equator_c": 28.0,
         "impact_radii": impact_radii or [1000.0, 2000.0],
     }
 
@@ -157,6 +159,8 @@ def test_get_runtime_params_rejects_invalid_values():
                     "theta": 1.047,
                     "step_m": "250",
                     "least_discharge_cms": 0.269,
+                    "velocity_m_s": 1.0,
+                    "water_temp_equator_c": 28.0,
                     "impact_radii": ["300", 900],
                 }
             }

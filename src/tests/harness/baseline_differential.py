@@ -278,43 +278,6 @@ def _calculate_size_nan(old_root):
     return normalize(old_fn(float("nan"), 1, 1000, 5, 40)), normalize(calculate_size(float("nan"), 1, 1000, 5, 40))
 
 
-# --------------------------------------------------------------------------
-# G6 - mosaic tile placement. Arrays are (bands, rows, cols); the baseline
-# clipped using shape[0]/shape[1], i.e. the band axis and the row axis.
-# --------------------------------------------------------------------------
-@case("G6 mosaic tile placement", "differ",
-      "baseline trimmed the tile using data.shape[0]/[1] - the BAND and ROW axes - "
-      "where the destination window needs row/column extents, so an overhanging "
-      "window either shifted the tile or failed to broadcast outright")
-def _mosaic(old_root):
-    from src.download_pop import add_tile_into_mosaic
-
-    mosaic = np.zeros((1, 6, 6), dtype=np.float32)
-    tile = np.arange(1, 13, dtype=np.float32).reshape(1, 3, 4)
-    row, col, height, width = 4, 3, 3, 4  # window overhangs both edges
-
-    def baseline_place(mosaic_data, data, row_off, col_off, height, width):
-        """Transcribed verbatim from baseline download_pop.py:534-537."""
-        mosaic_data = mosaic_data.copy()
-        data = data.copy()
-        temp = mosaic_data[:, row_off:row_off + height, col_off:col_off + width]
-        if temp.shape != data.shape:
-            data = data[:, int(data.shape[0] - temp.shape[0]):, int(data.shape[1] - temp.shape[1]):]
-        mosaic_data[:, row_off:row_off + height, col_off:col_off + width] += data
-        return mosaic_data
-
-    def attempt(fn):
-        try:
-            return normalize(fn())
-        except Exception as err:
-            return f"{type(err).__name__}: {err}"
-
-    return (
-        attempt(lambda: baseline_place(mosaic, tile, row, col, height, width)),
-        attempt(lambda: add_tile_into_mosaic(mosaic.copy(), tile, row, col, height, width)),
-    )
-
-
 def main(baseline_name):
     old_root = SRC / baseline_name
     if not old_root.is_dir():

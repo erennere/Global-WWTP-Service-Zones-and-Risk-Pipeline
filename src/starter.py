@@ -513,6 +513,8 @@ def get_runtime_params(cfg: dict) -> dict:
         "theta": float(section["theta"]),
         "step_m": float(section["step_m"]),
         "least_discharge_cms": float(section["least_discharge_cms"]),
+        "velocity_m_s": float(section["velocity_m_s"]),
+        "water_temp_equator_c": float(section["water_temp_equator_c"]),
         "impact_radii": [float(value) for value in section["impact_radii"]],
     }
 

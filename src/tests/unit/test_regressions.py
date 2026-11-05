@@ -437,3 +437,81 @@ def test_R8_one_reference_plant_is_matched_by_at_most_one_cell():
     matched = one[one["POP_SERVED_EU"].notna()]
     assert matched["cell"].tolist() == [2]  # the closest cell keeps the match
     assert sorted(one["cell"]) == [1, 2, 3]
+
+
+# --------------------------------------------------------------------------- #
+# R6  confluences dilute by discharge; model constants come from config        #
+# --------------------------------------------------------------------------- #
+def test_R6_two_equal_tributaries_mix_to_their_own_concentration():
+    from src.pop_at_risk_river_calculations.impact_polygons_pop import mix_downstream_concentration
+
+    c = 8.0  # mg/l leaving each tributary; Q = 10 m3/s each, 20 m3/s below the confluence
+    after_first = mix_downstream_concentration(0.0, c, 10.0, 20.0)
+    after_both = mix_downstream_concentration(after_first, c, 10.0, 20.0)
+
+    assert after_both == pytest.approx(c)  # was 2c: concentrations were added undiluted
+
+
+def test_R6_dilution_never_concentrates_and_handles_missing_discharge():
+    from src.pop_at_risk_river_calculations.impact_polygons_pop import mix_downstream_concentration
+
+    assert mix_downstream_concentration(1.0, 4.0, 30.0, 20.0) == pytest.approx(5.0)  # Q_down < Q_up: no gain
+    assert mix_downstream_concentration(0.0, 4.0, np.nan, 0.0, least_discharge_cms=0.5) == pytest.approx(4.0)
+
+
+def test_R6_velocity_and_temperature_are_parameters():
+    from src.pop_at_risk_river_calculations import impact_polygons_pop as ipp
+
+    assert ipp.calculate_kt(0.0, water_temp_equator_c=20.0) == pytest.approx(0.23)
+    from src.starter import load_config, get_runtime_params
+
+    params = get_runtime_params(load_config(script_name="impact_polygons_pop"))
+    assert params["velocity_m_s"] == 1.0 and params["water_temp_equator_c"] == 28.0
+
+
+# --------------------------------------------------------------------------- #
+# R9  population mosaics: nodata never counted, overlaps not summed, one year  #
+# --------------------------------------------------------------------------- #
+def _write_pop_tile(path, data, left, top, res=1.0, nodata=-99999.0):
+    with rasterio.open(
+        path, "w", driver="GTiff", height=data.shape[0], width=data.shape[1], count=1,
+        dtype="float32", crs="EPSG:4326", transform=from_origin(left, top, res, res), nodata=nodata,
+    ) as dst:
+        dst.write(data.astype("float32"), 1)
+
+
+def test_R9_mosaic_ignores_nodata_and_does_not_sum_overlaps(tmp_path):
+    from src.download_pop import mosaic_large_rasters
+
+    nd = -99999.0
+    left = np.array([[1.0, 2.0, nd], [3.0, 4.0, nd]])  # columns 0-2
+    right = np.array([[5.0, 6.0], [7.0, 8.0]])  # columns 2-3: overlaps left's nodata column
+    a, b, out = tmp_path / "a_2020.tif", tmp_path / "b_2020.tif", tmp_path / "out.tif"
+    _write_pop_tile(a, left, 0, 2)
+    _write_pop_tile(b, right, 2, 2)
+
+    mosaic_large_rasters([str(a), str(b)], str(out))
+
+    with rasterio.open(out) as src:
+        values = src.read(1, masked=True)
+    assert values.shape == (2, 4)
+    assert float(values.sum()) == pytest.approx(1 + 2 + 3 + 4 + 5 + 6 + 7 + 8)  # old code: -199998 added
+
+
+def test_R9_mosaic_refuses_mixed_resolutions(tmp_path):
+    from src.download_pop import mosaic_large_rasters
+
+    _write_pop_tile(tmp_path / "a.tif", np.ones((2, 2)), 0, 2, res=1.0)
+    _write_pop_tile(tmp_path / "b.tif", np.ones((2, 2)), 2, 2, res=0.5)
+    with pytest.raises(ValueError, match="resolution"):
+        mosaic_large_rasters([str(tmp_path / "a.tif"), str(tmp_path / "b.tif")], str(tmp_path / "o.tif"))
+
+
+def test_R9_years_are_mosaicked_separately_and_2014_is_opt_in():
+    from src.download_pop import get_urls, group_rasters_by_year
+
+    groups = group_rasters_by_year(["x/deu_pop_2020_CN_100m.tif", "x/deu_pop_2021_CN_100m.tif", "x/deu_ppp_2014_1km.tif",
+                                    "x/notes.tif"])
+    assert sorted(groups, key=lambda k: (k is None, k or 0)) == [2014, 2020, 2021, None]
+    urls = get_urls(start_year=2015, end_year=2016)
+    assert not any("2014" in url for country_urls in urls.values() for url in country_urls)

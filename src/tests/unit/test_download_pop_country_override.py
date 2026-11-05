@@ -59,6 +59,7 @@ def _base_cfg(country_limit=0):
         "start_year": 2015,
         "end_year": 2016,
         "worldpop_2014_url_template": "x",
+        "include_2014": False,
         "worldpop_yearly_url_template": "y",
         "country_limit": country_limit,
     }

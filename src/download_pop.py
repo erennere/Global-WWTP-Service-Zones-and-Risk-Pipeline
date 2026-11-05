@@ -15,7 +15,7 @@ Output directories:
 - ../data/population/zipped/      : Downloaded archives
 - ../data/population/unzipped/    : Extracted files
 - ../data/population/rasterized/  : Individual CSV rasterized outputs
-- ../data/population/merged/      : Final country mosaics
+- ../data/population/merged/      : Country mosaics, one per year (pop_<iso3>_<year>_merged.tif)
 """
 import argparse
 import requests
@@ -29,7 +29,7 @@ import geopandas as gpd
 from rasterio.transform import from_origin
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rasterio.features
-from rasterio.windows import from_bounds
+from rasterio.merge import merge
 import logging
 try:
     from .starter import add_standard_override_arguments, load_config, parse_config_overrides
@@ -186,10 +186,15 @@ def get_urls_from_hdx():
                 add_country_url(country_urls, iso3, url)
     return country_urls
 
-def get_urls(start_year=2015, end_year=2024, worldpop_2014_template=None, worldpop_yearly_template=None):
+def get_urls(start_year=2015, end_year=2024, worldpop_2014_template=None, worldpop_yearly_template=None,
+             include_2014=False):
     """
     Generate WorldPop population data URLs for all countries.
     Returns a dictionary mapping country codes to lists of download URLs.
+
+    The 2014 layer is the 1 km unconstrained product, not the 100 m
+    constrained R2024B series used for 2015-2024, so it is only requested
+    when ``include_2014`` is true.
     """
     alpha_3_to_2, alpha_2_to_3, alpha_3_to_names, alpha_2_to_names = get_iso_codes()
     all_countries = list(alpha_3_to_2.keys())
@@ -199,7 +204,9 @@ def get_urls(start_year=2015, end_year=2024, worldpop_2014_template=None, worldp
         worldpop_yearly_template = 'https://data.worldpop.org/GIS/Population/Global_2015_2030/R2024B/{year}/{country_upper}/v1/100m/constrained/{country_lower}_pop_{year}_CN_100m_R2024B_v1.tif'
 
     country_urls = {
-        k.lower(): [worldpop_2014_template.format(country_upper=k.upper(), country_lower=k.lower())]
+        k.lower(): (
+            [worldpop_2014_template.format(country_upper=k.upper(), country_lower=k.lower())] if include_2014 else []
+        )
         for k in all_countries
     }
     for k in country_urls.keys():
@@ -421,146 +428,73 @@ def rasterize_csv(df, output_path, res=30):
         )
     return output_path
 
-def resample_raster(src, target_transform, target_shape, target_crs, resampling_method=Resampling.nearest):
-    """Resample a raster band to a target grid definition.
-
-    Parameters
-    ----------
-    src : rasterio.io.DatasetReader
-        Open raster dataset to resample.
-    target_transform : affine.Affine
-        Target affine transform.
-    target_shape : tuple[int, int]
-        Output ``(height, width)`` shape.
-    target_crs : rasterio.crs.CRS | str
-        Coordinate reference system of the output grid.
-    resampling_method : rasterio.warp.Resampling, default=Resampling.nearest
-        Resampling algorithm to use.
-
-    Returns
-    -------
-    numpy.ndarray
-        Resampled band array.
-    """
-    data = src.read(1)  # Read the first band (assuming 1 band)
-    resampled_data = np.zeros(target_shape, dtype=data.dtype)
-    
-    reproject(
-        data,  # source data
-        resampled_data,  # target data
-        src_transform=src.transform,  # source transform
-        src_crs=src.crs,  # source CRS
-        dst_transform=target_transform,  # target transform
-        dst_crs=target_crs,  # target CRS
-        resampling=resampling_method  # Resampling method
-    )
-    return resampled_data
-
-def add_tile_into_mosaic(mosaic_data, data, row_off, col_off, height, width, source=None):
-    """Accumulate one tile into the mosaic at (row_off, col_off).
-
-    Both arrays are (bands, rows, cols). A tile's rounded window can run past the
-    mosaic edge, so the destination and the tile are clipped to their common
-    row/column extent before adding. Clipping used to index ``shape[0]``/
-    ``shape[1]`` - the band and row axes - and so trimmed rows by a band count
-    and columns by a row count, shifting tile contents.
-    """
-    dest = mosaic_data[:, row_off:row_off + height, col_off:col_off + width]
-    rows = min(dest.shape[1], data.shape[1])
-    cols = min(dest.shape[2], data.shape[2])
-    if (rows, cols) != (dest.shape[1], dest.shape[2]) or (rows, cols) != (data.shape[1], data.shape[2]):
-        logger.warning(
-            "Mosaic window for %s does not fit: window=%s, tile=%s; clipping to (%d, %d)",
-            source, dest.shape, data.shape, rows, cols,
-        )
-    mosaic_data[:, row_off:row_off + rows, col_off:col_off + cols] += data[:, :rows, :cols]
-    return mosaic_data
-
-
 def mosaic_large_rasters(raster_files, output_path):
-    """Mosaic one or more raster tiles into a single output file.
+    """Mosaic raster tiles of ONE year into a single output file.
+
+    Uses ``rasterio.merge`` so nodata cells never enter the counts and an
+    overlap is taken from the first tile instead of being summed. Tiles with a
+    different resolution or CRS are rejected: population counts cannot be
+    resampled to another cell size without changing the totals.
 
     Parameters
     ----------
     raster_files : list[str]
-        Raster files to combine.
+        Raster files to combine (one year, one product).
     output_path : str
         Destination path of the merged raster.
     """
+    ensure_output_dir_for_file(output_path)
     if len(raster_files) == 1:
-        ensure_output_dir_for_file(output_path)
         shutil.copy(raster_files[0], output_path)
         return
-    bounds = []
-    crs = None
-    dtype = None
 
-    # Collect bounds, CRS, and dtype from input rasters
+    sources = [rasterio.open(fp) for fp in raster_files]
+    try:
+        resolutions = {tuple(round(v, 12) for v in src.res) for src in sources}
+        crss = {src.crs.to_string() if src.crs else None for src in sources}
+        if len(resolutions) > 1 or len(crss) > 1:
+            raise ValueError(
+                f"Cannot mosaic {output_path}: tiles differ in resolution {sorted(resolutions)} "
+                f"or CRS {sorted(map(str, crss))}"
+            )
+        nodata = next((src.nodata for src in sources if src.nodata is not None), None)
+        data, transform = merge(sources, nodata=nodata, method='first')
+        profile = sources[0].profile.copy()
+    finally:
+        for src in sources:
+            src.close()
+
+    profile.update(
+        driver='GTiff', height=data.shape[1], width=data.shape[2], count=data.shape[0],
+        transform=transform, nodata=nodata, compress='lzw',
+    )
+    profile.pop('blockxsize', None)
+    profile.pop('blockysize', None)
+    profile.pop('tiled', None)
+    with rasterio.open(output_path, 'w', **profile) as dst:
+        dst.write(data)
+
+
+_YEAR_TOKEN = re.compile(r'(?<!\d)(20\d{2})(?!\d)')
+
+
+def group_rasters_by_year(raster_files):
+    """Group raster paths by the four-digit year in their file name.
+
+    Different years must never be mosaicked together; files without a year
+    are grouped under ``None``.
+    """
+    groups = {}
     for fp in raster_files:
-        with rasterio.open(fp) as src:
-            bounds.append(src.bounds)
-            crs = src.crs
-            dtype = src.dtypes[0]
+        match = _YEAR_TOKEN.search(os.path.basename(fp))
+        groups.setdefault(int(match.group(1)) if match else None, []).append(fp)
+    return groups
 
-    # Calculate mosaic bounds (bounding box of all rasters)
-    minx = min(b.left for b in bounds)
-    maxx = max(b.right for b in bounds)
-    miny = min(b.bottom for b in bounds)
-    maxy = max(b.top for b in bounds)
 
-    # Get resolution from the first raster
-    with rasterio.open(raster_files[0]) as src:
-        res = src.res
-        target_transform = rasterio.transform.from_origin(minx, maxy, res[0], res[1])
-        width = int((maxx - minx) / res[0])
-        height = int((maxy - miny) / res[1])
-        count = src.count
-
-    # Create the profile for the output mosaic
-    profile = {
-        'driver': 'GTiff',
-        'height': height,
-        'width': width,
-        'count': count,
-        'dtype': dtype,
-        'crs': crs,
-        'transform': target_transform
-    }
-
-    ensure_output_dir_for_file(output_path)
-    with rasterio.open(output_path, 'w+', **profile) as mosaic:
-        mosaic_data = np.zeros((count, height, width), dtype=dtype)
-        for fp in raster_files:
-            with rasterio.open(fp) as src:
-                if src.res != res:
-                    # Resample the whole raster
-                    resampled_data = resample_raster(
-                        src, 
-                        target_transform, 
-                        (height, width), 
-                        crs
-                    )
-                    mosaic_data[0] += resampled_data
-                else:
-                    # No resampling, so we calculate window
-                    window = from_bounds(*src.bounds, transform=target_transform)
-                    window = window.round_offsets().round_lengths()
-
-                    # Read and write only into the window
-                    data = src.read(
-                        out_shape=(count, window.height, window.width)
-                    )
-                    add_tile_into_mosaic(
-                        mosaic_data, data,
-                        int(window.row_off), int(window.col_off),
-                        int(window.height), int(window.width),
-                        source=fp,
-                    )
-        mosaic.write(mosaic_data)
-
-def merged_output_path(pop_dir, country):
-    """Canonical path of one country's merged population mosaic."""
-    return os.path.join(pop_dir, 'merged', f'pop_{country.lower()}_merged.tif')
+def merged_output_path(pop_dir, country, year=None):
+    """Canonical path of one country's merged population mosaic for one year."""
+    year_part = f'_{int(year)}' if year is not None else ''
+    return os.path.join(pop_dir, 'merged', f'pop_{country.lower()}{year_part}_merged.tif')
 
 
 def process_single_country(country_urls, country, res=30, data_dir='../data/population'):
@@ -589,7 +523,10 @@ def process_single_country(country_urls, country, res=30, data_dir='../data/popu
     os.makedirs(output_path, exist_ok=True)
 
     if if_tif:
-        mosaic_large_rasters(result, merged_path)
+        # One mosaic per year: the downloads hold one raster per year, and
+        # mosaicking them together summed 2014-2024 into a single layer.
+        for year, files in sorted(group_rasters_by_year(result).items(), key=lambda kv: (kv[0] is None, kv[0] or 0)):
+            mosaic_large_rasters(files, merged_output_path(data_dir, country, year))
     else:
         filepaths = []
         for index, csv_filepath in enumerate(result):
@@ -682,6 +619,7 @@ def main(res=30, max_workers=8):
         end_year=cfg['end_year'],
         worldpop_2014_template=cfg['worldpop_2014_url_template'],
         worldpop_yearly_template=cfg['worldpop_yearly_url_template'],
+        include_2014=bool(cfg['include_2014']),
     )
 
     if args.country:

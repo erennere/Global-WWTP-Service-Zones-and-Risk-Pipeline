@@ -446,77 +446,6 @@ def test_new01_main_script_smoke(monkeypatch, tmp_path):
     assert captured["path"].endswith("grids_all_points.gpkg")
 
 
-def test_download_pop_mosaic_large_rasters_multifile_paths(monkeypatch, tmp_path):
-    class _Bounds:
-        def __init__(self, left, bottom, right, top):
-            self.left = left
-            self.bottom = bottom
-            self.right = right
-            self.top = top
-
-        def __iter__(self):
-            return iter((self.left, self.bottom, self.right, self.top))
-
-    class _Window:
-        def __init__(self, row_off, col_off, height, width):
-            self.row_off = row_off
-            self.col_off = col_off
-            self.height = height
-            self.width = width
-
-        def round_offsets(self):
-            return self
-
-        def round_lengths(self):
-            return self
-
-    class _Src:
-        def __init__(self, fp):
-            self.fp = fp
-            self.bounds = _Bounds(0, 0, 2, 2)
-            self.crs = "EPSG:4326"
-            self.dtypes = ["float32"]
-            self.res = (1, 1) if "res1" in fp else (2, 2)
-            self.count = 2
-            self.transform = object()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def read(self, *_args, out_shape=None, **_kwargs):
-            if out_shape is None:
-                return np.ones((2, 2), dtype=np.float32)
-            h, w = out_shape[1], out_shape[2]
-            return np.ones((1, h + 1, w + 1), dtype=np.float32)
-
-    class _Dst:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def write(self, arr):
-            self.arr = arr
-
-    def _open(fp, mode="r", **_kwargs):
-        if mode == "w+":
-            return _Dst()
-        return _Src(str(fp))
-
-    monkeypatch.setattr(dp.rasterio, "open", _open)
-    monkeypatch.setattr(dp.rasterio.transform, "from_origin", lambda *args, **kwargs: object())
-    monkeypatch.setattr(dp, "from_bounds", lambda *args, **kwargs: _Window(0, 0, 1, 1))
-    monkeypatch.setattr(dp, "resample_raster", lambda src, tt, ts, crs: np.ones(ts, dtype=np.float32))
-    monkeypatch.setattr(dp, "ensure_output_dir_for_file", lambda path: None)
-
-    files = [str(tmp_path / "a_res1.tif"), str(tmp_path / "b_res2.tif")]
-    dp.mosaic_large_rasters(files, str(tmp_path / "out.tif"))
-
-
 def test_download_pop_process_single_country_and_pool_branches(monkeypatch, tmp_path):
     country_urls = {"deu": ["u1"], "fra": ["u2"]}
 
@@ -573,6 +502,7 @@ def test_download_pop_main_smoke(monkeypatch, tmp_path):
         "end_year": 2024,
         "country_limit": 0,
         "worldpop_2014_url_template": "tpl2014",
+        "include_2014": False,
         "worldpop_yearly_url_template": "tplyear",
     }
 
@@ -884,6 +814,8 @@ def test_impact_polygons_main_smoke_writes_outputs(monkeypatch, tmp_path):
             "theta": 1.047,
             "step_m": 100,
             "least_discharge_cms": 0.269,
+            "velocity_m_s": 1.0,
+            "water_temp_equator_c": 28.0,
             "impact_radii": [1000, 2000],
         },
     }
@@ -958,6 +890,8 @@ def test_impact_polygons_main_no_output_branch(monkeypatch, tmp_path):
             "theta": 1.047,
             "step_m": 100,
             "least_discharge_cms": 0.269,
+            "velocity_m_s": 1.0,
+            "water_temp_equator_c": 28.0,
             "impact_radii": [1000, 2000],
         },
     }
@@ -1389,42 +1323,6 @@ def test_download_and_vectorize_main_persist_rasters_path(monkeypatch, tmp_path)
         (f"{vectorized_path}.tmp", vectorized_path),
         (f"{vectorized_path}.tmp", vectorized_path),
     ]
-
-
-def test_add_tile_into_mosaic_clips_on_row_and_column_axes():
-    """Overhanging tiles are clipped by rows/cols, not by band/row counts.
-
-    A single-band tile is (1, rows, cols). Trimming with shape[0] (bands) and
-    shape[1] (rows) - as the previous arithmetic did - either fails to trim at
-    all or trims columns by a row count, shifting tile contents in the mosaic.
-    """
-    import numpy as np
-
-    from src import download_pop as dp
-
-    mosaic = np.zeros((1, 3, 6), dtype="float32")
-    tile = np.arange(1, 13, dtype="float32").reshape(1, 3, 4)
-
-    # Window starts at column 4, so only the tile's first 2 columns fit.
-    dp.add_tile_into_mosaic(mosaic, tile, row_off=0, col_off=4, height=3, width=4)
-
-    assert np.allclose(mosaic[0, :, 4:], np.array([[1, 2], [5, 6], [9, 10]]))
-    assert np.allclose(mosaic[0, :, :4], 0.0)
-
-
-def test_add_tile_into_mosaic_clips_overhanging_rows():
-    import numpy as np
-
-    from src import download_pop as dp
-
-    mosaic = np.zeros((1, 3, 4), dtype="float32")
-    tile = np.ones((1, 3, 4), dtype="float32")
-
-    # Window starts at row 2, so only the tile's first row fits.
-    dp.add_tile_into_mosaic(mosaic, tile, row_off=2, col_off=0, height=3, width=4)
-
-    assert np.allclose(mosaic[0, 2, :], 1.0)
-    assert np.allclose(mosaic[0, :2, :], 0.0)
 
 
 def test_mosaic_large_rasters_places_tiles_side_by_side(tmp_path):

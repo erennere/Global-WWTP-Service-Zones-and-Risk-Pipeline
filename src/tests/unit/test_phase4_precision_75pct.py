@@ -270,13 +270,15 @@ class TestDownloadPopProcessing:
     def test_get_urls_returns_dict(self):
         """Test get_urls returns proper structure."""
         result = dp.get_urls(start_year=2015, end_year=2017)
+        with_2014 = dp.get_urls(start_year=2015, end_year=2017, include_2014=True)
 
         assert isinstance(result, dict)
         assert len(result) > 0
+        assert all(len(urls) == 4 for urls in with_2014.values())
         for country, urls in result.items():
             assert isinstance(urls, list)
-            # One 2014 aggregate URL plus one per year in the requested range.
-            assert len(urls) == 4
+            # One URL per year in the requested range; the 1 km 2014 layer is opt-in.
+            assert len(urls) == 3
             assert all(isinstance(u, str) for u in urls)
             assert all(u.startswith("https://data.worldpop.org/") for u in urls)
     
@@ -347,38 +349,6 @@ class TestDownloadPopIntegration:
         assert max_workers == 1
         assert isinstance(country_urls, dict) and country_urls
         assert os.path.isabs(data_dir)
-    
-    def test_resample_raster_parameter_validation(self):
-        """Test resample_raster with mock rasterio."""
-        import rasterio
-        from rasterio.transform import from_bounds
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            raster_path = Path(tmpdir) / "test.tif"
-
-            data = np.ones((10, 10), dtype=np.float32)
-            transform = from_bounds(0, 0, 1, 1, 10, 10)
-
-            with rasterio.open(
-                str(raster_path), 'w',
-                driver='GTiff',
-                height=10, width=10,
-                count=1, dtype=np.float32,
-                crs='EPSG:4326',
-                transform=transform
-            ) as src:
-                src.write(data, 1)
-
-            # Test resample_raster
-            with rasterio.open(str(raster_path)) as src:
-                result = dp.resample_raster(
-                    src,
-                    from_bounds(0, 0, 1, 1, 20, 20),
-                    (20, 20),
-                    'EPSG:4326'
-                )
-                assert isinstance(result, np.ndarray)
-                assert result.shape == (20, 20)
 
 
 if __name__ == '__main__':

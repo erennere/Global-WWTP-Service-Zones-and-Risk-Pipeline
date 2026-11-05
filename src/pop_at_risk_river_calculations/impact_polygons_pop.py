@@ -203,12 +203,38 @@ def calculate_radius(load_ratio, impact_radius=1000):
     """Return the configured plume radius only when the load ratio exceeds one."""
     return impact_radius if load_ratio >=1 else 0.0
 
-def calculate_kt(lat, base_k=0.23, theta=1.047):
+def calculate_kt(lat, base_k=0.23, theta=1.047, water_temp_equator_c=28.0):
     """Compute temperature-adjusted decay coefficient by latitude."""
-    temp = 28 * np.cos(np.radians(abs(lat)))
+    temp = water_temp_equator_c * np.cos(np.radians(abs(lat)))
     return base_k * (theta**(temp - 20))
 
-def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0, c_limit=5.0, base_k=0.23, theta=1.047, impact_radii=[1000, 2000], next_state_dict=None):
+
+def _effective_discharge(dis_av_cms, least_discharge_cms):
+    """Discharge in m3/s with zero/missing replaced by the configured floor."""
+    if dis_av_cms is None or not np.isfinite(dis_av_cms) or dis_av_cms <= 0:
+        return float(least_discharge_cms)
+    return float(dis_av_cms)
+
+
+def mix_downstream_concentration(downstream_conc, upstream_exit_conc, upstream_dis_cms, downstream_dis_cms,
+                                 least_discharge_cms=0.269):
+    """Concentration in the downstream segment after an upstream segment joins it.
+
+    Mass balance: the upstream flux ``C_up * Q_up`` is diluted into the
+    downstream discharge ``Q_down`` (which, in HydroRIVERS, already contains
+    ``Q_up``), so ``C_down = C_down_local + C_up * Q_up / Q_down``. Calling this
+    once per tributary gives ``(C1*Q1 + C2*Q2 + L_local) / Q_down``. The ratio
+    is capped at 1 so inconsistent discharge data can never concentrate a
+    plume. Concentrations here are absolute (mg/l), not ratios.
+    """
+    q_up = _effective_discharge(upstream_dis_cms, least_discharge_cms)
+    q_down = _effective_discharge(downstream_dis_cms, least_discharge_cms)
+    return downstream_conc + upstream_exit_conc * min(1.0, q_up / q_down)
+
+
+def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0, c_limit=5.0, base_k=0.23, theta=1.047,
+                                  impact_radii=[1000, 2000], next_state_dict=None, velocity_m_s=1.0,
+                                  water_temp_equator_c=28.0):
     """Generate plume polygons for one river segment and return the exit load.
 
     Parameters
@@ -232,6 +258,10 @@ def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0,
     next_state_dict : dict | None, default=None
         Optional segment-state dictionary for this basin task. When omitted,
         the global topology dictionary is used.
+    velocity_m_s : float, default=1.0
+        Flow velocity that converts distance along the river into travel time.
+    water_temp_equator_c : float, default=28.0
+        Equatorial water temperature for the latitude temperature model.
 
     Returns
     -------
@@ -251,8 +281,8 @@ def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0,
 
     line = geom_dict[rid]
     seg_len = line.length
-    kt = calculate_kt(lat, base_k=base_k, theta=theta)
-    velocity_m_day = 86400.0
+    kt = calculate_kt(lat, base_k=base_k, theta=theta, water_temp_equator_c=water_temp_equator_c)
+    velocity_m_day = 86400.0 * float(velocity_m_s)
 
     # 1. Generate distances. Ensure at least two points for directionality.
     distances = np.arange(0, seg_len, step_m)
@@ -350,9 +380,10 @@ def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
         base_k = model_params['base_k']
         theta = model_params['theta']
         step_m = model_params['step_m']
-        org_per_pop = model_params['org_per_pop']
         least_discharge_cms = model_params['least_discharge_cms']
         impact_radii = model_params['impact_radii']
+        velocity_m_s = model_params['velocity_m_s']
+        water_temp_equator_c = model_params['water_temp_equator_c']
 
         # Isolate mutable load propagation state for this basin task only.
         basin_ids = {rid for level in levels for rid in level}
@@ -387,16 +418,24 @@ def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
                     theta=theta,
                     impact_radii=impact_radii,
                     next_state_dict=local_next_dict,
+                    velocity_m_s=velocity_m_s,
+                    water_temp_equator_c=water_temp_equator_c,
                 )
 
                 # Hand over residual load to immediate downstream segment within this basin.
                 downstream_state = local_next_dict.get(down_id)
+                # The exit concentration is diluted by the downstream discharge
+                # (flow-weighted mixing), not added on top of it.
                 if down_id != 0 and downstream_state is not None and exit_load > 0.0:
-                    next_next, downstream_load_ratio  = downstream_state
-                    downstream_load = invert_calculate_load(downstream_load_ratio, c_limit) + exit_load
-                    downstream_load_ratio = calculate_load_ratio(None, discharge_dict.get(down_id, 0.0),
-                        org_per_pop=org_per_pop, c_limit=c_limit, least_discharge_cms=least_discharge_cms, load=downstream_load)
-                    local_next_dict[down_id] = (next_next, downstream_load_ratio)
+                    next_next, downstream_load_ratio = downstream_state
+                    downstream_conc = mix_downstream_concentration(
+                        invert_calculate_load(downstream_load_ratio, c_limit),
+                        exit_load,
+                        discharge_dict.get(rid),
+                        discharge_dict.get(down_id),
+                        least_discharge_cms=least_discharge_cms,
+                    )
+                    local_next_dict[down_id] = (next_next, downstream_conc / c_limit)
 
                 # 3. Save geometry if this segment is one of our target population points
 
