@@ -405,7 +405,6 @@ def prepare_data(cfg):
     )
     gdf_bbox['WKT_WWTP'] = gdf_bbox['geometry'].apply(lambda geom: to_wkt(geom))
     gdf_bbox = assign_stable_site_ids(gdf_bbox, site_id_col, cfg['old_site_id_column'])
-    gdf_bbox = _compute_mean_2_nnd_m(gdf_bbox)
 
     if cfg['remove_industrial']:
         # Discard direction: industrial and mixed-use sites both leave the layer.
@@ -418,7 +417,12 @@ def prepare_data(cfg):
             keep=False,
             logger=logger,
         )
-    
+
+    # Neighbour distances (for the dynamic buffers) are measured on the plants
+    # that stay in the map, so a removed industrial plant cannot shrink the
+    # buffers of the plants around it.
+    gdf_bbox = _compute_mean_2_nnd_m(gdf_bbox)
+
     # Add country codes. Rejoining is the default: an inherited country column
     # from an upstream layer can disagree with the boundary layer in use.
     if cfg['force_country_rejoin'] or country_output_col not in gdf_bbox.columns:

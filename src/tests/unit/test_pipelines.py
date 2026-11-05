@@ -345,6 +345,11 @@ def test_prepare_data_uses_final_geometry_and_filters_industrial_sites(monkeypat
     assert gdf_bbox["old_WASTE_ID"].tolist() == [10, 30]
     assert gdf_bbox["WASTE_ID"].tolist() == expected.loc[[10, 30], "WASTE_ID"].tolist()
     assert gdf_bbox["SITE_UID"].tolist() == expected.loc[[10, 30], "SITE_UID"].tolist()
+    # Neighbour distances only count plants that stay in the map: with two
+    # plants left, each one's distance is to the other kept plant.
+    kept = gpd.GeoDataFrame(geometry=[final_points[0], final_points[2]], crs="EPSG:4326")
+    expected_nnd = pipelines._compute_mean_2_nnd_m(kept)["mean_2_nnd"].tolist()
+    assert gdf_bbox["mean_2_nnd"].tolist() == pytest.approx(expected_nnd)
     assert gdf_bbox["geometry"].tolist() == [final_points[0], final_points[2]]
     assert gdf_bbox["ISO_2"].tolist() == ["DE", "DE"]
     assert "final_geometry" not in gdf_bbox.columns
