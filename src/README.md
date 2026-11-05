@@ -63,7 +63,7 @@ These are the input data artifacts resolved from `config.yaml` that the reposito
 | `../data/final_data_source/final_W_europe_WWT_dec3.geojson` | final merge enrichment | present |
 | `../data/final_data_source/Thailand_500m_merged.geojson` | final merge enrichment | present |
 | `../data/final_data_source/final_USA_WWT_dec3.geojson` (or a replacement set in config) | final merge enrichment | missing at default path |
-| `../data/hydroshed_river_levels/lvl{level}/` | input zip directory for `combine_watersheds.py` | missing for default `level=7` |
+| `../data/hydroshed_river_levels/lvl{level}/` | input zip directory for `combine_watersheds.py` | needed for the default `level=6` and for every level the sweep runs (5, 6, 7) |
 | `../data/cleaned_hydrowaste.csv` | core Voronoi source table | present |
 | `../data/bboxes.csv` | Voronoi support table | present |
 | `../data/cities.csv` | city-based Voronoi approach input | present |

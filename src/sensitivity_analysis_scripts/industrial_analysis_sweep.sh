@@ -54,12 +54,7 @@ if [[ -n "${VERSION}" ]]; then
     VERSION_ARGS=("--version" "${VERSION}")
 fi
 
-# Parameter grids for industrial analysis sweep
-LEVELS=(6 7 8 9)
-WEIGHT_FUNCS=("mult" "add" "")
-WEIGHT_METHODS=("linear" "logarithmic" "square_root" "sigmoid")
-BUFFERS=(9000 11000 13000 15000)
-DYNAMIC_K_VALUES=(0.6 0.7 0.8)
+# The parameter grid lives in config.yaml (create_voronoi_parallel_sweep.sweep_*).
 
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
 init_log "industrial_sweep_${TASK_ID}"

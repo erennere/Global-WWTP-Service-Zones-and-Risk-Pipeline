@@ -53,14 +53,21 @@ def setup_logging(log_dir: str, task_id: int) -> logging.Logger:
     return logger
 
 
-def generate_parameter_combinations(weight_func_filter: str = "all") -> List[Tuple[int, str, int, str, str, str, str]]:
+def generate_parameter_combinations(weight_func_filter: str = "all", cfg=None) -> List[Tuple[int, str, int, str, str, str, str]]:
     """Generate all parameter combinations for the sweep.
+
+    The grid comes from ``create_voronoi_parallel_sweep`` in config.yaml
+    (``sweep_levels``, ``sweep_weight_methods``, ``sweep_rigid_buffers``,
+    ``sweep_size_measures``); ``cfg`` is that resolved section and is loaded
+    when not given.
 
     Combination tuple:
         (level, version, buffer, weight_method, weight_func,
          dynamic_buffering, size_measure)
     """
-    levels = [6, 7, 8, 9]
+    if cfg is None:
+        cfg = load_config(script_name="create_voronoi_parallel_sweep")
+    levels = list(cfg["sweep_levels"])
     # The additive weighting stays available to single runs (and through the
     # explicit "add" filter) but is not part of the default sweep grid.
     if weight_func_filter == "all":
@@ -73,10 +80,9 @@ def generate_parameter_combinations(weight_func_filter: str = "all") -> List[Tup
         weight_funcs = [""]
     else:
         raise ValueError("weight_func_filter must be one of: all, add, mult, none")
-    weight_methods = ["size", "linear", "logarithmic", "square_root", "sigmoid"]
-    rigid_buffers = [9000, 11000, 13000, 15000]
-    # Plant size measures (must be keys of radius_calibration in config.yaml)
-    size_measures = ["reported", "footprint"]
+    weight_methods = list(cfg["sweep_weight_methods"])
+    rigid_buffers = list(cfg["sweep_rigid_buffers"])
+    size_measures = list(cfg["sweep_size_measures"])
     
     combinations = []
     for level in levels:

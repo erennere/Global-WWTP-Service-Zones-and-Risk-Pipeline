@@ -52,7 +52,10 @@ final_data_merge:
     new_points_filepath: '{data_dir}/new_locations_v{version}.gpkg'
 
 combine_watersheds:
-  level: '8'
+  # HydroBASINS level of the basins that bound the service areas (approach 1):
+  # higher numbers = smaller basins. Level 6 (median ~5,600 km2 in GB) lets a
+  # city's service area cross the small level-8 basins its sewers cross.
+  level: '6'
   paths:
     data_dir: null
     watersheds_zip_dir: '{data_dir}/hydroshed_river_levels/lvl{level}'
@@ -774,6 +777,13 @@ create_voronoi_parallel_sweep:
   weight_func: null
   dynamic_buffering: null
   size_measure: null
+  # The sweep grid (create_voronoi_param_sweep.sh, add_pop_param_sweep.sh and
+  # industrial_analysis_sweep.sh read it through print_task_combinations).
+  # Each level needs its basin file from combine_watersheds.
+  sweep_levels: [5, 6, 7]
+  sweep_weight_methods: ['size', 'linear', 'logarithmic', 'square_root', 'sigmoid']
+  sweep_rigid_buffers: [9000, 11000, 13000, 15000]
+  sweep_size_measures: ['reported', 'footprint']
   paths:
     data_dir: null
     buffers_dir: null

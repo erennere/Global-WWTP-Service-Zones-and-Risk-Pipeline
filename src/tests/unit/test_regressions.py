@@ -462,6 +462,20 @@ def test_additive_weighting_is_not_in_the_default_sweep():
     assert {combo[4] for combo in generate_parameter_combinations("add")} == {"add"}
 
 
+def test_sweep_grid_comes_from_config_and_default_basins_are_level_6():
+    from src.sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
+    from src.starter import load_config
+
+    combos = generate_parameter_combinations()
+    assert {combo[0] for combo in combos} == {5, 6, 7}
+    assert {combo[6] for combo in combos if combo[5] == "true"} == {"reported", "footprint"}
+    assert not [c for c in combos if c[3] == "size" and c[4] != "mult"]  # size weights need 'mult'
+    custom = {"sweep_levels": [8], "sweep_weight_methods": ["linear"], "sweep_rigid_buffers": [9000],
+              "sweep_size_measures": ["footprint"]}
+    assert {combo[0] for combo in generate_parameter_combinations(cfg=custom)} == {8}
+    assert str(load_config(script_name="create_voronoi")["level"]) == "6"
+
+
 # --------------------------------------------------------------------------- #
 # R8  reported-population filter and one-to-one reference matching            #
 # --------------------------------------------------------------------------- #

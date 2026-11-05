@@ -279,7 +279,7 @@ The pipeline relies on input data artifacts. Without these files or their config
 | `data/final_data_source/final_W_europe_WWT_dec3.geojson` | final merge enrichment | present |
 | `data/final_data_source/Thailand_500m_merged.geojson` | final merge enrichment | present |
 | `data/final_data_source/final_USA_WWT_dec3.geojson` (or another file set in `final_data_merge.paths.us_new_filepath`) | final merge enrichment | missing at default path |
-| `data/hydroshed_river_levels/lvl{level}/` | watershed combination (`combine_watersheds`) | missing for default `level=7` |
+| `data/hydroshed_river_levels/lvl{level}/` | watershed combination (`combine_watersheds`) | needed for the default `level=6` and for every level the sweep runs (5, 6, 7) |
 | `data/cleaned_hydrowaste.csv` | weighted Voronoi input features | present |
 | `data/bboxes.csv` | weighted Voronoi support table | present |
 | `data/cities.csv` | optional city-based Voronoi approach | present |
