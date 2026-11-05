@@ -385,11 +385,9 @@ def repair_geometry(geom):
 # --------------------------------------------------------------------------- #
 # EPSG:3857 and EPSG:4326 are not metric: a "500 m" threshold in Web Mercator is
 # 321 m on the ground at 50 deg N and 250 m at 60 deg N, and the same number in
-# EPSG:4326 means 500 degrees. These helpers measure on the sphere (distances)
-# or in each feature's own UTM zone (buffers), so thresholds in metres mean
-# metres everywhere.
-
-EARTH_RADIUS_M = 6_371_008.8  # mean Earth radius (IUGG)
+# EPSG:4326 means 500 degrees. These helpers measure on the WGS84 ellipsoid
+# (distances) or in each feature's own UTM zone (buffers), so thresholds in
+# metres mean metres everywhere.
 
 
 def _lonlat_of(gdf):
@@ -414,17 +412,30 @@ def _unit_vectors(lonlat):
     return np.column_stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
 
 
-def _chord_to_metres(chord):
-    return 2.0 * EARTH_RADIUS_M * np.arcsin(np.clip(np.asarray(chord, dtype=float) / 2.0, 0.0, 1.0))
+_GEOD = None
+
+
+def _geodesic_m(lon1, lat1, lon2, lat2):
+    """WGS84 ellipsoidal distance in metres (pyproj.Geod, vectorised)."""
+    global _GEOD
+    if _GEOD is None:
+        from pyproj import Geod
+        _GEOD = Geod(ellps="WGS84")
+    _, _, dist = _GEOD.inv(lon1, lat1, lon2, lat2)
+    return np.asarray(dist, dtype=float)
 
 
 def nearest_distances_m(source_gdf, target_gdf, k=1):
-    """Great-circle distance in metres from each target feature to its ``k`` nearest sources.
+    """WGS84 geodesic distance in metres from each target feature to its ``k`` nearest sources.
 
     Points are used as they are, other geometries by their representative
-    point. Returns ``(distances, indices)``: arrays of shape ``(n_target,)``
-    for ``k == 1`` and ``(n_target, k)`` otherwise; positional indices into
-    ``source_gdf``. Missing results are ``inf`` / ``-1``.
+    point. Candidates come from a k-d tree on unit vectors (two extra per
+    query, so the ellipsoid cannot reorder the nearest ones); their distances
+    are exact ellipsoidal ones, so a 500 m threshold means 500 m at every
+    latitude (a sphere is off by up to 0.6 %, e.g. north-south at the
+    equator). Returns ``(distances, indices)``: arrays of shape
+    ``(n_target,)`` for ``k == 1`` and ``(n_target, k)`` otherwise; positional
+    indices into ``source_gdf``. Missing results are ``inf`` / ``-1``.
     """
     target_ll = _lonlat_of(target_gdf)
     source_ll = _lonlat_of(source_gdf)
@@ -438,13 +449,20 @@ def nearest_distances_m(source_gdf, target_gdf, k=1):
         return distances, indices
 
     src_pos = np.flatnonzero(src_ok)
+    src_ll = source_ll[src_ok]
+    tgt_ll = target_ll[tgt_ok]
     kk = min(int(k), len(src_pos))
-    chord, idx = cKDTree(_unit_vectors(source_ll[src_ok])).query(_unit_vectors(target_ll[tgt_ok]), k=kk)
-    chord = np.asarray(chord, dtype=float).reshape(-1, kk)
-    idx = np.asarray(idx).reshape(-1, kk)
-    found = np.isfinite(chord)
-    metres = np.where(found, _chord_to_metres(np.where(found, chord, 0.0)), np.inf)
-    mapped = np.where(found, src_pos[np.clip(idx, 0, len(src_pos) - 1)], -1)
+    kq = min(kk + 2, len(src_pos))
+    chord, idx = cKDTree(_unit_vectors(src_ll)).query(_unit_vectors(tgt_ll), k=kq)
+    idx = np.asarray(idx).reshape(-1, kq)
+    found = np.isfinite(np.asarray(chord, dtype=float).reshape(-1, kq))
+    safe = np.clip(idx, 0, len(src_pos) - 1)
+    metres = _geodesic_m(np.repeat(tgt_ll[:, 0], kq), np.repeat(tgt_ll[:, 1], kq),
+                         src_ll[safe.ravel(), 0], src_ll[safe.ravel(), 1]).reshape(-1, kq)
+    metres = np.where(found, metres, np.inf)
+    order = np.argsort(metres, axis=1, kind="stable")[:, :kk]
+    metres = np.take_along_axis(metres, order, axis=1)
+    mapped = np.where(np.isfinite(metres), src_pos[np.take_along_axis(safe, order, axis=1)], -1)
 
     if k == 1:
         distances[tgt_ok] = metres[:, 0]

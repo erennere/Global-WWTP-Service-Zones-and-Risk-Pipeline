@@ -49,18 +49,18 @@ RASTER_RES = 0.005  # degrees (~360 m x 550 m here)
 YEARS = (2020, 2024)
 NODATA = -99999.0
 
-# Default file names, relative to data_dir, matching config.yaml (version 2, level 8)
+# Default file names, relative to data_dir, matching config.yaml (version 2; {level} is the basin level)
 DEFAULT_PATHS = {
     "annotated_all_filepath": "all_annotated_v2.gpkg",
     "bboxes": "bboxes.csv",
     "hydrowaste": "cleaned_hydrowaste.csv",
-    "watershed": "hydroshed_river_levels/hydrobase_lvl8_combined.gpkg",
+    "watershed": "hydroshed_river_levels/hydrobase_lvl{level}_combined.gpkg",
     "overture": "overture_maps_countries.parquet",
     "pop_tif_dir": "population/unzipped",
     "urban_areas_filepath": "urban_areas/GHS_UCDB_GLOBE_R2024A.gpkg",
     "rivershed": "hydrorivers.gpkg",
     "eu_ref_filepath": "extra_points/UWWTD_TreatmentPlants.gpkg",
-    "industrial_merged_filepath": "industrial_analysis/industrial_land_merged_v2_lvl8_mp100.gpkg",
+    "industrial_merged_filepath": "industrial_analysis/industrial_land_merged_v2_lvl{level}_mp100.gpkg",
 }
 
 KM_PER_DEG_LAT = 111.195
@@ -266,10 +266,22 @@ def make_industrial_land(rng, sites):
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
 
 
-def build_mock_world(data_dir, seed=0, paths=None):
-    """Write every input layer under ``data_dir``; return the absolute paths written."""
+def config_level():
+    """The basin level the repository's config.yaml runs at."""
+    from src.starter import load_config
+
+    return str(load_config(script_name="combine_watersheds")["level"])
+
+
+def build_mock_world(data_dir, seed=0, paths=None, level=None):
+    """Write every input layer under ``data_dir``; return the absolute paths written.
+
+    ``level`` names the basin files (default: the level in config.yaml); the
+    basins themselves are the same mock grid at every level.
+    """
     rng = np.random.default_rng(seed)
-    rel = dict(DEFAULT_PATHS, **(paths or {}))
+    level = config_level() if level is None else str(level)
+    rel = {key: value.format(level=level) for key, value in dict(DEFAULT_PATHS, **(paths or {})).items()}
     out = {key: os.path.join(os.path.abspath(data_dir), value) for key, value in rel.items()}
 
     countries = make_countries()

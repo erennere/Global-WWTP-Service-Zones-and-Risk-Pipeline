@@ -178,18 +178,19 @@ def calculate_load_ratio(
         dis = dis_av_cms.copy()
         if isinstance(dis, pd.Series):
             dis = dis.fillna(0)
-            dis = dis.where(dis != 0, least_discharge_cms)
+            dis = dis.where(dis > 0, least_discharge_cms)
         else:
-            dis[(dis == 0) | np.isnan(dis)] = least_discharge_cms
+            dis = dis.astype(float)
+            dis[~(dis > 0)] = least_discharge_cms
         dis *= 1000  # m³/s → l/s
         if load is None:
             load = pop * org_per_pop / dis
         return load / c_limit
 
-    # handle scalar input (single-basin downstream case)
+    # handle scalar input (single-basin downstream case); missing, zero and
+    # negative discharge get the floor, as in the vectorized branch
     else:
-        if dis_av_cms is None or dis_av_cms == 0:
-            dis_av_cms = least_discharge_cms
+        dis_av_cms = _effective_discharge(dis_av_cms, least_discharge_cms)
         dis_av_cms *= 1000  # m³/s → l/s
         if load is None:
             load = pop * org_per_pop / dis_av_cms if pop is not None else 0
@@ -304,7 +305,10 @@ def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0,
         load_ratios = load_ratios[:stop_idx]
         exit_load = 0.0
     else:
-        exit_load = invert_calculate_load(load_ratios[-1], c_limit=c_limit)
+        # The sample points stop one step short of the segment end; the load
+        # leaving the segment has decayed over its whole length.
+        exit_ratio = start_load_ratio * np.exp(-kt * seg_len / velocity_m_day)
+        exit_load = invert_calculate_load(exit_ratio, c_limit=c_limit)
 
     # 3. Vectorized Geometry Generation
     # np.atleast_2d ensures that even a single point is (1, 2) instead of (2,)

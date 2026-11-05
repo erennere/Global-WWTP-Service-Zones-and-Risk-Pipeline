@@ -1,0 +1,10 @@
+[run]
+source = src
+branch = true
+omit =
+    src/tests/*
+    src/maps/*
+    */__init__.py
+
+[report]
+skip_empty = true

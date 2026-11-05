@@ -289,7 +289,11 @@ def run_version(label, ref, workdir, seed, settings=None):
     sha = checkout(ref, code_root)
     data_dir = workdir / f"data_{label}"
     shutil.rmtree(data_dir, ignore_errors=True)
-    build_mock_world(data_dir, seed=seed)
+    import yaml
+
+    level = (settings or {}).get("combine_watersheds.level") or \
+        yaml.safe_load((code_root / "src" / "config.yaml").read_text())["combine_watersheds"]["level"]
+    build_mock_world(data_dir, seed=seed, level=level)
     sites_total = len(gpd.read_file(data_dir / "all_annotated_v2.gpkg"))
     cfg_path = write_config(code_root, data_dir, workdir / f"config_{label}.yaml", settings)
     log_dir = workdir / f"logs_{label}"

@@ -1827,7 +1827,13 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     # Extract only points that are inside the clipping boundary
     # Assign each grid point to its nearest weighted site
     # This is the core Voronoi computation step
-    mask = geometry_contains_points(actual_clipping_object, grid_points)
+    # A grid point stands for the square cell around it. Keeping only points
+    # inside the clip dropped every cell whose centre fell outside, so each
+    # region lost a band of half a grid step along the clip edge (2 % of a
+    # 10 km box at 100 m). Keep every cell that touches the clip; the final
+    # clip below trims the regions back to the exact boundary.
+    half_cell = 0.5 * float(n_points) * np.sqrt(2.0)
+    mask = geometry_contains_points(actual_clipping_object.buffer(half_cell), grid_points)
     valid_points = grid_points[mask]
     valid_flat_indices = np.flatnonzero(mask)
     del grid_points
