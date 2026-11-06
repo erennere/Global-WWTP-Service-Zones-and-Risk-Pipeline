@@ -7,9 +7,10 @@ name = "global-wwtp-service-zones-and-risk-pipeline"
 version = "0.1.0"
 description = "WWTP service-area, population, and downstream-risk analysis pipeline"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
   "PyYAML",
+  "pydantic>=2",
   "numpy",
   "pandas",
   "geopandas",

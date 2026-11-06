@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from . import settings
+
 
 _MISSING = object()
 _FORMATTER = Formatter()
@@ -438,6 +440,7 @@ def _apply_runtime_overrides(
 
 
 def _derive_runtime_values(cfg: dict, default_distance_additive, default_distance_multiplicative) -> dict:
+    """Values computed from a validated section (see wwtp/settings.py for the rules the inputs already met)."""
     derived = {}
     weight_type_map = {
         "linear": "li",
@@ -447,37 +450,17 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         "size": "sz",
     }
     if "weight_method" in cfg:
-        if cfg["weight_method"] not in weight_type_map:
-            valid_methods = ", ".join(weight_type_map)
-            raise ValueError(
-                f"Invalid weight_method '{cfg['weight_method']}'. Must be one of: {valid_methods}."
-            )
         derived["weight_type"] = weight_type_map[cfg["weight_method"]]
 
     if "weight_func" in cfg:
-        weight_func = _normalize_weight_func(cfg["weight_func"], "weight_func")
-        derived["weight_func_suffix"] = {
-            "mult": "_mult",
-            "add": "_add",
-            "": "",
-        }[weight_func]
+        derived["weight_func_suffix"] = {"mult": "_mult", "add": "_add", "": ""}[cfg["weight_func"]]
         derived["distance_fn"] = (
             default_distance_multiplicative
-            if weight_func in {"", "mult"}
+            if cfg["weight_func"] in {"", "mult"}
             else default_distance_additive
         )
 
-    if "weight_method" in cfg and cfg["weight_method"] == "size" and "weight_func" in cfg:
-        if _normalize_weight_func(cfg["weight_func"], "weight_func") != "mult":
-            raise ValueError("weight_method 'size' needs weight_func 'mult' (multiplicative weighted distance)")
-
-    if "size_measure" in cfg and cfg["size_measure"] is not None and cfg["size_measure"] not in SIZE_MEASURE_TOKENS:
-        raise ValueError(f"size_measure must be one of {sorted(SIZE_MEASURE_TOKENS)}, got {cfg['size_measure']!r}")
-
     if "buffer" in cfg and "dynamic_buffering" in cfg:
-        if cfg["dynamic_buffering"] and ("size_measure" not in cfg or cfg["size_measure"] is None):
-            raise ValueError("size_measure must be configured when dynamic_buffering is true")
-
         if cfg["dynamic_buffering"]:
             derived["buffer_path_token"] = SIZE_MEASURE_TOKENS[cfg["size_measure"]]
         else:
@@ -495,12 +478,12 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
             # The plant size is needed by the radius and by weight_method 'size'.
             kwargs.update({
                 "size_measure": cfg["size_measure"],
-                "footprint_to_people": _footprint_to_people(cfg["footprint_to_people"]),
+                "footprint_to_people": dict(cfg["footprint_to_people"]),
                 "reported_size_columns": list(cfg["reported_size_columns"]),
                 "reported_size_skip": dict(cfg["reported_size_skip"]),
             })
         if cfg["dynamic_buffering"]:
-            row = _calibration_row(cfg["radius_calibration"], cfg["size_measure"])
+            row = cfg["radius_calibration"][cfg["size_measure"]]
             kwargs.update({
                 "radius_exponent": float(row["radius_exponent"]),
                 "radius_at_10k_people_km": float(row["radius_at_10k_people_km"]),
@@ -508,29 +491,6 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         derived["calculate_buffer_kwargs"] = kwargs
 
     return derived
-
-
-def _footprint_to_people(value):
-    keys = ("intercept", "slope", "unsized_people")
-    if not isinstance(value, dict) or set(keys) - set(value):
-        raise ValueError(f"footprint_to_people must map {keys} to numbers")
-    return {key: float(value[key]) for key in keys}
-
-
-def _calibration_row(table, size_measure):
-    """The radius_calibration entry for ``size_measure``."""
-    keys = ("radius_exponent", "radius_at_10k_people_km")
-    if not isinstance(table, dict) or not table:
-        raise ValueError(f"radius_calibration must map each size measure to {keys}")
-    if size_measure not in table:
-        raise ValueError(
-            f"size_measure {size_measure!r} has no radius_calibration entry; choose one of {sorted(table)} "
-            "or add it with wwtp.calibration.service_radius"
-        )
-    row = table[size_measure]
-    if not isinstance(row, dict) or set(keys) - set(row):
-        raise ValueError(f"radius_calibration[{size_measure!r}] must have {keys}")
-    return row
 
 
 ################################################################################
@@ -675,6 +635,9 @@ def load_config(
         dynamic_buffering=dynamic_buffering,
         size_measure=size_measure,
     )
+
+    # Types, allowed values and cross-field rules (wwtp/settings.py), before anything is derived from them.
+    script_cfg = settings.validate(script_name, script_cfg)
 
     # Derive helper values and expand any templated output/input paths last.
     derived = _derive_runtime_values(script_cfg, default_distance_additive, default_distance_multiplicative)

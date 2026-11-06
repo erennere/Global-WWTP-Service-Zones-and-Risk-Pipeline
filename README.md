@@ -259,7 +259,7 @@ python -m pip install -e ".[test]"
 ```
 
 Practical prerequisites:
-- Python 3.9 or newer.
+- Python 3.11 or newer.
 - A shell that can run the repository wrappers. Most canonical entry points are `.sh` launchers.
 - Access to the geospatial inputs under `data/`.
 - Optional SLURM access if you intend to use the cluster-oriented wrappers.
@@ -318,7 +318,7 @@ The defaults are a mix of portable relative paths and environment-specific clust
 | `impact_polygons_pop.impact_polygons_pop_params.*` | Controls downstream organic-load propagation |
 | `find_unconnected_industrial_areas.industrial_category_numbers` | Controls which annotation categories are treated as industrial WWTPs |
 
-`wwtp/starter.py` resolves values in canonical YAML order. Earlier sections define shared values and later sections inherit them with `null`. Positional CLI overrides always take precedence over the resolved config.
+`wwtp/starter.py` resolves values in canonical YAML order. Earlier sections define shared values and later sections inherit them with `null`. Named CLI overrides (`--level`, `--buffer`, ...) take precedence over the resolved config.
 
 ### Config layers
 
@@ -329,6 +329,10 @@ The defaults are a mix of portable relative paths and environment-specific clust
 3. `--set SECTION.KEY=VALUE` on any stage's command line (repeatable).
 
 An overlay can only change keys the base already has, so a typo fails at load. `python -m wwtp.starter show <section> [--set ...]` prints what a stage will use, including `config_layers`; every run manifest records the same list.
+
+### Typed settings
+
+Each section has a pydantic model in `wwtp/settings.py`. After the layers and CLI overrides are applied, `load_config` checks the section against it: types, allowed values (`weight_method`, `weight_func`, `size_measure`, execution modes, ...), positive counts and sizes, and cross-field rules (`weight_method: size` needs `weight_func: mult`; `dynamic_buffering` needs a `size_measure` with a `radius_calibration` entry; `start_year` ≤ `end_year`). A failure names every bad key, e.g. `create_voronoi.n_points: Input should be greater than 0`. A new config key goes into config.yaml and into its model; `wwtp/tests/unit/test_settings.py` fails while the two disagree. Stages still receive a dict; `settings.parse(section, cfg)` gives the model for attribute access.
 
 The canonical shared override order used across the wrappers is:
 

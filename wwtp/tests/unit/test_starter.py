@@ -222,7 +222,6 @@ def test_load_config_dynamic_buffering_uses_size_measure_token_and_empty_weight_
                 "weight_func": "mult",
                 "dynamic_buffering": True,
                 "size_measure": "reported",
-                "sets": [],
             },
         }
     )
@@ -295,13 +294,22 @@ def test_fixed_buffering_needs_no_radius_calibration(write_test_config):
     assert cfg["buffer_path_token"] == "9000"
 
 
-def test_size_measure_without_calibration_entry_is_rejected():
-    table = {"footprint": {"radius_exponent": 0.4, "radius_at_10k_people_km": 4.0}}
-    assert starter._calibration_row(table, "footprint")["radius_exponent"] == 0.4
+def test_size_measure_without_calibration_entry_is_rejected(write_test_config):
+    def config_with(table):
+        path = write_test_config({"create_voronoi": {"dynamic_buffering": True}})
+        raw = yaml.safe_load(path.read_text())
+        raw["create_voronoi"]["radius_calibration"] = table
+        path.write_text(yaml.safe_dump(raw, sort_keys=False))
+        return str(path)
+
+    path = config_with({"footprint": {"radius_exponent": 0.4, "radius_at_10k_people_km": 4.0}})
+    cfg = starter.load_config(script_name="create_voronoi", config=path, size_measure="footprint")
+    assert cfg["calculate_buffer_kwargs"]["radius_exponent"] == 0.4
     with pytest.raises(ValueError, match="no radius_calibration entry"):
-        starter._calibration_row(table, "reported")
-    with pytest.raises(ValueError, match="must have"):
-        starter._calibration_row({"reported": {"radius_exponent": 0.4}}, "reported")
+        starter.load_config(script_name="create_voronoi", config=path, size_measure="reported")
+    with pytest.raises(ValueError, match="radius_at_10k_people_km: Field required"):
+        starter.load_config(script_name="create_voronoi", config=config_with({"reported": {"radius_exponent": 0.4}}),
+                            size_measure="reported")
 
 
 def test_load_config_normalizes_weight_func_from_yaml(write_test_config):
@@ -332,7 +340,7 @@ def test_load_config_rejects_invalid_weight_method(write_test_config):
         }
     )
 
-    with pytest.raises(ValueError, match="Invalid weight_method"):
+    with pytest.raises(ValueError, match="create_voronoi.weight_method: Input should be"):
         starter.load_config(script_name="create_voronoi", config=str(config_path))
 
 
@@ -344,6 +352,8 @@ def test_load_config_allows_sections_without_unrelated_voronoi_runtime_keys(tmp_
                 "correct_locations_w_OSM": {
                     "version": "2",
                     "rad": 5000,
+                    "country_output_column": "country_code",
+                    "country_boundary_column": "ISO_A2",
                     "paths": {
                         "data_dir": "./data",
                         "paul_corrected_filepath": "{data_dir}/Enhanced_HW_WWTP__jun20_2025.geojson",

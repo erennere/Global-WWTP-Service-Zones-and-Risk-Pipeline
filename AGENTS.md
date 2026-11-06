@@ -27,7 +27,7 @@ Use these commands from repository root:
 
 ## Architecture Boundaries
 - Keep `load_config` in [wwtp/starter.py](wwtp/starter.py) orchestration-focused.
-- Put defaults and runtime values in [wwtp/config.yaml](wwtp/config.yaml), not hardcoded in processing modules.
+- Put defaults and runtime values in [wwtp/config.yaml](wwtp/config.yaml), not hardcoded in processing modules, and declare each new key in its section's model in [wwtp/settings.py](wwtp/settings.py) (type, allowed values).
 - Treat stage folders as bounded contexts (`wwtp/data_merge`, `wwtp/annotation_scripts`, `wwtp/pop_at_risk_river_calculations`, `wwtp/industrial_analysis`, etc.).
 - Prefer existing wrappers and section-level config inheritance over ad-hoc parameter plumbing.
 

@@ -19,7 +19,7 @@ def test_every_section_resolves(section):
 
 @pytest.mark.parametrize("override, message", [
     (dict(size_measure="capacity"), "size_measure"),
-    (dict(weight_method="cubic"), "Invalid weight_method"),
+    (dict(weight_method="cubic"), "create_voronoi.weight_method"),
     (dict(weight_func="add"), "needs weight_func 'mult'"),  # default weight_method is 'size'
     (dict(weight_func="pow"), "weight_func"),
 ])

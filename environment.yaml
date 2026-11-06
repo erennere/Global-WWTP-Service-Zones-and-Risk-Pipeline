@@ -5,6 +5,7 @@ dependencies:
   - python=3.11
   - pip
   - pyyaml
+  - pydantic>=2  # typed config sections (wwtp/settings.py)
   - numpy
   - pandas
   - geopandas
