@@ -1,4 +1,5 @@
 """Run manifests record config, code version, packages and input fingerprints."""
+
 import hashlib
 
 import pytest
@@ -12,10 +13,16 @@ pytestmark = [pytest.mark.unit, pytest.mark.run_manifest]
 def test_manifest_names_the_run(tmp_path, monkeypatch):
     small = tmp_path / "plants.csv"
     small.write_text("a,b\n1,2\n")
-    monkeypatch.setattr(provenance, "load_config", lambda script_name: {
-        "hash_max_mb": 1, "paths": {"manifest_dir": str(tmp_path / "runs")}})
-    cfg = {"level": "6", "paths": {"plants": str(small), "missing": str(tmp_path / "nope.gpkg"),
-                                   "out_dir": str(tmp_path)}, "distance_fn": len}
+    monkeypatch.setattr(
+        provenance,
+        "load_config",
+        lambda script_name: {"hash_max_mb": 1, "paths": {"manifest_dir": str(tmp_path / "runs")}},
+    )
+    cfg = {
+        "level": "6",
+        "paths": {"plants": str(small), "missing": str(tmp_path / "nope.gpkg"), "out_dir": str(tmp_path)},
+        "distance_fn": len,
+    }
     out = provenance.write_run_manifest(cfg, "create_voronoi", argv=["create_voronoi", "--approach", "1"])
     m = yaml.safe_load(open(out))
     assert m["stage"] == "create_voronoi" and m["command"][-1] == "1"

@@ -1,4 +1,5 @@
 """Figure 1 scripts take their thresholds from config.yaml (figure1)."""
+
 import subprocess
 import sys
 from pathlib import Path
@@ -12,8 +13,9 @@ FIG1 = Path(__file__).resolve().parents[3] / "figures" / "fig1"
 
 
 def _setting(key):
-    return subprocess.run([sys.executable, str(FIG1 / "fig1_config.py"), key], capture_output=True, text=True,
-                          check=True).stdout.strip()
+    return subprocess.run(
+        [sys.executable, str(FIG1 / "fig1_config.py"), key], capture_output=True, text=True, check=True
+    ).stdout.strip()
 
 
 def test_settings_come_from_config():
@@ -43,7 +45,6 @@ def test_scripts_compile(script):
     import py_compile
 
     py_compile.compile(str(FIG1 / script), doraise=True)
-
 
 
 def test_a_unit_with_4_plants_is_hatched_and_with_5_coloured():

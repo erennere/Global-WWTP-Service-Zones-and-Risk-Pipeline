@@ -41,7 +41,11 @@ def test_verification_main_writes_ver_unver_and_single_outputs(monkeypatch, tmp_
     monkeypatch.setattr(verification_script, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(verification_script.os.path, "isdir", lambda path: path == pop_dir)
     monkeypatch.setattr(verification_script.os.path, "exists", lambda path: False)
-    monkeypatch.setattr(verification_script.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok)))
+    monkeypatch.setattr(
+        verification_script.os,
+        "makedirs",
+        lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok)),
+    )
     monkeypatch.setattr(verification_script.os, "listdir", lambda path: ["sample.gpkg"])
     monkeypatch.setattr(verification_script.gpd, "read_file", lambda path: gdf.copy())
     monkeypatch.setattr(
@@ -196,7 +200,7 @@ def test_hw_comparison_main_dispatches_only_gpkg_files(monkeypatch, tmp_path):
     monkeypatch.setattr(
         hw_comparison,
         "orchestrate_single",
-        lambda gdf, approach, plot_args, output_dir, filename, pop_col='POP_SERVED': captured.append(
+        lambda gdf, approach, plot_args, output_dir, filename, pop_col="POP_SERVED": captured.append(
             {
                 "approach": approach,
                 "output_dir": output_dir,
@@ -292,7 +296,10 @@ def test_eu_comparison_main_assigns_nearest_filters_and_dispatches(monkeypatch, 
 
     def fake_assign_to_nearest(gdf, ref_file, threshold, one_to_one=False):
         captured["assign"] = {
-            "threshold": threshold, "ref_cols": ref_file.columns.tolist(), "rows": len(gdf), "one_to_one": one_to_one,
+            "threshold": threshold,
+            "ref_cols": ref_file.columns.tolist(),
+            "rows": len(gdf),
+            "one_to_one": one_to_one,
         }
         return gdf.assign(uwwCapacity=[1.0, pd.NA], POP_SERVED_EU=[10.0, pd.NA])
 
@@ -300,7 +307,7 @@ def test_eu_comparison_main_assigns_nearest_filters_and_dispatches(monkeypatch, 
     monkeypatch.setattr(
         eu_comparison,
         "orchestrate_single",
-        lambda gdf, approach, plot_args, output_dir, filename, pop_col='POP_SERVED', **kwargs: captured.setdefault(
+        lambda gdf, approach, plot_args, output_dir, filename, pop_col="POP_SERVED", **kwargs: captured.setdefault(
             "orchestrate",
             {
                 "rows": len(gdf),
@@ -315,7 +322,12 @@ def test_eu_comparison_main_assigns_nearest_filters_and_dispatches(monkeypatch, 
 
     eu_comparison.main()
 
-    assert captured["assign"] == {"threshold": 500, "ref_cols": ["uwwCapacity", "geometry", "POP_SERVED_EU"], "rows": 2, "one_to_one": True}
+    assert captured["assign"] == {
+        "threshold": 500,
+        "ref_cols": ["uwwCapacity", "geometry", "POP_SERVED_EU"],
+        "rows": 2,
+        "one_to_one": True,
+    }
     assert captured["orchestrate"] == {
         "rows": 1,
         "approach": "2",
@@ -344,7 +356,9 @@ def test_eu_comparison_main_returns_when_verification_dir_missing(monkeypatch, t
     monkeypatch.setattr(
         eu_comparison.gpd,
         "read_file",
-        lambda path: (_ for _ in ()).throw(AssertionError("read_file should not be called when verification dir is missing")),
+        lambda path: (_ for _ in ()).throw(
+            AssertionError("read_file should not be called when verification dir is missing")
+        ),
     )
 
     eu_comparison.main()
@@ -397,7 +411,9 @@ def test_hw_orchestrate_single_skips_2014_and_filters_quality(monkeypatch, tmp_p
     )
 
     monkeypatch.setattr(hw_comparison.os.path, "exists", lambda path: False)
-    monkeypatch.setattr(hw_comparison.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok)))
+    monkeypatch.setattr(
+        hw_comparison.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok))
+    )
     monkeypatch.setattr(
         hw_comparison,
         "composite_histogram",
@@ -439,7 +455,12 @@ def test_hw_orchestrate_single_fails_when_qual_pop_is_missing(tmp_path):
     )
     with pytest.raises(KeyError, match="QUAL_POP"):
         hw_comparison.orchestrate_single(
-            gdf, approach="1", plot_args={}, output_dir=str(tmp_path), filename="x.gpkg", pop_col="POP_SERVED",
+            gdf,
+            approach="1",
+            plot_args={},
+            output_dir=str(tmp_path),
+            filename="x.gpkg",
+            pop_col="POP_SERVED",
         )
 
 
@@ -494,7 +515,14 @@ def test_hw_orchestrate_single_requires_population_column(tmp_path):
         hw_comparison.orchestrate_single(
             gdf,
             approach="1",
-            plot_args={"save": False, "dpi": 72, "bins": 10, "fontsize": 10, "small_fontsize": 8, "lower_quantile": 0.01},
+            plot_args={
+                "save": False,
+                "dpi": 72,
+                "bins": 10,
+                "fontsize": 10,
+                "small_fontsize": 8,
+                "lower_quantile": 0.01,
+            },
             output_dir=str(tmp_path / "plots"),
             filename="single_case.gpkg",
             pop_col="POP_SERVED",
@@ -565,7 +593,14 @@ def test_eu_orchestrate_single_requires_population_column(tmp_path):
         eu_comparison.orchestrate_single(
             gdf,
             approach="2",
-            plot_args={"save": False, "dpi": 72, "bins": 10, "fontsize": 10, "small_fontsize": 8, "lower_quantile": 0.01},
+            plot_args={
+                "save": False,
+                "dpi": 72,
+                "bins": 10,
+                "fontsize": 10,
+                "small_fontsize": 8,
+                "lower_quantile": 0.01,
+            },
             output_dir=str(tmp_path / "plots"),
             filename="ver_case.gpkg",
             pop_col="POP_SERVED_EU",
@@ -688,7 +723,9 @@ def test_composite_histogram_uses_expected_rect_for_tight_layout(monkeypatch):
         "subplots",
         lambda *args, **kwargs: (_Fig(), np.array([[_Ax() for _ in range(5)] for _ in range(2)])),
     )
-    monkeypatch.setattr(hw_comparison.plt, "tight_layout", lambda rect=None, *args, **kwargs: seen.setdefault("rect", rect))
+    monkeypatch.setattr(
+        hw_comparison.plt, "tight_layout", lambda rect=None, *args, **kwargs: seen.setdefault("rect", rect)
+    )
     monkeypatch.setattr(hw_comparison.plt, "show", lambda: None)
     monkeypatch.setattr(hw_comparison.plt, "close", lambda *args, **kwargs: None)
 

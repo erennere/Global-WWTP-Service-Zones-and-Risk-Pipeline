@@ -52,11 +52,11 @@ def download_file(url: str, dest_path: str, chunk_size: int) -> None:
     session = requests_session_with_retries()
     response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS)
     response.raise_for_status()
-    
-    total_size = int(response.headers.get('content-length', 0))
+
+    total_size = int(response.headers.get("content-length", 0))
     downloaded = 0
-    
-    with open(dest_path, 'wb') as f:
+
+    with open(dest_path, "wb") as f:
         for chunk in response.iter_content(chunk_size=chunk_size):
             if chunk:
                 f.write(chunk)
@@ -65,13 +65,14 @@ def download_file(url: str, dest_path: str, chunk_size: int) -> None:
                     percent = (downloaded / total_size) * 100
                     if int(percent) % 10 == 0:
                         logger.debug(f"Downloaded {percent:.1f}%")
-    
+
     logger.info(f"Downloaded to {dest_path}")
+
 
 def vectorize_raster_file(raster_path: str, crs: str = "EPSG:4326", min_cells: int = 100) -> gpd.GeoDataFrame:
     """
     Vectorize a single raster file to polygons.
-    
+
     Parameters
     ----------
     raster_path : str
@@ -81,20 +82,20 @@ def vectorize_raster_file(raster_path: str, crs: str = "EPSG:4326", min_cells: i
     min_cells : int
         Minimum number of connected pixels a polygon must cover to be retained.
         At 10 m resolution, 100 cells ≈ 1 ha.
-    
+
     Returns
     -------
     geopandas.GeoDataFrame
         Vectorized polygons with values.
     """
     logger.info(f"Vectorizing {Path(raster_path).name}...")
-    
+
     polygons = []
     with rasterio.open(raster_path) as src:
         raster_crs = src.crs
         data = src.read(1)
         transform = src.transform
-        
+
         # Minimum area filter: one pixel = |dx| * |dy| in raster native units
         pixel_area = abs(transform.a) * abs(transform.e)
         min_area = min_cells * pixel_area
@@ -105,19 +106,16 @@ def vectorize_raster_file(raster_path: str, crs: str = "EPSG:4326", min_cells: i
                 geom_shape = shape(geom)
                 if geom_shape.area < min_area:
                     continue
-                polygons.append({
-                    'geometry': geom_shape,
-                    'value': value
-                })
-    
+                polygons.append({"geometry": geom_shape, "value": value})
+
     if not polygons:
         logger.warning(f"No valid polygons found in {raster_path}")
-        return gpd.GeoDataFrame({'geometry': [], 'value': []}, crs=raster_crs or crs)
-    
+        return gpd.GeoDataFrame({"geometry": [], "value": []}, crs=raster_crs or crs)
+
     gdf = gpd.GeoDataFrame(polygons, crs=raster_crs or crs)
     if gdf.crs != crs:
         gdf = gdf.to_crs(crs)
-    
+
     logger.info(f"Vectorized {len(gdf)} polygons from {Path(raster_path).name}")
     return gdf
 
@@ -130,7 +128,7 @@ def vectorize_rasters_parallel(
 ) -> List[gpd.GeoDataFrame]:
     """
     Vectorize multiple raster files in parallel.
-    
+
     Parameters
     ----------
     raster_dir : str
@@ -139,7 +137,7 @@ def vectorize_rasters_parallel(
         Number of parallel workers.
     crs : str
         Coordinate reference system.
-    
+
     Returns
     -------
     list of geopandas.GeoDataFrame
@@ -149,20 +147,19 @@ def vectorize_rasters_parallel(
         raise ValueError("max_workers must be >= 1")
 
     raster_files = list(Path(raster_dir).glob("*.tif")) + list(Path(raster_dir).glob("*.tiff"))
-    
+
     if not raster_files:
         logger.warning(f"No raster files found in {raster_dir}")
         return []
-    
+
     logger.info(f"Vectorizing {len(raster_files)} raster files with {max_workers} workers...")
-    
+
     gdfs = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(vectorize_raster_file, str(raster_file), crs, min_cells)
-            for raster_file in raster_files
+            executor.submit(vectorize_raster_file, str(raster_file), crs, min_cells) for raster_file in raster_files
         ]
-        
+
         for idx, future in enumerate(futures, 1):
             try:
                 gdf = future.result()
@@ -170,7 +167,7 @@ def vectorize_rasters_parallel(
                 logger.info(f"Completed {idx}/{len(futures)} rasters")
             except Exception as e:
                 logger.error(f"Error vectorizing raster: {e}")
-    
+
     return gdfs
 
 
@@ -216,7 +213,7 @@ def _morton_code(x: float, y: float, max_depth: int = 16) -> int:
     # Normalize to [0, 2^max_depth)
     xi = max(0, min(int(x * (1 << max_depth)), (1 << max_depth) - 1))
     yi = max(0, min(int(y * (1 << max_depth)), (1 << max_depth) - 1))
-    
+
     # Interleave bits
     morton = 0
     for i in range(max_depth):
@@ -267,7 +264,7 @@ def _iter_batches_by_proximity(geoms: List, batch_size: int):
     logger.info("Prepared %d proximity batches", total_batches)
 
     for batch_start in range(0, len(indexed_codes), batch_size):
-        batch_indices = [idx for idx, _ in indexed_codes[batch_start: batch_start + batch_size]]
+        batch_indices = [idx for idx, _ in indexed_codes[batch_start : batch_start + batch_size]]
         yield [geoms[idx] for idx in batch_indices]
 
 
@@ -277,7 +274,7 @@ def _incremental_union_batch(geoms_batch: List):
         return None
     if len(geoms_batch) == 1:
         return geoms_batch[0]
-    
+
     result = geoms_batch[0]
     for geom in geoms_batch[1:]:
         result = result.union(geom)
@@ -299,7 +296,7 @@ def _chunked_unary_union(geoms: List, chunk_size: int = 32):
         logger.info("Final merge round %d: reducing %d geometries", round_num, len(current))
         next_round = []
         for i in range(0, len(current), chunk_size):
-            chunk = current[i:i + chunk_size]
+            chunk = current[i : i + chunk_size]
             merged = unary_union(chunk)
             repaired = _repair_geometry(merged)
             if repaired is not None and not repaired.is_empty:
@@ -340,10 +337,10 @@ def merge_geodataframes(
     batch_size: int = 5000,
 ) -> gpd.GeoDataFrame:
     """Merge multiple GeoDataFrames incrementally with parallel batch processing.
-    
+
     Parallelizes input GeoDataFrame processing, repairs/simplifies geometries,
     batches them, and uses ProcessPoolExecutor to compute incremental unions in parallel.
-    
+
     Parameters
     ----------
     gdfs : List[gpd.GeoDataFrame]
@@ -355,7 +352,7 @@ def merge_geodataframes(
         Number of worker processes for parallel batch union and input processing.
     batch_size : int
         Number of geometries per batch for parallel processing. Larger batches = fewer tasks.
-    
+
     Returns
     -------
     gpd.GeoDataFrame
@@ -380,10 +377,10 @@ def merge_geodataframes(
         raise ValueError("batch_size must be >= 1") from err
     if batch_size_int < 1:
         raise ValueError("batch_size must be >= 1")
-    
+
     logger.info(f"Merging {len(gdfs)} geodataframes (parallel mode)...")
     target_crs = gdfs[0].crs or "EPSG:4326"
-    
+
     # Parallel processing of input GeoDataFrames: repair, simplify, extract geometries
     logger.info(f"Processing {len(gdfs)} input GeoDataFrames with {worker_count} workers...")
     all_geoms = []
@@ -407,16 +404,18 @@ def merge_geodataframes(
                     logger.info(f"Completed GeoDataFrame {idx}/{len(gdfs)}: {len(all_geoms) - count_before} geometries")
                 except Exception as e:
                     logger.error(f"Error processing GeoDataFrame {idx}: {e}")
-    
+
     if not all_geoms:
         raise ValueError("No valid industrial polygons found across all inputs")
-    
+
     logger.info(f"Accumulated {len(all_geoms)} total geometries")
 
     n_batches = (len(all_geoms) + batch_size_int - 1) // batch_size_int
     logger.info(
         "Processing %d geometries in %d proximity batches with %d worker(s)...",
-        len(all_geoms), n_batches, worker_count,
+        len(all_geoms),
+        n_batches,
+        worker_count,
     )
 
     merged_geom = None
@@ -485,24 +484,21 @@ def merge_geodataframes(
         if merged_geom is None:
             raise ValueError("No valid geometry after batch processing")
         logger.info("Merged %d non-empty batch result(s)", merged_count)
-    
+
     # Repair final merged geometry
     merged_geom = _repair_geometry(merged_geom)
     if merged_geom is None or merged_geom.is_empty:
         raise ValueError("No valid geometry after merge")
-    
+
     # Create GeoDataFrame and explode
-    temp_gdf = gpd.GeoDataFrame(
-        {'geometry': [merged_geom], 'category': ['industrial_land']},
-        crs=target_crs
-    )
-    
+    temp_gdf = gpd.GeoDataFrame({"geometry": [merged_geom], "category": ["industrial_land"]}, crs=target_crs)
+
     if target_crs is not None and temp_gdf.crs != target_crs:
         temp_gdf = temp_gdf.to_crs(target_crs)
-    
+
     logger.info("Exploding multipart geometries into individual features...")
     result = temp_gdf.explode(index_parts=False, ignore_index=True)
-    
+
     logger.info(f"Merged and exploded GeoDataFrame with {len(result)} feature(s)")
     return result
 
@@ -514,12 +510,16 @@ def add_boundary_info(
     overture_s3_url: str,
     basin_col: str,
     sindex_concurrency: bool,
-    country_boundary_col: str = 'country',
-    country_output_col: str = 'ISO_2',
+    country_boundary_col: str = "country",
+    country_output_col: str = "ISO_2",
 ) -> gpd.GeoDataFrame:
     """Add country and basin attributes without clipping industrial geometry."""
     if industrial_gdf is None or industrial_gdf.empty:
-        empty = industrial_gdf.copy() if industrial_gdf is not None else gpd.GeoDataFrame(geometry=[], crs=getattr(watershed_gdf, "crs", None))
+        empty = (
+            industrial_gdf.copy()
+            if industrial_gdf is not None
+            else gpd.GeoDataFrame(geometry=[], crs=getattr(watershed_gdf, "crs", None))
+        )
         if country_output_col not in empty.columns:
             empty[country_output_col] = pd.Series(dtype="object")
         if basin_col not in empty.columns:
@@ -602,9 +602,7 @@ def _vectorize_and_merge(
 
 def parse_args():
     """Parse the standardized named config-override flags."""
-    parser = argparse.ArgumentParser(
-        description="Download, vectorize, and merge industrial land rasters."
-    )
+    parser = argparse.ArgumentParser(description="Download, vectorize, and merge industrial land rasters.")
     add_standard_override_arguments(parser)
     return parser.parse_args()
 
@@ -615,17 +613,17 @@ def main():
     cfg = load_config(script_name="download_and_vectorize", **overrides)
     provenance.write_run_manifest(cfg, "download_and_vectorize")
 
-    vectorized_path = cfg['paths']['industrial_merged_filepath']
-    overwrite = cfg['overwrite_existing']
-    min_cells = cfg['industrial_min_cells']
+    vectorized_path = cfg["paths"]["industrial_merged_filepath"]
+    overwrite = cfg["overwrite_existing"]
+    min_cells = cfg["industrial_min_cells"]
     if int(min_cells) < 1:
         raise ValueError("industrial_min_cells must be >= 1")
-    persist_rasters = cfg['industrial_persist_rasters']
-    simplify_tolerance = cfg['industrial_simplify_tolerance']
-    industrial_batch_size = cfg['industrial_batch_size']
+    persist_rasters = cfg["industrial_persist_rasters"]
+    simplify_tolerance = cfg["industrial_simplify_tolerance"]
+    industrial_batch_size = cfg["industrial_batch_size"]
     if int(industrial_batch_size) < 1:
         raise ValueError("industrial_batch_size must be >= 1")
-    download_chunk_size = int(cfg['industrial_download_chunk_size'])
+    download_chunk_size = int(cfg["industrial_download_chunk_size"])
 
     # Intermediate file: merged vectorized polygons (pre-enrichment).
     # Named after min_cells so different thresholds don't clobber each other.
@@ -642,19 +640,16 @@ def main():
         else:
             if persist_rasters:
                 # Rasters are kept on disk so future runs can skip download.
-                raster_base_dir = cfg['paths']['industrial_raster_persistent_dir']
+                raster_base_dir = cfg["paths"]["industrial_raster_persistent_dir"]
                 os.makedirs(raster_base_dir, exist_ok=True)
-                existing = (
-                    list(Path(raster_base_dir).rglob("*.tif"))
-                    + list(Path(raster_base_dir).rglob("*.tiff"))
-                )
+                existing = list(Path(raster_base_dir).rglob("*.tif")) + list(Path(raster_base_dir).rglob("*.tiff"))
                 if existing and not overwrite:
                     logger.info(f"Reusing {len(existing)} existing raster(s) in {raster_base_dir}")
                 else:
                     zip_path = os.path.join(raster_base_dir, "industrial_land.zip")
-                    download_file(cfg['industrial_zenodo_url'], zip_path, chunk_size=download_chunk_size)
+                    download_file(cfg["industrial_zenodo_url"], zip_path, chunk_size=download_chunk_size)
                     logger.info(f"Extracting to {raster_base_dir}...")
-                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    with zipfile.ZipFile(zip_path, "r") as zip_ref:
                         zip_ref.extractall(raster_base_dir)
                 raster_dirs = _find_raster_dirs(raster_base_dir)
             else:
@@ -663,14 +658,14 @@ def main():
                     zip_path = os.path.join(temp_dir, "industrial_land.zip")
                     extract_dir = os.path.join(temp_dir, "extracted")
                     os.makedirs(extract_dir, exist_ok=True)
-                    download_file(cfg['industrial_zenodo_url'], zip_path, chunk_size=download_chunk_size)
+                    download_file(cfg["industrial_zenodo_url"], zip_path, chunk_size=download_chunk_size)
                     logger.info(f"Extracting to {extract_dir}...")
-                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    with zipfile.ZipFile(zip_path, "r") as zip_ref:
                         zip_ref.extractall(extract_dir)
                     raster_dirs = _find_raster_dirs(extract_dir)
                     merged_gdf = _vectorize_and_merge(
                         raster_dirs,
-                        cfg['max_workers'],
+                        cfg["max_workers"],
                         min_cells,
                         simplify_tolerance,
                         industrial_batch_size,
@@ -681,7 +676,7 @@ def main():
                 # persistent-dir branch so the rasters remain accessible.
                 merged_gdf = _vectorize_and_merge(
                     raster_dirs,
-                    cfg['max_workers'],
+                    cfg["max_workers"],
                     min_cells,
                     simplify_tolerance,
                     industrial_batch_size,
@@ -704,17 +699,17 @@ def main():
         # Step 2 – enrich with country / basin boundaries                     #
         # ------------------------------------------------------------------ #
         logger.info("Loading watershed data...")
-        watershed_gdf = gpd.read_file(cfg['paths']['watershed'], driver='GPKG')
+        watershed_gdf = gpd.read_file(cfg["paths"]["watershed"], driver="GPKG")
 
         enriched_gdf = add_boundary_info(
             merged_gdf,
             watershed_gdf,
-            cfg['paths']['overture'],
-            cfg['paths']['overture_s3_url'],
-            cfg['basin_column_name'],
-            cfg['sindex_concurrency'],
-            cfg['country_boundary_column'],
-            cfg['country_output_column'],
+            cfg["paths"]["overture"],
+            cfg["paths"]["overture_s3_url"],
+            cfg["basin_column_name"],
+            cfg["sindex_concurrency"],
+            cfg["country_boundary_column"],
+            cfg["country_output_column"],
         )
 
         logger.info(f"Writing to {vectorized_path}...")
@@ -729,6 +724,7 @@ def main():
     except Exception as e:
         logger.error(f"Error during vectorization: {e}", exc_info=True)
         return False
+
 
 if __name__ == "__main__":
     configure_logging()

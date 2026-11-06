@@ -166,6 +166,7 @@ def test_safe_to_wkt_returns_none_for_unrecognized_type():
 
 # --- moved from the coverage-campaign files ---
 
+
 def test_estimate_utm_crs_linestring_and_epsg_failure(monkeypatch):
     gdf = gpd.GeoDataFrame({"geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:4326")
 

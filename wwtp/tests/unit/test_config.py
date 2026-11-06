@@ -1,4 +1,5 @@
 """Every config section resolves, and bad values fail at load time."""
+
 import pytest
 import yaml
 
@@ -17,20 +18,26 @@ def test_every_section_resolves(section):
         assert not (isinstance(value, str) and "{" in value), f"{section}.paths.{key} left unexpanded: {value}"
 
 
-@pytest.mark.parametrize("override, message", [
-    (dict(size_measure="capacity"), "size_measure"),
-    (dict(weight_method="cubic"), "create_voronoi.weight_method"),
-    (dict(weight_func="add"), "needs weight_func 'mult'"),  # default weight_method is 'size'
-    (dict(weight_func="pow"), "weight_func"),
-])
+@pytest.mark.parametrize(
+    "override, message",
+    [
+        (dict(size_measure="capacity"), "size_measure"),
+        (dict(weight_method="cubic"), "create_voronoi.weight_method"),
+        (dict(weight_func="add"), "needs weight_func 'mult'"),  # default weight_method is 'size'
+        (dict(weight_func="pow"), "weight_func"),
+    ],
+)
 def test_bad_values_fail_at_load(override, message):
     with pytest.raises(ValueError, match=message):
         starter.load_config(script_name="create_voronoi", **override)
 
 
 def test_stages_share_one_basin_level():
-    levels = {str(starter.load_config(script_name=s)["level"]) for s in SECTIONS
-              if "level" in starter.load_config(script_name=s)}
+    levels = {
+        str(starter.load_config(script_name=s)["level"])
+        for s in SECTIONS
+        if "level" in starter.load_config(script_name=s)
+    }
     assert levels == {"6"}
 
 
@@ -41,8 +48,11 @@ def test_every_package_is_installed_by_pyproject():
 
     root = Path(starter.__file__).resolve().parent
     listed = set(tomllib.loads((root.parent / "pyproject.toml").read_text())["tool"]["setuptools"]["packages"])
-    on_disk = {".".join(p.parent.relative_to(root.parent).parts)
-               for p in root.rglob("__init__.py") if "tests" not in p.parts and "maps" not in p.parts}
+    on_disk = {
+        ".".join(p.parent.relative_to(root.parent).parts)
+        for p in root.rglob("__init__.py")
+        if "tests" not in p.parts and "maps" not in p.parts
+    }
     assert on_disk <= listed, on_disk - listed
 
 
@@ -52,10 +62,12 @@ def test_overlays_and_set_apply_in_order(tmp_path, monkeypatch):
     monkeypatch.setenv(starter.OVERLAYS_ENV_VAR, str(cluster))
     sets = starter.parse_set_assignments(["create_voronoi.n_points=200", "combine_watersheds.level=7"])
     cfg = starter.load_config(script_name="create_voronoi", sets=sets)
-    assert cfg["max_workers"] == 64          # overlay
-    assert cfg["n_points"] == 200            # --set wins over the overlay
-    assert str(cfg["level"]) == "7"          # --set on the section it is inherited from
-    assert cfg["config_layers"][1] == str(cluster) and cfg["config_layers"][-1].startswith("--set combine_watersheds.level")
+    assert cfg["max_workers"] == 64  # overlay
+    assert cfg["n_points"] == 200  # --set wins over the overlay
+    assert str(cfg["level"]) == "7"  # --set on the section it is inherited from
+    assert cfg["config_layers"][1] == str(cluster) and cfg["config_layers"][-1].startswith(
+        "--set combine_watersheds.level"
+    )
 
 
 def test_local_overlay_next_to_the_config_is_picked_up(tmp_path, monkeypatch, write_test_config):
@@ -81,7 +93,9 @@ def test_bad_set_assignments_fail(item):
 
 
 def test_set_reaches_stages_through_the_shared_flags():
-    overrides = starter.parse_config_overrides(argv=["prog", "--set", "create_voronoi.n_points=150", "--set=create_voronoi.sigma=2"])
+    overrides = starter.parse_config_overrides(
+        argv=["prog", "--set", "create_voronoi.n_points=150", "--set=create_voronoi.sigma=2"]
+    )
     assert overrides["sets"] == [(("create_voronoi", "n_points"), 150), (("create_voronoi", "sigma"), 2)]
 
 

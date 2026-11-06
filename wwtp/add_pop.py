@@ -43,7 +43,7 @@ def _normalize_country_code(value):
     """Normalize ISO-2 codes for robust joins against raster directory naming."""
     if pd.isna(value):
         return None
-    code = str(value).strip().upper() 
+    code = str(value).strip().upper()
     return code if code else None
 
 
@@ -75,7 +75,7 @@ def _find_failing_geometry_indices(tif_path, gdf, max_report=10):
 
         subset = gdf.loc[idxs]
         try:
-            exact_extract(rast=tif_path, vec=subset, ops=['sum'], output='pandas')
+            exact_extract(rast=tif_path, vec=subset, ops=["sum"], output="pandas")
             continue
         except Exception:
             if len(idxs) == 1:
@@ -87,9 +87,10 @@ def _find_failing_geometry_indices(tif_path, gdf, max_report=10):
 
     return failing
 
+
 def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
     """Compute zonal statistics of population rasters within polygons using exactextract.
-    
+
     Args:
         gdf: GeoDataFrame with polygon geometries
         tif_paths: List of population raster file paths (single or multiple years)
@@ -108,19 +109,19 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
             country_hint = country_values[0]
         elif country_values:
             country_hint = ",".join(country_values[:3])
-    
-    org_crs = gdf.crs 
-    
+
+    org_crs = gdf.crs
+
     # Map raster files to the year encoded in their filenames.
     my_dict = {}
     for file in tif_paths:
         if not os.path.exists(file):
             logger.warning(f"Raster file does not exist: {file}")
             continue
-        
+
         basename = os.path.basename(file)
-        parts = [int(k) for k in basename.split('_') if k.startswith('20') and len(k) == 4]
-        
+        parts = [int(k) for k in basename.split("_") if k.startswith("20") and len(k) == 4]
+
         if parts and years is not None and parts[0] not in years:
             logger.info("Skipping %s: year %s is not configured (download_pop years)", basename, parts[0])
         elif parts:
@@ -141,7 +142,7 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
             # Reproject polygons to raster CRS before extracting zonal statistics.
             with rasterio.open(tif_path) as src:
                 raster_crs = src.crs
-            
+
             if raster_crs is not None and gdf.crs != raster_crs:
                 gdf = gdf.to_crs(raster_crs)
 
@@ -159,9 +160,9 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
                 invalid_sample = []
                 for idx in gdf.index[invalid_mask][:5].tolist():
                     try:
-                        reason = explain_validity(gdf.at[idx, 'geometry'])
+                        reason = explain_validity(gdf.at[idx, "geometry"])
                     except Exception:
-                        reason = 'unknown'
+                        reason = "unknown"
                     invalid_sample.append((idx, reason))
 
                 logger.warning(
@@ -183,7 +184,9 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
             extract_gdf = gdf.loc[~skip_mask].copy()
             repair_rows = invalid_mask[~skip_mask]
             if repair_rows.any():
-                extract_gdf.loc[repair_rows, 'geometry'] = extract_gdf.loc[repair_rows, 'geometry'].map(_polygonal_repair)
+                extract_gdf.loc[repair_rows, "geometry"] = extract_gdf.loc[repair_rows, "geometry"].map(
+                    _polygonal_repair
+                )
                 extract_gdf = extract_gdf[extract_gdf.geometry.notna()]
             if extract_gdf.empty:
                 raise RuntimeError(
@@ -194,8 +197,8 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
             stats_df = exact_extract(
                 rast=tif_path,
                 vec=extract_gdf,
-                ops=['sum', 'stdev'],
-                output='pandas' # Returns a tidy dataframe
+                ops=["sum", "stdev"],
+                output="pandas",  # Returns a tidy dataframe
             )
 
             # exact_extract returns canonical 'sum' and 'stdev' columns.
@@ -205,8 +208,8 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
             gdf[std_col] = 0.0
             not_measured = gdf.index.difference(extract_gdf.index).difference(gdf.index[empty_mask])
             gdf.loc[not_measured, [sum_col, std_col]] = np.nan
-            gdf.loc[extract_gdf.index, sum_col] = stats_df['sum'].clip(lower=0).values
-            gdf.loc[extract_gdf.index, std_col] = stats_df['stdev'].clip(lower=0).values
+            gdf.loc[extract_gdf.index, sum_col] = stats_df["sum"].clip(lower=0).values
+            gdf.loc[extract_gdf.index, std_col] = stats_df["stdev"].clip(lower=0).values
 
             logger.info(f"Processed population for year {year}")
 
@@ -216,9 +219,7 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
             empty_geom_count = int(geometry_col.is_empty.fillna(False).sum()) if geometry_col is not None else -1
             invalid_geom_count = int((~geometry_col.is_valid.fillna(False)).sum()) if geometry_col is not None else -1
             geom_type_counts = (
-                geometry_col.geom_type.value_counts(dropna=False).head(10).to_dict()
-                if geometry_col is not None
-                else {}
+                geometry_col.geom_type.value_counts(dropna=False).head(10).to_dict() if geometry_col is not None else {}
             )
 
             raster_exists = os.path.exists(tif_path)
@@ -239,7 +240,7 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
             failing_indices = _find_failing_geometry_indices(tif_path, gdf, max_report=10)
             failing_geometries = []
             for idx in failing_indices:
-                geometry = gdf.at[idx, 'geometry'] if idx in gdf.index else None
+                geometry = gdf.at[idx, "geometry"] if idx in gdf.index else None
                 try:
                     validity_reason = explain_validity(geometry) if geometry is not None else "missing"
                 except Exception:
@@ -276,7 +277,7 @@ def intersect_single_file(gdf, tif_paths, all_years=True, years=None):
     # Restore the original CRS expected by downstream writers.
     if gdf.crs != org_crs:
         gdf = gdf.to_crs(org_crs)
-        
+
     return gdf
 
 
@@ -306,11 +307,7 @@ def find_country_tif_files(countries, tif_dir):
             iso_3 = alpha_2_to_3[normalized_iso2].lower()
             temp_dir = os.path.join(tif_dir, iso_3)
             if os.path.exists(temp_dir):
-                tif_filepath = [
-                    os.path.join(temp_dir, f)
-                    for f in os.listdir(temp_dir)
-                    if f.endswith('.tif')
-                ]
+                tif_filepath = [os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.endswith(".tif")]
                 tif_filepaths[normalized_iso2] = tif_filepath if tif_filepath else None
             else:
                 tif_filepaths[normalized_iso2] = None
@@ -343,8 +340,8 @@ def find_newest_country_tif_files(countries, tif_dir):
         year_file = {}
         for file in files:
             if os.path.exists(file):
-                tokens = os.path.basename(file).replace('.tif', '').split('_')
-                parts = [int(token) for token in tokens if token.startswith('20') and token.isdigit()]
+                tokens = os.path.basename(file).replace(".tif", "").split("_")
+                parts = [int(token) for token in tokens if token.startswith("20") and token.isdigit()]
                 if parts:
                     year_file[parts[0]] = file
                 else:
@@ -355,7 +352,7 @@ def find_newest_country_tif_files(countries, tif_dir):
     return newest
 
 
-def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_col='ISO_2', years=None):
+def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_col="ISO_2", years=None):
     """Intersect population rasters with polygons across all countries.
 
     Parameters
@@ -431,7 +428,7 @@ def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_co
             ): iso_2
             for iso_2 in countries
         }
-        
+
         # Progress bar for country processing
         for future in tqdm(as_completed(futures), total=len(futures), desc="Intersecting countries"):
             if future is not None:
@@ -444,19 +441,19 @@ def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_co
                     logger.error("Country intersection failed for %s: %s", iso_2, err, exc_info=True)
     if failures:
         preview = "; ".join([f"{iso}: {msg}" for iso, msg in failures[:10]])
-        raise RuntimeError(
-            f"Population raster intersection failed for {len(failures)} countries. Examples: {preview}"
-        )
+        raise RuntimeError(f"Population raster intersection failed for {len(failures)} countries. Examples: {preview}")
     if not data:
         logger.warning("No data returned from any country - check raster files and polygon-raster intersection")
     parts = [part for part in data + unmatched if len(part)]
     if not parts:
         return gdf.iloc[0:0].copy()
     data = pd.concat(parts, ignore_index=True)
-    return gpd.GeoDataFrame(data, geometry='geometry', crs=gdf.crs)
-    
-def orchestrate_intersections(voronoi_file, tif_dir, output_path, max_workers=16, country_col='ISO_2', overwrite=True,
-                              years=None):
+    return gpd.GeoDataFrame(data, geometry="geometry", crs=gdf.crs)
+
+
+def orchestrate_intersections(
+    voronoi_file, tif_dir, output_path, max_workers=16, country_col="ISO_2", overwrite=True, years=None
+):
     """Add population columns to one Voronoi layer and write it to ``output_path``.
 
     Parameters
@@ -487,7 +484,7 @@ def orchestrate_intersections(voronoi_file, tif_dir, output_path, max_workers=16
     logger.info(f"Loaded Voronoi layer with {len(gdf)} features")
     gdf = intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col=country_col, years=years)
     with atomic_output(output_path) as tmp_path:
-        gdf.to_file(tmp_path, driver='GPKG', index=False)
+        gdf.to_file(tmp_path, driver="GPKG", index=False)
     logger.info(f"Successfully saved population-enhanced file to {output_path}")
 
 
@@ -496,8 +493,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Intersect Voronoi polygons with population rasters and export enriched layers."
     )
-    parser.add_argument("--approach", required=True, choices=APPROACHES,
-                        help="Service-area approach whose layer gets population columns")
+    parser.add_argument(
+        "--approach",
+        required=True,
+        choices=APPROACHES,
+        help="Service-area approach whose layer gets population columns",
+    )
     add_standard_override_arguments(parser)
     args = parser.parse_args()
 
@@ -509,18 +510,20 @@ def main():
 
     cfg = load_config(script_name="add_pop", **overrides)
     provenance.write_run_manifest(cfg, "add_pop")
-    voronoi_file = create_output_paths(cfg)['voronoi'][args.approach]
-    output_path = create_pop_output_paths(cfg)['voronoi'][args.approach]
-    logger.info(f"Configuration loaded: input={voronoi_file}, pop_tif_dir={cfg['paths']['pop_tif_dir']}, "
-                f"max_workers={cfg['add_pop_max_workers']}")
+    voronoi_file = create_output_paths(cfg)["voronoi"][args.approach]
+    output_path = create_pop_output_paths(cfg)["voronoi"][args.approach]
+    logger.info(
+        f"Configuration loaded: input={voronoi_file}, pop_tif_dir={cfg['paths']['pop_tif_dir']}, "
+        f"max_workers={cfg['add_pop_max_workers']}"
+    )
     try:
         orchestrate_intersections(
             voronoi_file,
-            cfg['paths']['pop_tif_dir'],
+            cfg["paths"]["pop_tif_dir"],
             output_path,
-            cfg['add_pop_max_workers'],
-            country_col=cfg['country_output_column'],
-            overwrite=cfg['overwrite_existing'],
+            cfg["add_pop_max_workers"],
+            country_col=cfg["country_output_column"],
+            overwrite=cfg["overwrite_existing"],
             years=population_years(cfg),
         )
         logger.info("Population data integration completed successfully")
@@ -536,24 +539,12 @@ def population_years(cfg):
     ``include_2014`` (a 2014 file left in pop_tif_dir from an older download is
     otherwise skipped instead of becoming a 2014_zonal_sum column).
     """
-    years = set(range(int(cfg['start_year']), int(cfg['end_year']) + 1))
-    if cfg['include_2014']:
+    years = set(range(int(cfg["start_year"]), int(cfg["end_year"]) + 1))
+    if cfg["include_2014"]:
         years.add(2014)
     return years
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     configure_logging()
     main()
-
-
-
-
-
-
-    
-
-
-
-
-

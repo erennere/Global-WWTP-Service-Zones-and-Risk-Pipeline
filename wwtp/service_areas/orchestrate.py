@@ -2,6 +2,7 @@
 
 Part of the service-area stage (``python -m wwtp.create_voronoi``).
 """
+
 import os
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -16,19 +17,40 @@ from .solver import finalize_gdf, voronoi_worker
 logger = logging.getLogger(__name__)
 
 
-def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=False, clipping=None, n_points=100, distance_fn=default_distance_multiplicative,
-                                scipy_true=False, cv2_true=False, centroid_points=False,
-                                buffering=False, threshold=500, sigma=3, percent_threshold=10,
-                                area_fn=None, area_fn_kwargs=None,
-                                method='linear', output_path=None, overwrite=False, flush_size=None,
-                                calculate_buffer_fn=calculate_buffer, buffer_fn_kwargs=None,
-                                site_country_col='ISO_2', country_boundary_col='country', site_id_col='WASTE_ID'):
+def orchestrate_voronoi_weights(
+    df,
+    col,
+    country_df,
+    workers=12,
+    scale_weights=False,
+    clipping=None,
+    n_points=100,
+    distance_fn=default_distance_multiplicative,
+    scipy_true=False,
+    cv2_true=False,
+    centroid_points=False,
+    buffering=False,
+    threshold=500,
+    sigma=3,
+    percent_threshold=10,
+    area_fn=None,
+    area_fn_kwargs=None,
+    method="linear",
+    output_path=None,
+    overwrite=False,
+    flush_size=None,
+    calculate_buffer_fn=calculate_buffer,
+    buffer_fn_kwargs=None,
+    site_country_col="ISO_2",
+    country_boundary_col="country",
+    site_id_col="WASTE_ID",
+):
     """
     Orchestrate parallel Voronoi generation across data groups.
-    
+
     Groups dataframe by column, processes each group in parallel with
     weighted Voronoi generation, then concatenates results.
-    
+
     Parameters
     ----------
     df : geopandas.GeoDataFrame
@@ -107,17 +129,21 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
     if buffer_fn_kwargs is not None:
         buffer_fn_kwargs = dict(buffer_fn_kwargs)
     # weight_method 'size': weighted_voronoi weights each site by sqrt(people)
-    size_weights = method == 'size'
+    size_weights = method == "size"
 
     # Group both df and clipping by the same column
     if output_path:
-        logger.info(f"Starting orchestrate_voronoi_weights for {len(df)} sites with {workers} workers (target={output_path})")
+        logger.info(
+            f"Starting orchestrate_voronoi_weights for {len(df)} sites with {workers} workers (target={output_path})"
+        )
     else:
         logger.info(f"Starting orchestrate_voronoi_weights for {len(df)} sites with {workers} workers")
     if flush_size is None:
         flush_size = max(1, workers)
-    temp_output_path = os.path.join(os.path.dirname(output_path), f"temp_{os.path.basename(output_path)}") if output_path else None
-    
+    temp_output_path = (
+        os.path.join(os.path.dirname(output_path), f"temp_{os.path.basename(output_path)}") if output_path else None
+    )
+
     df = df[~df[col].isna()].reset_index(drop=True)
     df[col] = normalize_column_to_rounded_str(df[col])
 
@@ -135,7 +161,9 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
                         before - len(df),
                     )
             except Exception as err:
-                logger.warning("Could not read temp checkpoint %s (%s). Continuing without resume.", temp_output_path, err)
+                logger.warning(
+                    "Could not read temp checkpoint %s (%s). Continuing without resume.", temp_output_path, err
+                )
         else:
             try:
                 os.remove(temp_output_path)
@@ -153,7 +181,7 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
     clip_groups = {str(k): v for k, v in clipping.groupby(col)} if clipping is not None else {}
 
     task_stats = {
-        'generated': 0,
+        "generated": 0,
     }
 
     def iter_voronoi_args(batch_size):
@@ -205,23 +233,53 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
             # If no country clipping is needed, pass the entire sub_df to the worker.
             # Otherwise, create separate tasks for each country within the group.
             if country_clip is None:
-                task_stats['generated'] += 1
-                task = (sub_df, col, country_clip, scale_weights,
-                        sub_clip, n_points, distance_fn, scipy_true,
-                        cv2_true, centroid_points, buffering,
-                    threshold, calculate_buffer_fn, buffer_fn_kwargs, site_id_col, size_weights)
+                task_stats["generated"] += 1
+                task = (
+                    sub_df,
+                    col,
+                    country_clip,
+                    scale_weights,
+                    sub_clip,
+                    n_points,
+                    distance_fn,
+                    scipy_true,
+                    cv2_true,
+                    centroid_points,
+                    buffering,
+                    threshold,
+                    calculate_buffer_fn,
+                    buffer_fn_kwargs,
+                    site_id_col,
+                    size_weights,
+                )
                 batch.append(task)
             else:
                 for country in country_iso_2:
                     country_sub_df = sub_df[sub_df[site_country_col] == country].copy().reset_index(drop=True)
                     if country_sub_df.empty:
                         continue
-                    country_sub_clip = country_clip[country_clip[country_boundary_col] == country].copy().reset_index(drop=True)
-                    task_stats['generated'] += 1
-                    task = (country_sub_df, col, country_sub_clip,
-                            scale_weights, sub_clip, n_points, distance_fn,
-                            scipy_true, cv2_true, centroid_points,
-                            buffering, threshold, calculate_buffer_fn, buffer_fn_kwargs, site_id_col, size_weights)
+                    country_sub_clip = (
+                        country_clip[country_clip[country_boundary_col] == country].copy().reset_index(drop=True)
+                    )
+                    task_stats["generated"] += 1
+                    task = (
+                        country_sub_df,
+                        col,
+                        country_sub_clip,
+                        scale_weights,
+                        sub_clip,
+                        n_points,
+                        distance_fn,
+                        scipy_true,
+                        cv2_true,
+                        centroid_points,
+                        buffering,
+                        threshold,
+                        calculate_buffer_fn,
+                        buffer_fn_kwargs,
+                        site_id_col,
+                        size_weights,
+                    )
                     batch.append(task)
 
             if len(batch) >= batch_size:
@@ -248,9 +306,9 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
         if temp_output_path is not None:
             ensure_output_dir_for_file(temp_output_path)
             if os.path.exists(temp_output_path):
-                region_chunk.to_file(temp_output_path, mode='a', driver='GPKG', index=False)
+                region_chunk.to_file(temp_output_path, mode="a", driver="GPKG", index=False)
             else:
-                region_chunk.to_file(temp_output_path, driver='GPKG', index=False)
+                region_chunk.to_file(temp_output_path, driver="GPKG", index=False)
 
         region_df_all = []
         point_df_all = []
@@ -280,13 +338,13 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
         logger.error("Error during Voronoi orchestration: %s", err, exc_info=True)
         return False if output_path else (finalize_gdf([], df.columns), finalize_gdf([], df.columns))
 
-    if task_stats['generated'] == 0:
+    if task_stats["generated"] == 0:
         logger.warning("No Voronoi tasks were generated")
     else:
         logger.debug(
             "Processed %s Voronoi task results (generated=%s)",
             processed_results,
-            task_stats['generated'],
+            task_stats["generated"],
         )
 
     # Output-path mode: finalize temp checkpoint into final file and return bool.
@@ -296,13 +354,17 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
                 ensure_output_dir_for_file(output_path)
                 if os.path.exists(output_path):
                     if overwrite:
-                        os.remove(output_path) 
+                        os.remove(output_path)
                     else:
                         logger.warning("Output already exists and overwrite=False: %s", output_path)
                         return True
                 os.replace(temp_output_path, output_path)
-                logger.info("Orchestrate Voronoi complete: processed=%s (generated=%s) -> %s",
-                            processed_results, task_stats['generated'], output_path)
+                logger.info(
+                    "Orchestrate Voronoi complete: processed=%s (generated=%s) -> %s",
+                    processed_results,
+                    task_stats["generated"],
+                    output_path,
+                )
                 return True
             except Exception as err:
                 logger.error("Failed to finalize temp checkpoint %s -> %s: %s", temp_output_path, output_path, err)
@@ -313,9 +375,5 @@ def orchestrate_voronoi_weights(df, col, country_df, workers=12, scale_weights=F
     # Legacy tuple-return mode when no output path is provided.
     region_df_final = finalize_gdf(region_df_all, df.columns)
     point_df_final = finalize_gdf(point_df_all, df.columns)
-    logger.info(
-        f"Orchestrate Voronoi complete: "
-        f"{len(region_df_final)} regions, "
-        f"{len(point_df_final)} points"
-    )
+    logger.info(f"Orchestrate Voronoi complete: {len(region_df_final)} regions, {len(point_df_final)} points")
     return region_df_final, point_df_final

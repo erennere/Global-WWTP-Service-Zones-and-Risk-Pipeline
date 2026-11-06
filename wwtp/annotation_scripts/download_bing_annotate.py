@@ -32,7 +32,6 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
-
 def safe_wkt_load(wkt_wtr):
     """Parse WKT text into a Shapely geometry, returning None on bad rows."""
     try:
@@ -41,31 +40,30 @@ def safe_wkt_load(wkt_wtr):
         return shapely.wkt.loads(wkt_wtr)
     except Exception:
         return None
-    
+
+
 # Bundled asset, resolved against the package rather than the working directory.
-FONT_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "assets", "dejavu-sans.book.ttf"
-)
-RESOLUTIONS = { 
-    1 :	78271.52,   
-    2 :	39135.76,	
-    3 :	19567.88,	
-    4 :	9783.94,	
-    5 : 4891.97,	
-    6 :	2445.98,	
-    7 :	1222.99,	
-    8 :	611.50,	
-    9 :	305.75,	
-    10 : 152.87,	
-    11 : 76.44,	
-    12 : 38.22,
-    13 : 19.11,
-    14 : 9.55,
-    15 : 4.78,
-    16 : 2.39,
-    17 : 1.19,
-    18 : 0.60,
-    19 : 0.30
+FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "dejavu-sans.book.ttf")
+RESOLUTIONS = {
+    1: 78271.52,
+    2: 39135.76,
+    3: 19567.88,
+    4: 9783.94,
+    5: 4891.97,
+    6: 2445.98,
+    7: 1222.99,
+    8: 611.50,
+    9: 305.75,
+    10: 152.87,
+    11: 76.44,
+    12: 38.22,
+    13: 19.11,
+    14: 9.55,
+    15: 4.78,
+    16: 2.39,
+    17: 1.19,
+    18: 0.60,
+    19: 0.30,
 }
 ZOOM_LEVEL = 17
 RES_X = RESOLUTIONS[ZOOM_LEVEL]
@@ -77,24 +75,24 @@ BASE_Z17_RES = 1.1943285669555664
 MAX_WORKERS = 64
 GEOREFERENCED = False
 FONTSIZE = 24
-DPI = 72 
+DPI = 72
 EARTH_RADIUS = 6378137
 WORLD_WIDTH = 2 * math.pi * EARTH_RADIUS  # ~40075016.685
 TARGET_SIZE = [1024, 1024]
 WEB_MERCATOR_TILE_SIZE = 256
 IMAGERY_REFERENCE_TILE_SIZE = 512
 
-transformer = Transformer.from_crs(
-    "EPSG:4326", "EPSG:3857", always_xy=True
-)
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+
 
 def get_image(idx, images_dir):
     """Load a pre-generated source image for one annotation index."""
-    filepath = os.path.join(images_dir, f'{idx}.png')
+    filepath = os.path.join(images_dir, f"{idx}.png")
     if os.path.exists(filepath):
         return Image.open(filepath)
     else:
         return None
+
 
 def mercator_to_pixel(x, y, cx, cy, IMAGE_SIZE, wrap=True):
     """
@@ -106,13 +104,13 @@ def mercator_to_pixel(x, y, cx, cy, IMAGE_SIZE, wrap=True):
     # At Z17, a 256px tile covers ~305.75 meters.
     # At Z17, a 512px tile covers ~611.5 meters.
     # Your 3072px image covers ~3669 meters.
-    
+
     # 2. Adjust resolution for your specific image size.
-    # Since Maxar Zoom 17 typically refers to the 512px tile scale, 
+    # Since Maxar Zoom 17 typically refers to the 512px tile scale,
     # we use 512 as the divisor if your imagery was pulled as 512px tiles.
     # However, standard Web Mercator math uses 256 as the base unit:
     res = BASE_Z17_RES * (WEB_MERCATOR_TILE_SIZE / IMAGERY_REFERENCE_TILE_SIZE)
-    
+
     # 3. Calculate distance from center
     dx = x - cx
     dy = cy - y  # Invert Y: Mercator North is (+), Pixel Down is (+)
@@ -120,8 +118,10 @@ def mercator_to_pixel(x, y, cx, cy, IMAGE_SIZE, wrap=True):
     # 4. Handle World Wrap (The "International Date Line" logic)
     if wrap:
         half_world = WORLD_WIDTH / 2
-        if dx > half_world: dx -= WORLD_WIDTH
-        elif dx < -half_world: dx += WORLD_WIDTH
+        if dx > half_world:
+            dx -= WORLD_WIDTH
+        elif dx < -half_world:
+            dx += WORLD_WIDTH
 
     # 5. Map to Pixel Space
     # (Distance / Resolution) + (Center of the 3072px frame)
@@ -130,12 +130,13 @@ def mercator_to_pixel(x, y, cx, cy, IMAGE_SIZE, wrap=True):
 
     return int(round(px)), int(round(py))
 
+
 def image_bounds_mercator(center_lon, center_lat):
     """Return approximate Web-Mercator bounds for the configured output image."""
     cx, cy = transformer.transform(center_lon, center_lat)
 
     initial_res = 2 * math.pi * EARTH_RADIUS / WEB_MERCATOR_TILE_SIZE
-    res = initial_res / (2 ** ZOOM_LEVEL)
+    res = initial_res / (2**ZOOM_LEVEL)
 
     half_w = IMAGE_SIZE[0] * res / 2
     half_h = IMAGE_SIZE[1] * res / 2
@@ -147,43 +148,41 @@ def image_bounds_mercator(center_lon, center_lat):
 
     return xmin, ymin, xmax, ymax, res
 
+
 def draw_text_with_padding(draw, xy, text, font, fill, pad_fill, pad=2):
     """Draws centered text with a stroke/halo outline."""
-    draw.text(
-        xy, text, font=font, fill=fill,
-        anchor="mm", stroke_width=pad, stroke_fill=pad_fill
-    )
+    draw.text(xy, text, font=font, fill=fill, anchor="mm", stroke_width=pad, stroke_fill=pad_fill)
+
 
 def draw_rotated_text_with_padding(image, xy, text, angle, font, fill, pad_fill, pad=2):
     """Draws rotated text by compositing a small scratchpad onto the main image."""
     # Create a small scratchpad based on text size
     bbox = font.getbbox(text)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    
+
     # Square buffer to allow rotation without clipping
-    pad_dim = int(max(w, h) * 2.0) 
+    pad_dim = int(max(w, h) * 2.0)
     txt_img = Image.new("RGBA", (pad_dim, pad_dim), (0, 0, 0, 0))
     txt_draw = ImageDraw.Draw(txt_img)
 
     center_pt = (pad_dim // 2, pad_dim // 2)
-    txt_draw.text(
-        center_pt, text, font=font, fill=fill,
-        anchor="mm", stroke_width=pad, stroke_fill=pad_fill
-    )
+    txt_draw.text(center_pt, text, font=font, fill=fill, anchor="mm", stroke_width=pad, stroke_fill=pad_fill)
 
     # Note: If labels look 'mirrored', change angle to -angle
     rotated_txt = txt_img.rotate(angle, resample=Image.BICUBIC, expand=False)
 
     paste_x = int(xy[0] - pad_dim // 2)
     paste_y = int(xy[1] - pad_dim // 2)
-    
+
     image.alpha_composite(rotated_txt, (paste_x, paste_y))
+
 
 def linestring_angle(line):
     """Estimate a label rotation angle from the first and last line vertices."""
     x1, y1 = line.coords[0]
     x2, y2 = line.coords[-1]
     return math.degrees(math.atan2(y2 - y1, x2 - x1))
+
 
 def log_gdf_preview(name, gdf, columns, n=5):
     """Log a small preview of selected GeoDataFrame columns for debugging."""
@@ -200,31 +199,30 @@ def log_gdf_preview(name, gdf, columns, n=5):
     preview = gdf[available_cols].head(n).to_string(index=False)
     logger.info("%s sample rows:\n%s", name, preview)
 
+
 def split_grids_for_instance(grids, instance_id, num_instances, split_seed):
     """Deterministically shuffle and split grids into disjoint worker chunks."""
     if num_instances <= 0:
         raise ValueError("num_instances must be > 0")
     if not (0 <= instance_id < num_instances):
-        raise ValueError(
-            f"instance_id must be between 0 and {num_instances - 1}, got {instance_id}"
-        )
+        raise ValueError(f"instance_id must be between 0 and {num_instances - 1}, got {instance_id}")
 
     shuffled = list(grids)
     random.Random(split_seed).shuffle(shuffled)
     return shuffled[instance_id::num_instances]
 
+
 def draw_annotations(image, annotations, fontsize=12):
     """Orchestrates drawing, ensuring lines are drawn before polygon labels."""
     image = image.convert("RGBA")
-    
+
     font = ImageFont.truetype(FONT_PATH, fontsize)
 
     # 1. Draw Rotated Lines First
     #  (Alpha Compositing)
     for ann in [a for a in annotations if a["style"] == "line"]:
         draw_rotated_text_with_padding(
-            image, (ann["x"], ann["y"]), ann["text"], 
-            ann["angle"], font, "white", "blue", pad=3
+            image, (ann["x"], ann["y"]), ann["text"], ann["angle"], font, "white", "blue", pad=3
         )
 
     # 2. Draw Static Labels (Polygons) on top
@@ -236,11 +234,10 @@ def draw_annotations(image, annotations, fontsize=12):
             draw_text_with_padding(draw, (ann["x"], ann["y"]), ann["text"], font, "black", "white", pad=3)
     return image
 
+
 def georef_write(image, center_lon, center_lat, out_path):
     """Write an annotated image as a georeferenced GeoTIFF in EPSG:3857."""
-    xmin, ymin, xmax, ymax, res = image_bounds_mercator(
-        center_lon, center_lat
-    )
+    xmin, ymin, xmax, ymax, res = image_bounds_mercator(center_lon, center_lat)
 
     transform = from_origin(xmin, ymax, res, res)
     img_arr = np.array(image)
@@ -259,6 +256,7 @@ def georef_write(image, center_lon, center_lat, out_path):
     ) as dst:
         for i in range(3):
             dst.write(img_arr[:, :, i], i + 1)
+
 
 def process_bbox(idx, bbox_geom, img_idx, poly_gdf, cols, line_gdf, line_cols, output_dir, images_dir):
     """Annotate a single bbox tile with polygon and line labels and write output.
@@ -305,41 +303,46 @@ def process_bbox(idx, bbox_geom, img_idx, poly_gdf, cols, line_gdf, line_cols, o
         for _, row in possible_polys.iterrows():
             # Filter and collect all valid strings from the specified columns
             valid_tags = [
-                str(row[col]) for col in cols 
-                if col in row and pd.notna(row[col]) and str(row[col]).lower() != "nan"
+                str(row[col]) for col in cols if col in row and pd.notna(row[col]) and str(row[col]).lower() != "nan"
             ]
             # Combine them with a comma
             tag = ", ".join(valid_tags) if valid_tags else None
             # Skip if nothing was found
-            if not tag: continue
+            if not tag:
+                continue
 
             # Geometrically clip the feature to the visible tile footprint.
             clipped_geom = row.geometry.intersection(bbox_geom)
             if clipped_geom.is_empty or not clipped_geom.is_valid:
                 continue
-            
+
             pt = clipped_geom.representative_point()
             px, py = mercator_to_pixel(pt.x, pt.y, cx, cy, IMAGE_SIZE)
-            
+
             if 0 <= px < IMAGE_SIZE[0] and 0 <= py < IMAGE_SIZE[1]:
-                annotations.append({
-                    "x": px, "y": py, "text": tag, "type": "poly",
-                    "style": "man_made" if "man_made" in valid_tags else "poly_other",
-                    "angle": None,
-                })
-        
+                annotations.append(
+                    {
+                        "x": px,
+                        "y": py,
+                        "text": tag,
+                        "type": "poly",
+                        "style": "man_made" if "man_made" in valid_tags else "poly_other",
+                        "angle": None,
+                    }
+                )
+
         # -------- LINES --------
         possible_lines = line_gdf[line_gdf.intersects(bbox_geom)]
         for _, row in possible_lines.iterrows():
             # Filter and collect all valid strings from the specified columns
             valid_tags = [
-                str(row[col]) for col in cols 
-                if col in row and pd.notna(row[col]) and str(row[col]).lower() != "nan"
+                str(row[col]) for col in cols if col in row and pd.notna(row[col]) and str(row[col]).lower() != "nan"
             ]
             # Combine them with a comma
             tag = ", ".join(valid_tags) if valid_tags else None
             # Skip if nothing was found
-            if not tag: continue
+            if not tag:
+                continue
 
             # Geometric clipping can return MultiLineString fragments when a line
             # enters and leaves the tile multiple times.
@@ -350,15 +353,21 @@ def process_bbox(idx, bbox_geom, img_idx, poly_gdf, cols, line_gdf, line_cols, o
             # Label lines at the midpoint of the visible, geometrically clipped segment.
             pt = clipped_line.interpolate(0.5, normalized=True)
             px, py = mercator_to_pixel(pt.x, pt.y, cx, cy, IMAGE_SIZE)
-            
+
             # Use the original geometry for angle so label rotation follows the
             # source feature direction rather than a short clipped fragment.
-            angle = linestring_angle(row.geometry) 
+            angle = linestring_angle(row.geometry)
             if 0 <= px < IMAGE_SIZE[0] and 0 <= py < IMAGE_SIZE[1]:
-                annotations.append({
-                    "x": px, "y": py, "text": tag, "type": "line",
-                    "style": "man_made" if "man_made" in valid_tags else "line", "angle": angle,
-                })
+                annotations.append(
+                    {
+                        "x": px,
+                        "y": py,
+                        "text": tag,
+                        "type": "line",
+                        "style": "man_made" if "man_made" in valid_tags else "line",
+                        "angle": angle,
+                    }
+                )
 
         # -------- DRAW & OUTPUT --------
         image = draw_annotations(image, annotations, fontsize=FONTSIZE)
@@ -374,7 +383,8 @@ def process_bbox(idx, bbox_geom, img_idx, poly_gdf, cols, line_gdf, line_cols, o
     except Exception as e:
         logger.exception("bbox %s failed", idx)
         return idx, 0, str(e)
-    
+
+
 def annotate_bboxes_parallel(bbox_gdf, poly_gdf, cols, line_gdf, line_cols, output_dir, images_dir, files):
     """Dispatch bbox annotation jobs across a thread pool.
 
@@ -398,7 +408,7 @@ def annotate_bboxes_parallel(bbox_gdf, poly_gdf, cols, line_gdf, line_cols, outp
         Unused compatibility parameter retained by the current call signature.
     """
     logger.info("Queued %s bboxes for annotation", len(bbox_gdf))
-    required_cols = {'idx', 'img_idx', 'geometry'}
+    required_cols = {"idx", "img_idx", "geometry"}
     missing_cols = required_cols.difference(bbox_gdf.columns)
     if missing_cols:
         raise KeyError(f"bbox_gdf is missing required columns: {sorted(missing_cols)}")
@@ -410,15 +420,15 @@ def annotate_bboxes_parallel(bbox_gdf, poly_gdf, cols, line_gdf, line_cols, outp
             futures.append(
                 executor.submit(
                     process_bbox,
-                    row['idx'],
+                    row["idx"],
                     row.geometry,
-                    row['img_idx'],
-                    poly_gdf[poly_gdf['grid'] == row['idx']].copy(),
+                    row["img_idx"],
+                    poly_gdf[poly_gdf["grid"] == row["idx"]].copy(),
                     cols,
-                    line_gdf[line_gdf['grid'] == row['idx']].copy(),
+                    line_gdf[line_gdf["grid"] == row["idx"]].copy(),
                     line_cols,
                     output_dir,
-                    images_dir
+                    images_dir,
                 )
             )
 
@@ -438,11 +448,10 @@ def annotate_bboxes_parallel(bbox_gdf, poly_gdf, cols, line_gdf, line_cols, outp
             f"first failure was bbox {first_idx}: {first_err}"
         )
 
+
 if __name__ == "__main__":
     configure_logging()
-    parser = argparse.ArgumentParser(
-        description="Annotate Bing images for a deterministic subset of grids."
-    )
+    parser = argparse.ArgumentParser(description="Annotate Bing images for a deterministic subset of grids.")
     parser.add_argument(
         "instance_id",
         type=int,
@@ -497,27 +506,23 @@ if __name__ == "__main__":
     images_dir = cfg["paths"]["annotations_images_dir"]
     grid_filedir = cfg["paths"]["annotations_grid_dir"]
     temp_parquet_dir = cfg["paths"]["annotations_temp_parquet_dir"]
-    geojson_file_dir = cfg['paths']['annotations_by_osm_dir']
-    file_location_dir = os.path.join(os.path.abspath(os.path.join(grid_filedir, '..')), 'data')
-    
-    poly_filepath = os.path.join(file_location_dir, 'merged_polygons.parquet')
-    line_filepath = os.path.join(file_location_dir, 'merged_lines.parquet')
+    geojson_file_dir = cfg["paths"]["annotations_by_osm_dir"]
+    file_location_dir = os.path.join(os.path.abspath(os.path.join(grid_filedir, "..")), "data")
 
-    points_path = f'{images_dir}/ref.geojson'
-    grids_filepath = os.path.join(grid_filedir, f'grids_{os.path.basename(cfg["paths"]["corrected_all_filepath"])}')
+    poly_filepath = os.path.join(file_location_dir, "merged_polygons.parquet")
+    line_filepath = os.path.join(file_location_dir, "merged_lines.parquet")
+
+    points_path = f"{images_dir}/ref.geojson"
+    grids_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(cfg['paths']['corrected_all_filepath'])}")
 
     bbox_gdf = gpd.read_file(grids_filepath).to_crs(3857)
-    bbox_gdf['idx'] = bbox_gdf['idx'].astype(int)
+    bbox_gdf["idx"] = bbox_gdf["idx"].astype(int)
 
     points_gdf = gpd.read_file(points_path).to_crs(3857)
-    points_gdf['idx'] = points_gdf['idx'].astype(int)
-    points_gdf['img_idx'] = points_gdf.index.astype(int)
+    points_gdf["idx"] = points_gdf["idx"].astype(int)
+    points_gdf["img_idx"] = points_gdf.index.astype(int)
 
-    bbox_gdf = bbox_gdf.merge(
-        points_gdf[['idx', 'img_idx']], 
-        on='idx', 
-        how='inner'
-    )
+    bbox_gdf = bbox_gdf.merge(points_gdf[["idx", "img_idx"]], on="idx", how="inner")
     bbox_gdf = bbox_gdf[bbox_gdf.geometry.is_valid & ~bbox_gdf.geometry.is_empty]
     logger.info("Prepared %s valid bounding boxes", len(bbox_gdf))
     output_dir = cfg["paths"]["annotated_images_output_dir"]
@@ -529,8 +534,8 @@ if __name__ == "__main__":
 
     poly_cols = ["id", "man_made", "landuse", "industrial", "power", "resource"]
     line_cols = ["waterway", "man_made", "landuse", "industrial", "power", "resource", "water", "id"]
-    cols_string = ','.join(poly_cols)
-    line_cols_string = ','.join(line_cols)
+    cols_string = ",".join(poly_cols)
+    line_cols_string = ",".join(line_cols)
 
     # duckdb_connection owns the scratch database for the whole run; the
     # previous randomly-named temp_*.db was never removed.
@@ -538,7 +543,7 @@ if __name__ == "__main__":
         ensure_duckdb_spatial(conn)
         logger.info("DuckDB initialized with SPATIAL extension")
 
-        grids = bbox_gdf['idx'].unique().tolist()
+        grids = bbox_gdf["idx"].unique().tolist()
         logger.info("Found %s total grids", len(grids))
 
         grids = split_grids_for_instance(
@@ -596,7 +601,7 @@ if __name__ == "__main__":
                         select_cols.append(c)
                     else:
                         select_cols.append(f"NULL AS {c}")
-            
+
                 if select_cols:
                     select_clause = ", ".join(select_cols) + ", "
                     poly_queries.append(f"""
@@ -677,8 +682,16 @@ if __name__ == "__main__":
 
             logger.info("Loaded %s line records in current batch", len(line_gdf))
             log_gdf_preview("lines_gdf", line_gdf, ["grid", "geometry"])
-            batch_bbox_gdf = bbox_gdf[bbox_gdf['idx'].isin(sub_grids)].copy()
+            batch_bbox_gdf = bbox_gdf[bbox_gdf["idx"].isin(sub_grids)].copy()
 
-            annotate_bboxes_parallel(batch_bbox_gdf, poly_gdf, ["man_made", "landuse", "industrial", "power", "resource", "water"], line_gdf, ["waterway", "man_made", "landuse", "industrial", "power", "resource", "water"], 
-                            output_dir, images_dir, files)
+            annotate_bboxes_parallel(
+                batch_bbox_gdf,
+                poly_gdf,
+                ["man_made", "landuse", "industrial", "power", "resource", "water"],
+                line_gdf,
+                ["waterway", "man_made", "landuse", "industrial", "power", "resource", "water"],
+                output_dir,
+                images_dir,
+                files,
+            )
         logger.info("Annotation pipeline finished")

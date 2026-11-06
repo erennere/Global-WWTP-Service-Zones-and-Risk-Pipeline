@@ -58,12 +58,35 @@ def add_standard_override_arguments(parser):
     parser.add_argument("--level", default=None, help="Optional config level override")
     parser.add_argument("--version", default=None, help="Optional config version override")
     parser.add_argument("--buffer", default=None, help="Optional config buffer override")
-    parser.add_argument("--weight-method", dest="weight_method", default=None, help="Optional config weight_method override")
-    parser.add_argument("--weight-func", dest="weight_func", default=None, help="Optional config weight_func override: 'mult', 'add', or ''")
-    parser.add_argument("--dynamic-buffering", dest="dynamic_buffering", default=None, help="Optional dynamic buffering override (true/false)")
-    parser.add_argument("--size-measure", dest="size_measure", default=None, help="Optional plant size measure override: 'reported' or 'footprint'")
-    parser.add_argument("--set", dest="sets", action="append", default=None, metavar="SECTION.KEY=VALUE",
-                        help="Change any config value for this run (repeatable), e.g. --set create_voronoi.n_points=200")
+    parser.add_argument(
+        "--weight-method", dest="weight_method", default=None, help="Optional config weight_method override"
+    )
+    parser.add_argument(
+        "--weight-func",
+        dest="weight_func",
+        default=None,
+        help="Optional config weight_func override: 'mult', 'add', or ''",
+    )
+    parser.add_argument(
+        "--dynamic-buffering",
+        dest="dynamic_buffering",
+        default=None,
+        help="Optional dynamic buffering override (true/false)",
+    )
+    parser.add_argument(
+        "--size-measure",
+        dest="size_measure",
+        default=None,
+        help="Optional plant size measure override: 'reported' or 'footprint'",
+    )
+    parser.add_argument(
+        "--set",
+        dest="sets",
+        action="append",
+        default=None,
+        metavar="SECTION.KEY=VALUE",
+        help="Change any config value for this run (repeatable), e.g. --set create_voronoi.n_points=200",
+    )
     return parser
 
 
@@ -74,7 +97,6 @@ class ConfigResolutionError(KeyError):
         self.script_name = script_name
         self.key = key
         super().__init__(message)
-
 
     ################################################################################
     # SECTION 1: CLI OVERRIDE NORMALIZATION & PARSING
@@ -98,6 +120,7 @@ def _normalize_optional_cli_value(value, preserve_empty=False):
         return normalized
     return value
 
+
 def _parse_optional_int(value, field_name):
     """Parse optional integer overrides."""
     value = _normalize_optional_cli_value(value)
@@ -107,6 +130,7 @@ def _parse_optional_int(value, field_name):
         return int(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid {field_name} '{value}'. Must be an integer.") from exc
+
 
 def _parse_optional_weight_func(value, field_name="weight_func"):
     """Parse optional weight function mode override."""
@@ -118,10 +142,12 @@ def _parse_optional_weight_func(value, field_name="weight_func"):
         return normalized
     raise ValueError(f"Invalid {field_name} '{value}'. Must be one of: mult, add, ''.")
 
+
 def _normalize_weight_func(value, field_name="weight_func"):
     """Return a normalized weight function token, defaulting missing values to ''."""
     normalized = _parse_optional_weight_func(value, field_name)
     return "" if normalized is None else normalized
+
 
 def _parse_optional_bool(value, field_name):
     """Parse optional boolean overrides from common truthy/falsey strings."""
@@ -138,6 +164,7 @@ def _parse_optional_bool(value, field_name):
         return False
     raise ValueError(f"Invalid {field_name} '{value}'. Must be a boolean value.")
 
+
 def _parse_optional_size_measure(value, field_name="size_measure"):
     """Parse an optional size-measure override ('reported' or 'footprint')."""
     value = _normalize_optional_cli_value(value)
@@ -146,6 +173,7 @@ def _parse_optional_size_measure(value, field_name="size_measure"):
     if value not in SIZE_MEASURE_TOKENS:
         raise ValueError(f"Invalid {field_name} '{value}'. Must be one of {sorted(SIZE_MEASURE_TOKENS)}.")
     return value
+
 
 def _collect_raw_overrides(args: Any = None, argv: list[str] | None = None):
     argv_values: list[str] = list(sys.argv) if argv is None else list(argv)
@@ -455,9 +483,7 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
     if "weight_func" in cfg:
         derived["weight_func_suffix"] = {"mult": "_mult", "add": "_add", "": ""}[cfg["weight_func"]]
         derived["distance_fn"] = (
-            default_distance_multiplicative
-            if cfg["weight_func"] in {"", "mult"}
-            else default_distance_additive
+            default_distance_multiplicative if cfg["weight_func"] in {"", "mult"} else default_distance_additive
         )
 
     if "buffer" in cfg and "dynamic_buffering" in cfg:
@@ -466,8 +492,16 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         else:
             derived["buffer_path_token"] = str(int(cfg["buffer"]))
 
-    calculate_buffer_keys = {"buffer", "dynamic_buffering", "max_buffer", "size_measure", "footprint_to_people",
-                             "reported_size_columns", "reported_size_skip", "radius_calibration"}
+    calculate_buffer_keys = {
+        "buffer",
+        "dynamic_buffering",
+        "max_buffer",
+        "size_measure",
+        "footprint_to_people",
+        "reported_size_columns",
+        "reported_size_skip",
+        "radius_calibration",
+    }
     if calculate_buffer_keys.issubset(cfg):
         kwargs = {
             "buffer": cfg["buffer"],
@@ -476,18 +510,22 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         }
         if cfg["size_measure"] is not None:
             # The plant size is needed by the radius and by weight_method 'size'.
-            kwargs.update({
-                "size_measure": cfg["size_measure"],
-                "footprint_to_people": dict(cfg["footprint_to_people"]),
-                "reported_size_columns": list(cfg["reported_size_columns"]),
-                "reported_size_skip": dict(cfg["reported_size_skip"]),
-            })
+            kwargs.update(
+                {
+                    "size_measure": cfg["size_measure"],
+                    "footprint_to_people": dict(cfg["footprint_to_people"]),
+                    "reported_size_columns": list(cfg["reported_size_columns"]),
+                    "reported_size_skip": dict(cfg["reported_size_skip"]),
+                }
+            )
         if cfg["dynamic_buffering"]:
             row = cfg["radius_calibration"][cfg["size_measure"]]
-            kwargs.update({
-                "radius_exponent": float(row["radius_exponent"]),
-                "radius_at_10k_people_km": float(row["radius_at_10k_people_km"]),
-            })
+            kwargs.update(
+                {
+                    "radius_exponent": float(row["radius_exponent"]),
+                    "radius_at_10k_people_km": float(row["radius_at_10k_people_km"]),
+                }
+            )
         derived["calculate_buffer_kwargs"] = kwargs
 
     return derived

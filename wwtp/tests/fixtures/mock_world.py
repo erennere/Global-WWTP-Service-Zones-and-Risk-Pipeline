@@ -23,6 +23,7 @@ Usage::
     from wwtp.tests.fixtures.mock_world import build_mock_world
     paths = build_mock_world("/tmp/mock/data", seed=0)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -84,8 +85,10 @@ def _ensure_dir(path):
 
 
 def make_countries():
-    rows = [{"country": iso2, "ISO_2": iso2, "subtype": "country",
-             "geometry": box(lon0, LAT_MIN, lon1, LAT_MAX)} for iso2, (_, lon0, lon1) in COUNTRIES.items()]
+    rows = [
+        {"country": iso2, "ISO_2": iso2, "subtype": "country", "geometry": box(lon0, LAT_MIN, lon1, LAT_MAX)}
+        for iso2, (_, lon0, lon1) in COUNTRIES.items()
+    ]
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
 
 
@@ -94,10 +97,14 @@ def make_basins():
     hid = 2080000001
     for j in range(len(BASIN_LAT_EDGES) - 1):
         for i in range(len(BASIN_LON_EDGES) - 1):
-            rows.append({
-                "HYBAS_ID": hid,
-                "geometry": box(BASIN_LON_EDGES[i], BASIN_LAT_EDGES[j], BASIN_LON_EDGES[i + 1], BASIN_LAT_EDGES[j + 1]),
-            })
+            rows.append(
+                {
+                    "HYBAS_ID": hid,
+                    "geometry": box(
+                        BASIN_LON_EDGES[i], BASIN_LAT_EDGES[j], BASIN_LON_EDGES[i + 1], BASIN_LAT_EDGES[j + 1]
+                    ),
+                }
+            )
             hid += 1
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
 
@@ -129,27 +136,35 @@ def make_sites(rng, towns):
             is_new = rng.random() < 0.15
             served = float(pop / n_plants * rng.uniform(0.6, 1.0))
             d1, d2 = rng.integers(8, 45, 2)
-            rows.append({
-                "WASTE_ID": np.nan if is_new else float(waste_id),
-                "POP_SERVED": np.nan if is_new else round(served),
-                "QUAL_POP": np.nan if is_new else float(rng.choice([1, 1, 1, 2])),
-                "category_number": int(category),
-                "diameters": f"[{d1}, {d2}]",
-                "wwtp_area_rect": f"[{rng.integers(20, 200)} {rng.integers(20, 150)}]",
-                "num_detection_rect": int(rng.integers(0, 4)),
-                "num_detection_circle": int(rng.integers(0, 3)),
-                "ISO_2": _country_of(plon),
-                "geometry": Point(plon, plat),
-            })
+            rows.append(
+                {
+                    "WASTE_ID": np.nan if is_new else float(waste_id),
+                    "POP_SERVED": np.nan if is_new else round(served),
+                    "QUAL_POP": np.nan if is_new else float(rng.choice([1, 1, 1, 2])),
+                    "category_number": int(category),
+                    "diameters": f"[{d1}, {d2}]",
+                    "wwtp_area_rect": f"[{rng.integers(20, 200)} {rng.integers(20, 150)}]",
+                    "num_detection_rect": int(rng.integers(0, 4)),
+                    "num_detection_circle": int(rng.integers(0, 3)),
+                    "ISO_2": _country_of(plon),
+                    "geometry": Point(plon, plat),
+                }
+            )
             waste_id += 1
     # Duplicates: the same plant from a second source, 150-350 m away, no ID
     for idx in rng.choice(len(rows), 4, replace=False):
         src = rows[idx]
         dlon, dlat = _offset(src["geometry"].x, src["geometry"].y, rng.uniform(0.1, 0.25), rng.uniform(0.1, 0.25))
         dup = dict(src)
-        dup.update({"WASTE_ID": np.nan, "QUAL_POP": np.nan,
-                    "POP_SERVED": src["POP_SERVED"] if pd.notna(src["POP_SERVED"]) else 5000.0,
-                    "ISO_2": _country_of(dlon), "geometry": Point(dlon, dlat)})
+        dup.update(
+            {
+                "WASTE_ID": np.nan,
+                "QUAL_POP": np.nan,
+                "POP_SERVED": src["POP_SERVED"] if pd.notna(src["POP_SERVED"]) else 5000.0,
+                "ISO_2": _country_of(dlon),
+                "geometry": Point(dlon, dlat),
+            }
+        )
         rows.append(dup)
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
 
@@ -168,9 +183,9 @@ def make_population(rng, towns, iso2):
         sigma_km = 1.0 + 1.5 * np.log10(tpop / 1000.0)
         dx = (glon - tlon) * _km_per_deg_lon(tlat)
         dy = (glat - tlat) * KM_PER_DEG_LAT
-        density = np.exp(-(dx ** 2 + dy ** 2) / (2 * sigma_km ** 2)) / (2 * np.pi * sigma_km ** 2)
+        density = np.exp(-(dx**2 + dy**2) / (2 * sigma_km**2)) / (2 * np.pi * sigma_km**2)
         pop += tpop * density * cell_km2
-    lake = ((glon - (lon0 + 0.4)) ** 2 / 0.03 ** 2 + (glat - 49.3) ** 2 / 0.02 ** 2) < 1
+    lake = ((glon - (lon0 + 0.4)) ** 2 / 0.03**2 + (glat - 49.3) ** 2 / 0.02**2) < 1
     layers = {}
     for year in YEARS:
         grown = pop * (1.0 + 0.008 * (year - YEARS[0]))
@@ -186,8 +201,16 @@ def make_urban_areas(towns):
         radius_km = 1.0 + np.log10(pop / 1000.0)
         circle = Point(0, 0).buffer(radius_km, quad_segs=16)
         coords = [_offset(lon, lat, x, y) for x, y in circle.exterior.coords]
-        rows.append({"ID_UC_G0": k + 1, "GC_UCN_MAI_2025": f"Town {k + 1}", "GC_POP_TOT_2025": pop,
-                     "geometry": gpd.GeoSeries.from_xy([c[0] for c in coords], [c[1] for c in coords]).union_all().convex_hull})
+        rows.append(
+            {
+                "ID_UC_G0": k + 1,
+                "GC_UCN_MAI_2025": f"Town {k + 1}",
+                "GC_POP_TOT_2025": pop,
+                "geometry": gpd.GeoSeries.from_xy([c[0] for c in coords], [c[1] for c in coords])
+                .union_all()
+                .convex_hull,
+            }
+        )
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
 
 
@@ -210,9 +233,16 @@ def make_rivers(rng):
             next_id += 1
         for k in range(n):
             q = q_start + (q_end - q_start) * (k + 1) / n
-            rows.append({"HYRIV_ID": ids[k], "NEXT_DOWN": ids[k + 1] if k + 1 < n else down_id,
-                         "DIS_AV_CMS": round(float(q), 3), "ORD_STRA": 3 if q > 2 else 2,
-                         "LENGTH_KM": None, "geometry": LineString([points[k], points[k + 1]])})
+            rows.append(
+                {
+                    "HYRIV_ID": ids[k],
+                    "NEXT_DOWN": ids[k + 1] if k + 1 < n else down_id,
+                    "DIS_AV_CMS": round(float(q), 3),
+                    "ORD_STRA": 3 if q > 2 else 2,
+                    "LENGTH_KM": None,
+                    "geometry": LineString([points[k], points[k + 1]]),
+                }
+            )
         return ids
 
     for lat in (49.25, 49.75):
@@ -243,8 +273,13 @@ def make_eu_reference(rng, sites):
     rows = []
     for _, row in chosen.iterrows():
         lon, lat = _offset(row.geometry.x, row.geometry.y, rng.normal(0, 0.15), rng.normal(0, 0.15))
-        rows.append({"uwwCode": f"EU{int(row['WASTE_ID'])}", "uwwCapacity": float(row["POP_SERVED"] * rng.uniform(0.9, 1.6)),
-                     "geometry": Point(lon, lat)})
+        rows.append(
+            {
+                "uwwCode": f"EU{int(row['WASTE_ID'])}",
+                "uwwCapacity": float(row["POP_SERVED"] * rng.uniform(0.9, 1.6)),
+                "geometry": Point(lon, lat),
+            }
+        )
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
 
 
@@ -262,7 +297,9 @@ def make_industrial_land(rng, sites):
         w, h = rng.uniform(0.3, 1.5, 2)
         x0, y0 = _offset(lon, lat, -w / 2, -h / 2)
         x1, y1 = _offset(lon, lat, w / 2, h / 2)
-        rows.append({"industrial_id": len(rows) + 1, "num_cells": int(rng.integers(100, 400)), "geometry": box(x0, y0, x1, y1)})
+        rows.append(
+            {"industrial_id": len(rows) + 1, "num_cells": int(rng.integers(100, 400)), "geometry": box(x0, y0, x1, y1)}
+        )
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
 
 
@@ -285,8 +322,9 @@ def build_mock_world(data_dir, seed=0, paths=None, level=None):
     out = {key: os.path.join(os.path.abspath(data_dir), value) for key, value in rel.items()}
 
     countries = make_countries()
-    countries_wkb = pd.DataFrame({"country": countries["country"], "subtype": countries["subtype"],
-                                  "geometry": countries.geometry.to_wkb()})
+    countries_wkb = pd.DataFrame(
+        {"country": countries["country"], "subtype": countries["subtype"], "geometry": countries.geometry.to_wkb()}
+    )
     countries_wkb.to_parquet(_ensure_dir(out["overture"]), index=False)
 
     make_basins().to_file(_ensure_dir(out["watershed"]), driver="GPKG")
@@ -298,14 +336,25 @@ def build_mock_world(data_dir, seed=0, paths=None, level=None):
     hw = sites[sites["WASTE_ID"].notna()].copy()
     hw["LON_WWTP"], hw["LAT_WWTP"] = hw.geometry.x, hw.geometry.y
     pd.DataFrame(hw.drop(columns="geometry")).assign(geometry=hw.geometry.to_wkt()).to_csv(
-        _ensure_dir(out["hydrowaste"]), index=False)
+        _ensure_dir(out["hydrowaste"]), index=False
+    )
 
     for iso2, (iso3, _, _) in COUNTRIES.items():
         layers, transform = make_population(rng, towns, iso2)
         for year, data in layers.items():
             path = _ensure_dir(os.path.join(out["pop_tif_dir"], iso3, f"{iso3}_pop_{year}_CN_100m_R2024B_v1.tif"))
-            with rasterio.open(path, "w", driver="GTiff", height=data.shape[0], width=data.shape[1], count=1,
-                               dtype="float32", crs=CRS, transform=transform, nodata=NODATA) as dst:
+            with rasterio.open(
+                path,
+                "w",
+                driver="GTiff",
+                height=data.shape[0],
+                width=data.shape[1],
+                count=1,
+                dtype="float32",
+                crs=CRS,
+                transform=transform,
+                nodata=NODATA,
+            ) as dst:
                 dst.write(data, 1)
 
     make_urban_areas(towns).to_file(_ensure_dir(out["urban_areas_filepath"]), driver="GPKG")

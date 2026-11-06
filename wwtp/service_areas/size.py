@@ -2,6 +2,7 @@
 
 Part of the service-area stage (``python -m wwtp.create_voronoi``).
 """
+
 import logging
 import numpy as np
 import pandas as pd
@@ -13,18 +14,18 @@ logger = logging.getLogger(__name__)
 def calculate_area(df, only_round=False):
     """
     Calculate Voronoi region areas from assigned points.
-    
+
     Computes area (in m²) for each Voronoi region based on point assignments.
     Optionally rounds values before calculating to handle overlapping regions.
-    
+
     Args:
         df (pd.GeoDataFrame): Points with 'geometry' (Point), 'weight', and a site ID column
         only_round (bool): Round weight values before area calculation (default False)
-        
+
     Returns:
         pd.DataFrame: The provided input dataframe with area-derived columns,
         including ``base_values`` required by ``create_weights``.
-        
+
     Notes:
         Assumes 1 point per cell in Voronoi grid
         Area = point_count × cell_size (depends on Voronoi grid resolution)
@@ -35,57 +36,59 @@ def calculate_area(df, only_round=False):
         logger.warning("Input dataframe is empty, returning as-is")
         return df
     logger.debug(f"Calculating area for {len(df)} WWTP facilities")
-    if 'wwtp_area_rect' in df:
-        df['wwtp_area_rect_2'] = df['wwtp_area_rect'].apply(
-            lambda x: np.sum([
-                float(i) for i in str(x).strip().strip('[]').split()
-                if i and i.lower() != 'none'
-            ]) if pd.notnull(x) else 0)
-        df['round_area'] = df['diameters'].apply(parse_diameters_to_round_area)
+    if "wwtp_area_rect" in df:
+        df["wwtp_area_rect_2"] = df["wwtp_area_rect"].apply(
+            lambda x: (
+                np.sum([float(i) for i in str(x).strip().strip("[]").split() if i and i.lower() != "none"])
+                if pd.notnull(x)
+                else 0
+            )
+        )
+        df["round_area"] = df["diameters"].apply(parse_diameters_to_round_area)
         # The service radius is calibrated on the full detected footprint, so it
         # does not change with only_round (which only affects the weights).
-        df['footprint_m2'] = df['round_area'] + df['wwtp_area_rect_2']
+        df["footprint_m2"] = df["round_area"] + df["wwtp_area_rect_2"]
         if only_round:
-            df['total_area'] = df['round_area']
+            df["total_area"] = df["round_area"]
             logger.debug(f"Using round areas only for {len(df)} facilities")
         else:
-            df['total_area'] = df['footprint_m2']
+            df["total_area"] = df["footprint_m2"]
             logger.debug(f"Combined round + building areas for {len(df)} facilities")
     else:
         logger.warning("No 'wwtp_area_rect' column found, using default area=1")
-        df['total_area'] = 1
-        df['footprint_m2'] = 0.0
+        df["total_area"] = 1
+        df["footprint_m2"] = 0.0
 
     # Build detection-derived capacity proxy once so downstream weighting
     # logic can reuse these fields without recomputing.
     rect_counts = pd.to_numeric(
-        df.get('num_detection_rect', pd.Series(0, index=df.index)),
-        errors='coerce',
+        df.get("num_detection_rect", pd.Series(0, index=df.index)),
+        errors="coerce",
     ).fillna(0)
     circle_counts = pd.to_numeric(
-        df.get('num_detection_circle', pd.Series(0, index=df.index)),
-        errors='coerce',
+        df.get("num_detection_circle", pd.Series(0, index=df.index)),
+        errors="coerce",
     ).fillna(0)
     num_detections = (rect_counts.astype(int) + circle_counts.astype(int)).clip(lower=0)
-    df['num_detections'] = num_detections
-    df['capacity_proxy'] = df['total_area'] * np.sqrt(df['num_detections'])
-    fallback_mean = df['capacity_proxy'].mean()
-    df['base_values'] = df['capacity_proxy'].replace(0.0, np.nan).fillna(fallback_mean)
+    df["num_detections"] = num_detections
+    df["capacity_proxy"] = df["total_area"] * np.sqrt(df["num_detections"])
+    fallback_mean = df["capacity_proxy"].mean()
+    df["base_values"] = df["capacity_proxy"].replace(0.0, np.nan).fillna(fallback_mean)
 
     return df
 
 
-LAGOON_COLUMN = 'lagoon_detected'
+LAGOON_COLUMN = "lagoon_detected"
 
 
-SIZE_MEASURES = ('reported', 'footprint')
+SIZE_MEASURES = ("reported", "footprint")
 
 
 _WARNED_MISSING_SIZE_COLUMNS = set()  # warn once per process, not once per basin group
 
 
 def _truthy(series):
-    return series.astype(str).str.strip().str.lower().isin({'true', '1', '1.0', 'yes'})
+    return series.astype(str).str.strip().str.lower().isin({"true", "1", "1.0", "yes"})
 
 
 def reported_size_people(df, columns, skip_quality):
@@ -111,12 +114,14 @@ def reported_size_people(df, columns, skip_quality):
     for column in columns:
         if column not in df.columns and column not in _WARNED_MISSING_SIZE_COLUMNS:
             _WARNED_MISSING_SIZE_COLUMNS.add(column)
-            logger.warning("Reported size column %r is not in the plant data; those plants use the footprint estimate", column)
-    values = {column: pd.to_numeric(df[column], errors='coerce') for column in columns if column in df.columns}
+            logger.warning(
+                "Reported size column %r is not in the plant data; those plants use the footprint estimate", column
+            )
+    values = {column: pd.to_numeric(df[column], errors="coerce") for column in columns if column in df.columns}
     for column, rules in skip_quality.items():
         for quality_column, codes in rules.items():
             if column in values and quality_column in df.columns:
-                quality = pd.to_numeric(df[quality_column], errors='coerce')
+                quality = pd.to_numeric(df[quality_column], errors="coerce")
                 values[column] = values[column].where(~quality.isin([float(c) for c in codes]))
     out = pd.Series(np.nan, index=df.index, dtype=float)
     for column in columns:
@@ -151,10 +156,10 @@ def plant_size_people(df, size_measure, footprint_to_people, reported_size_colum
     """
     if size_measure not in SIZE_MEASURES:
         raise ValueError(f"size_measure must be one of {SIZE_MEASURES}, got {size_measure!r}")
-    if 'footprint_m2' in df.columns:
-        footprint = pd.to_numeric(df['footprint_m2'], errors='coerce')
-    elif 'total_area' in df.columns:
-        footprint = pd.to_numeric(df['total_area'], errors='coerce')
+    if "footprint_m2" in df.columns:
+        footprint = pd.to_numeric(df["footprint_m2"], errors="coerce")
+    elif "total_area" in df.columns:
+        footprint = pd.to_numeric(df["total_area"], errors="coerce")
     else:
         footprint = pd.Series(0.0, index=df.index)
     footprint = np.nan_to_num(footprint.to_numpy(dtype=float), nan=0.0)
@@ -162,11 +167,14 @@ def plant_size_people(df, size_measure, footprint_to_people, reported_size_colum
     sized = (footprint > 0) & ~lagoon
     people = np.where(
         sized,
-        np.power(10.0, float(footprint_to_people['intercept'])
-                 + float(footprint_to_people['slope']) * np.log10(np.where(sized, footprint, 1.0))),
-        float(footprint_to_people['unsized_people']),
+        np.power(
+            10.0,
+            float(footprint_to_people["intercept"])
+            + float(footprint_to_people["slope"]) * np.log10(np.where(sized, footprint, 1.0)),
+        ),
+        float(footprint_to_people["unsized_people"]),
     )
-    if size_measure == 'reported':
+    if size_measure == "reported":
         reported = reported_size_people(df, reported_size_columns, reported_size_skip)
         people = np.where(np.isfinite(reported), reported, people)
     return people
@@ -208,12 +216,17 @@ def calculate_buffer(df, weights, *args, **kwargs):
     population in EPA sourced sewersheds (``wwtp.calibration.service_radius``);
     the GB catchments are the independent test.
     """
-    max_buffer = kwargs['max_buffer']
-    if not kwargs['dynamic_buffering']:
-        fixed = float(min(kwargs['buffer'], max_buffer))
+    max_buffer = kwargs["max_buffer"]
+    if not kwargs["dynamic_buffering"]:
+        fixed = float(min(kwargs["buffer"], max_buffer))
         return np.full(len(df), fixed, dtype=float)
     people = plant_size_people(df, **kwargs)
-    radius = service_radius_m(people, kwargs['radius_at_10k_people_km'], kwargs['radius_exponent'], max_buffer)
-    logger.debug("Service radius %.0f-%.0f m (median %.0f m) for %d sites",
-                 radius.min(), radius.max(), np.median(radius), len(df))
+    radius = service_radius_m(people, kwargs["radius_at_10k_people_km"], kwargs["radius_exponent"], max_buffer)
+    logger.debug(
+        "Service radius %.0f-%.0f m (median %.0f m) for %d sites",
+        radius.min(),
+        radius.max(),
+        np.median(radius),
+        len(df),
+    )
     return radius

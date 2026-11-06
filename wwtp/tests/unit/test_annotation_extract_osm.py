@@ -1,4 +1,5 @@
 """Tests for annotation_extract_osm (moved from the coverage-campaign files)."""
+
 import json
 import geopandas as gpd
 import pytest
@@ -111,8 +112,14 @@ def test_row_operation_skips_none_bbox_and_writes_outputs(monkeypatch, tmp_path)
         osm_extract,
         "elements_to_gdf",
         lambda data: (
-            gpd.GeoDataFrame({"x": [1], "geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:4326"),
-            gpd.GeoDataFrame({"y": [1], "geometry": [Polygon([(0, 0), (1, 0), (0, 1), (0, 0)])]}, geometry="geometry", crs="EPSG:4326"),
+            gpd.GeoDataFrame(
+                {"x": [1], "geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:4326"
+            ),
+            gpd.GeoDataFrame(
+                {"y": [1], "geometry": [Polygon([(0, 0), (1, 0), (0, 1), (0, 0)])]},
+                geometry="geometry",
+                crs="EPSG:4326",
+            ),
         ),
     )
     monkeypatch.setattr(osm_extract, "clean_columns", lambda gdf: gdf)

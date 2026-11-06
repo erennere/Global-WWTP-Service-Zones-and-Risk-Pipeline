@@ -1,4 +1,5 @@
 """Tests for annotation_generate_grids (moved from the coverage-campaign files)."""
+
 import geopandas as gpd
 import pytest
 from shapely.geometry import LineString, Point

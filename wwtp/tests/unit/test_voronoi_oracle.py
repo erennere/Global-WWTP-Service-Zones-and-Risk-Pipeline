@@ -6,6 +6,7 @@
 - invariance: translating every site translates every cell
 - duplicates: merging records of one plant never increases POP_SERVED
 """
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -21,7 +22,9 @@ pytestmark = pytest.mark.unit
 
 UTM = 32632
 STEP = 100.0  # grid step (m); the solver's resolution
-FAR = dict(buffer=9000, dynamic_buffering=False, max_buffer=1_000_000)  # no circle (buffering off); 9 km sets the grid extent
+FAR = dict(
+    buffer=9000, dynamic_buffering=False, max_buffer=1_000_000
+)  # no circle (buffering off); 9 km sets the grid extent
 
 
 def _sites(xy, **cols):
@@ -33,8 +36,17 @@ def _sites(xy, **cols):
 def _solve(sites, clip, scale_weights=False, size_kwargs=None, size_weights=False):
     kwargs = dict(FAR, **(size_kwargs or {}))
     clipping = gpd.GeoDataFrame(geometry=[clip], crs=UTM)
-    regions, _ = sa.weighted_voronoi(sites, "WASTE_ID", None, scale_weights=scale_weights, clipping=clipping,
-                                     n_points=STEP, buffer_fn_kwargs=kwargs, threshold=1.0, size_weights=size_weights)
+    regions, _ = sa.weighted_voronoi(
+        sites,
+        "WASTE_ID",
+        None,
+        scale_weights=scale_weights,
+        clipping=clipping,
+        n_points=STEP,
+        buffer_fn_kwargs=kwargs,
+        threshold=1.0,
+        size_weights=size_weights,
+    )
     return regions.to_crs(UTM).set_index("WASTE_ID").geometry
 
 
@@ -60,7 +72,7 @@ def test_two_weighted_sites_meet_on_the_apollonius_circle():
     clip = box(-20_000, -20_000, 30_000, 20_000)
     cells = _solve(sites, clip, scale_weights=True)
     D = x2 - x1
-    centre, radius = x2 + D / (k ** 2 - 1), k * D / (k ** 2 - 1)
+    centre, radius = x2 + D / (k**2 - 1), k * D / (k**2 - 1)
     circle = Point(centre, 0).buffer(radius, 256)
     assert _iou(cells[2], circle) > 0.95
     assert cells[1].contains(Point(centre - radius - 2 * STEP, 0))  # just outside the circle, toward site 1
@@ -94,8 +106,10 @@ def test_translating_every_site_translates_every_cell(dx, dy):
 
 
 @settings(max_examples=40, deadline=None)
-@given(pops=st.lists(st.one_of(st.none(), st.integers(0, 10_000_000)), min_size=1, max_size=5),
-       offsets=st.lists(st.floats(0, 400), min_size=5, max_size=5))
+@given(
+    pops=st.lists(st.one_of(st.none(), st.integers(0, 10_000_000)), min_size=1, max_size=5),
+    offsets=st.lists(st.floats(0, 400), min_size=5, max_size=5),
+)
 def test_merging_duplicate_records_never_increases_pop_served(pops, offsets):
     xy = [(offsets[i], 0.0) for i in range(len(pops))]  # all within the 500 m threshold
     df = _sites(xy, POP_SERVED=[np.nan if p is None else float(p) for p in pops])
@@ -110,8 +124,12 @@ def test_merging_duplicate_records_never_increases_pop_served(pops, offsets):
 
 def test_size_weights_follow_people_not_footprint():
     """Two plants with equal footprint: the one with 100x the reported people gets the larger cell."""
-    size = dict(size_measure="reported", footprint_to_people={"intercept": 1.5, "slope": 0.7, "unsized_people": 2500},
-                reported_size_columns=["POP_SERVED"], reported_size_skip={})
+    size = dict(
+        size_measure="reported",
+        footprint_to_people={"intercept": 1.5, "slope": 0.7, "unsized_people": 2500},
+        reported_size_columns=["POP_SERVED"],
+        reported_size_skip={},
+    )
     sites = _sites([(0, 0), (10_000, 0)], POP_SERVED=[1_000_000, 10_000], footprint_m2=[20_000, 20_000])
     clip = box(-15_000, -15_000, 25_000, 15_000)
     cells = _solve(sites, clip, scale_weights=True, size_kwargs=size, size_weights=True)
@@ -127,8 +145,9 @@ def test_scaling_every_site_and_the_grid_scales_every_cell(factor):
     sites = _sites([(x * factor, y * factor) for x, y in xy])
     clipping = gpd.GeoDataFrame(geometry=[shapely.affinity.scale(clip, factor, factor, origin=(0, 0))], crs=UTM)
     kwargs = dict(FAR, buffer=FAR["buffer"] * factor)
-    scaled, _ = sa.weighted_voronoi(sites, "WASTE_ID", None, clipping=clipping, n_points=STEP * factor,
-                                    buffer_fn_kwargs=kwargs, threshold=1.0)
+    scaled, _ = sa.weighted_voronoi(
+        sites, "WASTE_ID", None, clipping=clipping, n_points=STEP * factor, buffer_fn_kwargs=kwargs, threshold=1.0
+    )
     scaled = scaled.to_crs(UTM).set_index("WASTE_ID").geometry
     for i in base.index:
         assert _iou(shapely.affinity.scale(base[i], factor, factor, origin=(0, 0)), scaled[i]) > 0.99

@@ -1,4 +1,5 @@
 """Tests for download_pop (moved from the coverage-campaign files)."""
+
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -12,6 +13,7 @@ import sys
 import types
 import tempfile
 from unittest.mock import patch, MagicMock
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
@@ -65,7 +67,11 @@ def test_download_file_and_unzip_dispatch(monkeypatch, tmp_path):
     assert download_pop.download_file("http://x", str(out)) is True
     assert out.exists()
 
-    monkeypatch.setattr(download_pop, "download_save_and_unzip_pop", lambda url, country, data_dir: str(tmp_path) if "ok" in url else None)
+    monkeypatch.setattr(
+        download_pop,
+        "download_save_and_unzip_pop",
+        lambda url, country, data_dir: str(tmp_path) if "ok" in url else None,
+    )
     result = download_pop.download_save_and_unzip_pops({"deu": ["bad", "ok"]}, "deu", data_dir=str(tmp_path))
     assert result == str(tmp_path)
 
@@ -145,7 +151,11 @@ def test_download_pop_process_all_and_main(monkeypatch, tmp_path):
     monkeypatch.setattr(dp, "tqdm", lambda x, total=None, desc=None: x)
 
     calls = []
-    monkeypatch.setattr(dp, "process_single_country", lambda country_urls, country, res, data_dir: calls.append((country, res, data_dir)))
+    monkeypatch.setattr(
+        dp,
+        "process_single_country",
+        lambda country_urls, country, res, data_dir: calls.append((country, res, data_dir)),
+    )
 
     urls = {"deu": ["u1"], "fra": ["u2"]}
     dp.process_all_countries(urls, res=120, max_workers=2, data_dir=str(tmp_path))
@@ -166,7 +176,11 @@ def test_download_pop_process_all_and_main(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(dp, "get_urls", lambda **kwargs: {"a": ["u"], "b": ["u"], "c": ["u"], "d": ["u"]})
-    monkeypatch.setattr(dp, "process_all_countries", lambda country_urls, res, max_workers, data_dir: calls.append((len(country_urls), res, max_workers, data_dir)))
+    monkeypatch.setattr(
+        dp,
+        "process_all_countries",
+        lambda country_urls, res, max_workers, data_dir: calls.append((len(country_urls), res, max_workers, data_dir)),
+    )
 
     # country_limit=0 means "no limit" - all four countries are processed.
     # (YAML cannot express a literal null here, so 0 is the sentinel.)
@@ -257,7 +271,9 @@ def test_download_pop_process_single_country_and_pool_branches(monkeypatch, tmp_
     monkeypatch.setattr(dp, "find_files", lambda folder: ([str(tmp_path / "a.csv")], False))
     monkeypatch.setattr(dp.pd, "read_csv", lambda path: pd.DataFrame({"lat": [0], "lon": [0], "pop": [1]}))
     monkeypatch.setattr(dp, "rasterize_csv", lambda df, output_path, res=30: None)
-    monkeypatch.setattr(dp.os.path, "exists", lambda p: True if str(p).endswith("merged") or "rasterized" in str(p) else False)
+    monkeypatch.setattr(
+        dp.os.path, "exists", lambda p: True if str(p).endswith("merged") or "rasterized" in str(p) else False
+    )
     monkeypatch.setattr(dp.os, "makedirs", lambda *args, **kwargs: None)
     monkeypatch.setattr(dp, "mosaic_large_rasters", lambda *args, **kwargs: None)
     dp.process_single_country(country_urls, "deu", data_dir=str(tmp_path))
@@ -346,8 +362,12 @@ def test_mosaic_large_rasters_places_tiles_side_by_side(tmp_path):
 
     def write_tile(path, x_origin, fill):
         profile = {
-            "driver": "GTiff", "height": 3, "width": 5, "count": 1,
-            "dtype": "float32", "crs": "EPSG:32632",
+            "driver": "GTiff",
+            "height": 3,
+            "width": 5,
+            "count": 1,
+            "dtype": "float32",
+            "crs": "EPSG:32632",
             "transform": from_origin(x_origin, 3, 1, 1),
         }
         with rasterio.open(path, "w", **profile) as dst:
@@ -375,9 +395,13 @@ class TestRasterizeCsv:
         import rasterio
 
         cell = 30 / dp.METRES_PER_DEGREE_LAT
-        df = pd.DataFrame({"latitude": [50.0, 50.0 + cell * 0.2, 50.0 + 3 * cell, 49.9],
-                           "longitude": [8.0, 8.0, 8.0 + 2 * cell, 8.1],
-                           "population": [1.5, 2.25, 4.0, 10.0]})
+        df = pd.DataFrame(
+            {
+                "latitude": [50.0, 50.0 + cell * 0.2, 50.0 + 3 * cell, 49.9],
+                "longitude": [8.0, 8.0, 8.0 + 2 * cell, 8.1],
+                "population": [1.5, 2.25, 4.0, 10.0],
+            }
+        )
         out = dp.rasterize_csv(df.copy(), str(tmp_path / "pop.tif"), res=30)
         with rasterio.open(out) as src:
             data = src.read(1).astype(float)
@@ -398,10 +422,10 @@ class TestDownloadPopUrlDiscovery:
     def test_get_iso_codes_returns_dicts(self):
         """Test get_iso_codes returns complete lookups."""
         result = dp.get_iso_codes()
-        
+
         assert len(result) == 4
         alpha_3_to_2, alpha_2_to_3, alpha_3_to_names, alpha_2_to_names = result
-        
+
         assert isinstance(alpha_3_to_2, dict)
         assert isinstance(alpha_2_to_3, dict)
         assert len(alpha_3_to_2) > 0
@@ -411,9 +435,9 @@ class TestDownloadPopUrlDiscovery:
         """Test regex extraction with valid pattern."""
         test_string = "filename_2024_USA.zip"
         pattern = r"(\w+)\.zip"
-        
+
         result = dp.extract_first_wildcard(test_string, pattern)
-        
+
         assert result is not None
         assert "USA" in result or "2024_USA" in result
 
@@ -421,18 +445,18 @@ class TestDownloadPopUrlDiscovery:
         """Test regex extraction with no match."""
         test_string = "filename_no_match"
         pattern = r"_(\d{4})_"
-        
+
         result = dp.extract_first_wildcard(test_string, pattern)
-        
+
         assert result is None
 
     def test_extract_first_wildcard_multiple_groups(self):
         """Test that only first group is extracted."""
         test_string = "data_2024_03_USA"
         pattern = r"_(\d{4})_(\d{2})_"
-        
+
         result = dp.extract_first_wildcard(test_string, pattern)
-        
+
         assert result == "2024"  # Only first capture group
 
     def test_try_extract_country_multiple_patterns(self):
@@ -442,26 +466,26 @@ class TestDownloadPopUrlDiscovery:
             r"_(\d{4})_",  # Will match '2020'
             r"_(\w{3})\.tif",  # Also matches 'USA'
         ]
-        
+
         result = dp.try_extract_country(name, patterns)
-        
+
         assert result is not None  # One of the patterns will match
 
     def test_add_country_url_creates_list(self):
         """Test URL dict initialization."""
         country_urls = {}
-        
+
         dp.add_country_url(country_urls, "US", "http://example.com/us.zip")
-        
+
         assert "US" in country_urls
         assert "http://example.com/us.zip" in country_urls["US"]
 
     def test_add_country_url_appends_to_existing(self):
         """Test URL dict append."""
         country_urls = {"US": ["http://example.com/us1.zip"]}
-        
+
         dp.add_country_url(country_urls, "US", "http://example.com/us2.zip")
-        
+
         assert len(country_urls["US"]) == 2
 
 
@@ -470,50 +494,58 @@ class TestDownloadPopRasterization:
 
     def test_rasterize_csv_creates_valid_geom(self):
         """Test CSV data creates valid geometries."""
-        df = pd.DataFrame({
-            "x": [0.5, 1.5],
-            "y": [0.5, 1.5],
-            "population": [100, 200],
-        })
-        
+        df = pd.DataFrame(
+            {
+                "x": [0.5, 1.5],
+                "y": [0.5, 1.5],
+                "population": [100, 200],
+            }
+        )
+
         # Convert to geometries
         geometries = [Point(row.x, row.y) for _, row in df.iterrows()]
-        
+
         assert len(geometries) == 2
         assert all(g.is_valid for g in geometries)
 
     def test_rasterize_csv_bounds_from_dataframe(self):
         """Test bounds calculation."""
-        df = pd.DataFrame({
-            "x": [0.0, 1.0, 2.0],
-            "y": [0.0, 1.0, 2.0],
-        })
-        
+        df = pd.DataFrame(
+            {
+                "x": [0.0, 1.0, 2.0],
+                "y": [0.0, 1.0, 2.0],
+            }
+        )
+
         bounds = (df["x"].min(), df["y"].min(), df["x"].max(), df["y"].max())
-        
+
         assert bounds == (0.0, 0.0, 2.0, 2.0)
 
     def test_rasterize_csv_empty_dataframe(self):
         """Test with empty CSV."""
-        df = pd.DataFrame({
-            "x": [],
-            "y": [],
-            "population": [],
-        })
-        
+        df = pd.DataFrame(
+            {
+                "x": [],
+                "y": [],
+                "population": [],
+            }
+        )
+
         assert len(df) == 0
         assert df.empty
 
     def test_rasterize_csv_population_aggregation(self):
         """Test population sum."""
-        df = pd.DataFrame({
-            "x": [0.5, 1.5, 0.5],
-            "y": [0.5, 1.5, 1.5],
-            "population": [100, 200, 150],
-        })
-        
+        df = pd.DataFrame(
+            {
+                "x": [0.5, 1.5, 0.5],
+                "y": [0.5, 1.5, 1.5],
+                "population": [100, 200, 150],
+            }
+        )
+
         total_pop = df["population"].sum()
-        
+
         assert total_pop == 450
 
 
@@ -526,21 +558,21 @@ class TestMosaicRasterMerging:
             {"bounds": (0, 0, 2, 2)},
             {"bounds": (1, 1, 3, 3)},
         ]
-        
+
         bounds_list = [r["bounds"] for r in rasters]
         min_x = min(b[0] for b in bounds_list)
         min_y = min(b[1] for b in bounds_list)
         max_x = max(b[2] for b in bounds_list)
         max_y = max(b[3] for b in bounds_list)
-        
+
         merged_bounds = (min_x, min_y, max_x, max_y)
-        
+
         assert merged_bounds == (0, 0, 3, 3)
 
     def test_mosaic_single_raster(self):
         """Test mosaic with single raster."""
         rasters = [{"bounds": (0, 0, 1, 1)}]
-        
+
         bounds_list = [r["bounds"] for r in rasters]
         assert len(bounds_list) == 1
 
@@ -551,13 +583,13 @@ class TestCreateRastersSharding:
     def test_shard_tif_dict_deterministic(self):
         """Test deterministic sharding with seed."""
         countries = ["US", "CA", "MX", "BR", "AR"]
-        
+
         # Simulate sharding with seed
         seed = 42
         np.random.seed(seed)
-        
+
         sharded = {c: i for i, c in enumerate(countries)}
-        
+
         assert len(sharded) == 5
 
     def test_shard_tif_dict_by_job_index(self):
@@ -565,22 +597,22 @@ class TestCreateRastersSharding:
         countries = ["US", "CA", "MX", "BR", "AR", "CO", "VE", "PE", "CL", "UY"]
         job_index = 0
         total_jobs = 2
-        
+
         # Assign countries to jobs
         assigned = [c for i, c in enumerate(countries) if i % total_jobs == job_index]
-        
+
         assert len(assigned) >= 0
         assert "US" in assigned or "MX" in assigned  # Depends on modulo
 
     def test_find_newest_country_tif_files_valid_structure(self):
         """Test tif file dict structure."""
-        
+
         # Simulate tif dict
         tif_dict = {
             "US": ["/path/to/us_2020.tif"],
             "CA": ["/path/to/ca_2020.tif"],
         }
-        
+
         assert isinstance(tif_dict, dict)
         assert all(isinstance(v, list) for v in tif_dict.values())
 
@@ -588,7 +620,7 @@ class TestCreateRastersSharding:
         """Test file discovery parameters."""
         countries = ["US"]
         tif_dir = "/data/tifs"
-        
+
         # Just verify the parameters are valid
         assert isinstance(countries, list)
         assert isinstance(tif_dir, str)
@@ -600,18 +632,18 @@ class TestOrchestrateIntersectionsSharding:
     def test_orchestrate_intersections_processes_countries(self):
         """Test country iteration."""
         countries_set = {"US", "CA", "MX"}
-        
+
         processed = []
         for country in countries_set:
             processed.append(country)
-        
+
         assert len(processed) == 3
 
     def test_orchestrate_intersections_respects_max_workers(self):
         """Test worker count is valid."""
         max_workers = 4
         countries = ["US", "CA", "MX", "BR"]
-        
+
         # Verify max_workers is reasonable
         assert max_workers > 0
         assert max_workers <= len(countries) + 1
@@ -630,41 +662,41 @@ class TestErrorPaths:
     def test_create_rasters_handles_empty_tif_dict(self):
         """Test empty tif dictionary."""
         tif_dict = {}
-        
+
         assert len(tif_dict) == 0
         assert tif_dict or True  # Handles empty case
 
     def test_vectorize_handles_no_rasters(self):
         """Test with no raster files."""
         raster_files = []
-        
+
         assert len(raster_files) == 0
 
     def test_download_validates_urls(self):
         """Test URL validation."""
         valid_url = "https://example.com/file.zip"
         invalid_url = "not_a_url"
-        
+
         assert "http" in valid_url
         assert "http" not in invalid_url
 
     def test_geodataframe_empty_handling(self):
         """Test empty GeoDataFrame."""
         gdf = gpd.GeoDataFrame()
-        
+
         assert gdf.empty
 
     def test_parquet_roundtrip_structure(self):
         """Test parquet save/load structure."""
         df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-        
+
         # Check structure before/after
         assert df.shape == (3, 2)
 
 
 class TestDownloadPopUtilities:
     """Test core utility functions in download_pop."""
-    
+
     def test_find_type_recursive_tif_discovery(self):
         """Test recursive TIF file discovery."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -672,89 +704,89 @@ class TestDownloadPopUtilities:
             subdir1 = Path(tmpdir) / "level1"
             subdir2 = subdir1 / "level2"
             subdir2.mkdir(parents=True)
-            
+
             # Create TIF files at different levels
             (Path(tmpdir) / "file1.tif").write_text("tif1")
             (subdir1 / "file2.tif").write_text("tif2")
             (subdir2 / "file3.tif").write_text("tif3")
             (Path(tmpdir) / "file.csv").write_text("csv")
-            
-            result = dp.find_type(tmpdir, '.tif')
-            
+
+            result = dp.find_type(tmpdir, ".tif")
+
             assert len(result) == 3
-            assert all(Path(f).name.endswith('.tif') for f in result)
-    
+            assert all(Path(f).name.endswith(".tif") for f in result)
+
     def test_find_type_empty_directory(self):
         """Test find_type with no matching files."""
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "file.txt").write_text("text")
             (Path(tmpdir) / "file.csv").write_text("csv")
-            
-            result = dp.find_type(tmpdir, '.tif')
-            
+
+            result = dp.find_type(tmpdir, ".tif")
+
             assert result == []
-    
+
     def test_find_files_tif_preference(self):
         """Test that find_files prefers TIF over CSV."""
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "data.tif").write_text("tif")
             (Path(tmpdir) / "data.csv").write_text("csv")
-            
+
             result, is_tif = dp.find_files(tmpdir)
-            
+
             assert is_tif is True
             assert len(result) > 0
-            assert result[0].endswith('.tif')
-    
+            assert result[0].endswith(".tif")
+
     def test_find_files_csv_fallback(self):
         """Test that find_files falls back to CSV if no TIF."""
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "data.csv").write_text("csv")
-            
+
             result, is_tif = dp.find_files(tmpdir)
-            
+
             assert is_tif is False
             assert len(result) > 0
-    
+
     def test_get_iso_codes_structure(self):
         """Test that get_iso_codes returns proper structure."""
         result = dp.get_iso_codes()
-        
+
         # Should return tuple of 4 dicts
         assert isinstance(result, tuple)
         assert len(result) == 4
-        
+
         alpha_3_to_2, alpha_2_to_3, alpha_3_to_names, alpha_2_to_names = result
-        
+
         # Each should be a dict
         assert isinstance(alpha_3_to_2, dict)
         assert isinstance(alpha_2_to_3, dict)
         assert isinstance(alpha_3_to_names, dict)
         assert isinstance(alpha_2_to_names, dict)
-        
+
         # Should have typical countries
         assert len(alpha_3_to_2) > 100
-    
+
     def test_extract_first_wildcard_simple_pattern(self):
         """Test regex extraction with simple pattern."""
         test_string = "file_2020_USA_data.zip"
         pattern = r"_(\d{4})_"
-        
+
         result = dp.extract_first_wildcard(test_string, pattern)
-        
+
         # Should extract year
         assert "2020" in result or result is not None
-    
+
     def test_extract_first_wildcard_no_match(self):
         """Test regex extraction when pattern doesn't match."""
         test_string = "filename.zip"
         pattern = r"_(\d{4})_"
-        
+
         result = dp.extract_first_wildcard(test_string, pattern)
-        
+
         # Should return None or empty when no match
         assert result is None or result == ""
-    
+
     def test_try_extract_country_fallthrough(self):
         """Test pattern fallthrough in try_extract_country."""
         name = "worldpop_2020_USA.tif"
@@ -762,32 +794,28 @@ class TestDownloadPopUtilities:
             r"_(\d{4})_",  # First pattern
             r"_(\w{3})\.tif",  # Fallback pattern
         ]
-        
+
         result = dp.try_extract_country(name, patterns)
-        
+
         # Should match one of the patterns
         assert result is not None
-    
+
     def test_try_extract_country_none_match(self):
         """Test try_extract_country when nothing matches."""
         name = "random_file.txt"
         patterns = [r"_(\d{4})_", r"_(\w{3})\.tif"]
-        
+
         result = dp.try_extract_country(name, patterns)
-        
+
         assert result is None
-    
+
     def test_rasterize_csv_column_detection(self):
         """Test CSV column detection in rasterize_csv."""
-        df = pd.DataFrame({
-            'LAT': [0.0, 1.0, 2.0],
-            'LON': [0.0, 1.0, 2.0],
-            'POPULATION': [100, 200, 300]
-        })
-        
+        df = pd.DataFrame({"LAT": [0.0, 1.0, 2.0], "LON": [0.0, 1.0, 2.0], "POPULATION": [100, 200, 300]})
+
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "output.tif"
-            
+
             result = dp.rasterize_csv(df, str(output), res=100)
 
             assert result == str(output)
@@ -796,34 +824,37 @@ class TestDownloadPopUtilities:
 
 class TestDownloadPopProcessing:
     """Test data processing logic in download_pop."""
-    
+
     def test_mosaic_large_rasters_single_file(self):
         """Test mosaic_large_rasters with single file (copy case)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create source raster
             import rasterio
             from rasterio.transform import from_bounds
-            
+
             src_path = Path(tmpdir) / "source.tif"
             dst_path = Path(tmpdir) / "output.tif"
-            
+
             data = np.ones((10, 10), dtype=np.float32)
             transform = from_bounds(0, 0, 1, 1, 10, 10)
-            
+
             with rasterio.open(
-                str(src_path), 'w',
-                driver='GTiff',
-                height=10, width=10,
-                count=1, dtype=np.float32,
-                crs='EPSG:4326',
-                transform=transform
+                str(src_path),
+                "w",
+                driver="GTiff",
+                height=10,
+                width=10,
+                count=1,
+                dtype=np.float32,
+                crs="EPSG:4326",
+                transform=transform,
             ) as dst:
                 dst.write(data, 1)
-            
+
             dp.mosaic_large_rasters([str(src_path)], str(dst_path))
 
             assert dst_path.exists()
-    
+
     def test_get_urls_returns_dict(self):
         """Test get_urls returns proper structure."""
         result = dp.get_urls(start_year=2015, end_year=2017)
@@ -838,28 +869,27 @@ class TestDownloadPopProcessing:
             assert len(urls) == 3
             assert all(isinstance(u, str) for u in urls)
             assert all(u.startswith("https://data.worldpop.org/") for u in urls)
-    
+
     def test_process_single_country_returns_none_when_download_fails(self):
         """A failed download short-circuits before any raster work."""
-        country_urls = {
-            'USA': ['http://example.com/usa.zip'],
-            'CAN': ['http://example.com/can.zip']
-        }
+        country_urls = {"USA": ["http://example.com/usa.zip"], "CAN": ["http://example.com/can.zip"]}
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(dp, 'download_save_and_unzip_pops', return_value=None) as mock_dl, \
-                 patch.object(dp, 'mosaic_large_rasters') as mock_mosaic:
-                result = dp.process_single_country(country_urls, 'USA', res=30, data_dir=tmpdir)
+            with (
+                patch.object(dp, "download_save_and_unzip_pops", return_value=None) as mock_dl,
+                patch.object(dp, "mosaic_large_rasters") as mock_mosaic,
+            ):
+                result = dp.process_single_country(country_urls, "USA", res=30, data_dir=tmpdir)
 
             assert result is None
-            mock_dl.assert_called_once_with(country_urls, 'USA', tmpdir)
+            mock_dl.assert_called_once_with(country_urls, "USA", tmpdir)
             mock_mosaic.assert_not_called()
 
     def test_process_all_countries_submits_one_job_per_country(self):
         """Every country is submitted, and a worker failure is not fatal."""
         country_urls = {
-            'USA': ['http://example.com/usa.zip'],
-            'CAN': ['http://example.com/can.zip'],
+            "USA": ["http://example.com/usa.zip"],
+            "CAN": ["http://example.com/can.zip"],
         }
         submitted = []
 
@@ -878,26 +908,28 @@ class TestDownloadPopProcessing:
             def submit(self, fn, *args, **kwargs):
                 submitted.append(args[1])
                 future = MagicMock()
-                if args[1] == 'CAN':
+                if args[1] == "CAN":
                     future.result.side_effect = RuntimeError("worker blew up")
                 else:
                     future.result.return_value = None
                 return future
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(dp, 'ProcessPoolExecutor', InlineExecutor), \
-                 patch.object(dp, 'as_completed', side_effect=lambda fs: list(fs)):
+            with (
+                patch.object(dp, "ProcessPoolExecutor", InlineExecutor),
+                patch.object(dp, "as_completed", side_effect=lambda fs: list(fs)),
+            ):
                 dp.process_all_countries(country_urls, res=30, max_workers=1, data_dir=tmpdir)
 
-        assert sorted(submitted) == ['CAN', 'USA']
+        assert sorted(submitted) == ["CAN", "USA"]
 
 
 class TestDownloadPopIntegration:
     """Test integration between download_pop functions."""
-    
+
     def test_download_pop_main_forwards_res_and_workers(self):
         """main() must pass its res/max_workers through to the pool driver."""
-        with patch.object(dp, 'process_all_countries') as mock_process:
+        with patch.object(dp, "process_all_countries") as mock_process:
             dp.main(res=30, max_workers=1)
 
         mock_process.assert_called_once()

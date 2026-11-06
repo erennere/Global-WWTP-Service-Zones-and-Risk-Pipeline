@@ -4,6 +4,7 @@ Every stage must finish, and the hand-offs must keep their invariants:
 service areas never overlap, never hold more people than the rasters, and
 the non-served layer stays outside them.
 """
+
 import glob
 import os
 import shutil
@@ -38,9 +39,13 @@ def chain(tmp_path_factory):
     for name, args in harness.STAGES:
         if name == "add_pop":
             files = harness._gpkgs(paths["add_pop"]["voronoi_dir"])
-            runs = [harness.run_module(harness.REPO, cfg_path, a, logs, f"add_pop_{i}")
-                    for i, a in enumerate(harness.add_pop_runs(harness.REPO, files))]
-            status[name] = next((r for r in runs if r["returncode"]), runs[0] if runs else {"returncode": 1, "error": "no input"})
+            runs = [
+                harness.run_module(harness.REPO, cfg_path, a, logs, f"add_pop_{i}")
+                for i, a in enumerate(harness.add_pop_runs(harness.REPO, files))
+            ]
+            status[name] = next(
+                (r for r in runs if r["returncode"]), runs[0] if runs else {"returncode": 1, "error": "no input"}
+            )
         else:
             status[name] = harness.run_module(harness.REPO, cfg_path, args, logs, name)
     sites = len(gpd.read_file(data_dir / "all_annotated_v2.gpkg"))
@@ -56,8 +61,11 @@ def test_stage_finishes(chain, stage):
 
 
 def _service_areas(chain, approach):
-    files = [f for f in harness._gpkgs(chain["paths"]["create_voronoi"]["voronoi_dir"])
-             if os.path.basename(f).startswith(f"appr_{approach}_v")]
+    files = [
+        f
+        for f in harness._gpkgs(chain["paths"]["create_voronoi"]["voronoi_dir"])
+        if os.path.basename(f).startswith(f"appr_{approach}_v")
+    ]
     assert len(files) == 1, files
     return gpd.read_file(files[0]).to_crs(EQUAL_AREA)
 
@@ -97,8 +105,13 @@ GOLDEN = Path(__file__).resolve().parents[1] / "golden" / "mock_world_chain.json
 
 
 def _flat(metrics):
-    return {f"{out}|{key}": value for out, values in metrics.items() if isinstance(values, dict)
-            for key, value in values.items() if isinstance(value, (int, float)) and not isinstance(value, bool)}
+    return {
+        f"{out}|{key}": value
+        for out, values in metrics.items()
+        if isinstance(values, dict)
+        for key, value in values.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
 
 
 def test_outputs_match_the_golden_run(chain):

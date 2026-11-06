@@ -45,9 +45,11 @@ CASES = []
 
 def case(name, expect, note):
     """Register a comparison. ``expect`` is "same" or "differ"."""
+
     def wrap(fn):
         CASES.append((name, expect, note, fn))
         return fn
+
     return wrap
 
 
@@ -82,8 +84,7 @@ def normalize(value):
 # H4 - auto_weight_scale: the old body reduced with nanmean while its name,
 # docstring and return doc all said median.
 # --------------------------------------------------------------------------
-@case("H4 auto_weight_scale", "differ",
-      "old computed nanmean, name/docstring said median; H4 made it nanmedian")
+@case("H4 auto_weight_scale", "differ", "old computed nanmean, name/docstring said median; H4 made it nanmedian")
 def _auto_weight_scale(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
 
@@ -97,9 +98,12 @@ def _auto_weight_scale(old_root):
 # G6 - is_valid_geom gated its non-finite check behind hasattr(geom, "coords"),
 # which only Point/LineString have, so polygons were never checked.
 # --------------------------------------------------------------------------
-@case("G6 is_valid_geom / polygon with NaN vertex", "same",
-      "both reject it, but for different reasons: shapely already reports "
-      "is_valid=False, so this input never reached either coordinate check")
+@case(
+    "G6 is_valid_geom / polygon with NaN vertex",
+    "same",
+    "both reject it, but for different reasons: shapely already reports "
+    "is_valid=False, so this input never reached either coordinate check",
+)
 def _is_valid_polygon_nan(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
 
@@ -107,10 +111,13 @@ def _is_valid_polygon_nan(old_root):
     return old_cv.is_valid_geom(bad), sa.is_valid_geom(bad)
 
 
-@case("G6 is_valid_geom / clean polygon", "differ",
-      "hasattr(polygon, 'coords') raises NotImplementedError under Shapely 2, and "
-      "the baseline's blanket `except Exception` turned that into False - so the "
-      "baseline rejected EVERY polygon, not merely skipping the finite check")
+@case(
+    "G6 is_valid_geom / clean polygon",
+    "differ",
+    "hasattr(polygon, 'coords') raises NotImplementedError under Shapely 2, and "
+    "the baseline's blanket `except Exception` turned that into False - so the "
+    "baseline rejected EVERY polygon, not merely skipping the finite check",
+)
 def _is_valid_polygon_clean(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
 
@@ -118,8 +125,7 @@ def _is_valid_polygon_clean(old_root):
     return old_cv.is_valid_geom(good), sa.is_valid_geom(good)
 
 
-@case("G6 is_valid_geom / point with NaN", "same",
-      "Point has .coords, so the old guard did run - must be unchanged")
+@case("G6 is_valid_geom / point with NaN", "same", "Point has .coords, so the old guard did run - must be unchanged")
 def _is_valid_point_nan(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
 
@@ -127,8 +133,7 @@ def _is_valid_point_nan(old_root):
     return old_cv.is_valid_geom(bad), sa.is_valid_geom(bad)
 
 
-@case("G6 is_valid_geom / None and self-intersecting", "same",
-      "the two pre-existing rejection paths must be untouched")
+@case("G6 is_valid_geom / None and self-intersecting", "same", "the two pre-existing rejection paths must be untouched")
 def _is_valid_other(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
 
@@ -143,18 +148,21 @@ def _is_valid_other(old_root):
 # H5 - geometry repair. The current geo_utils.repair_geometry short-circuits on
 # already-valid input; the baseline variants always went through make_valid.
 # --------------------------------------------------------------------------
-@case("H5 repair_geometry vs download_and_vectorize.fix_geometry", "same",
-      "the most complete baseline variant was the one promoted to geo_utils")
+@case(
+    "H5 repair_geometry vs download_and_vectorize.fix_geometry",
+    "same",
+    "the most complete baseline variant was the one promoted to geo_utils",
+)
 def _repair_geometry(old_root):
     old_dv = load_baseline(old_root, "industrial_analysis/download_and_vectorize")
     from wwtp.geo_utils import repair_geometry
 
     old_fn = old_dv._repair_geometry
     inputs = [
-        Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),          # valid
-        Polygon([(0, 0), (1, 1), (1, 0), (0, 1)]),          # self-intersecting
-        Point(3, 4),                                         # non-polygon
-        Polygon(),                                           # empty
+        Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),  # valid
+        Polygon([(0, 0), (1, 1), (1, 0), (0, 1)]),  # self-intersecting
+        Point(3, 4),  # non-polygon
+        Polygon(),  # empty
         None,
     ]
     return [normalize(old_fn(g)) for g in inputs], [normalize(repair_geometry(g)) for g in inputs]
@@ -164,8 +172,11 @@ def _repair_geometry(old_root):
 # H3 - latest *_zonal_sum resolver, 5 baseline implementations into one.
 # Includes the malformed `500_2020_zonal_sum` column the audit flagged.
 # --------------------------------------------------------------------------
-@case("H3 zonal-sum resolver / well-formed columns", "same",
-      "consolidated resolver must pick the same column as the five it replaced")
+@case(
+    "H3 zonal-sum resolver / well-formed columns",
+    "same",
+    "consolidated resolver must pick the same column as the five it replaced",
+)
 def _zonal_sum_clean(old_root):
     old_pf = load_baseline(old_root, "figures_scripts/piechart_figure")
     from wwtp.utils import resolve_latest_zonal_sum_column
@@ -183,10 +194,13 @@ def _zonal_sum_clean(old_root):
     )
 
 
-@case("H3 zonal-sum resolver / radius-prefixed column", "differ",
-      "find_pop_in_danger_pop emits `500_2020_zonal_sum`; every baseline copy "
-      "split on the FIRST underscore and read year 500, so a 2020 layer lost to "
-      "a 2014 one. The consolidated parser reads the token before the suffix.")
+@case(
+    "H3 zonal-sum resolver / radius-prefixed column",
+    "differ",
+    "find_pop_in_danger_pop emits `500_2020_zonal_sum`; every baseline copy "
+    "split on the FIRST underscore and read year 500, so a 2020 layer lost to "
+    "a 2014 one. The consolidated parser reads the token before the suffix.",
+)
 def _zonal_sum_prefixed(old_root):
     old_pf = load_baseline(old_root, "figures_scripts/piechart_figure")
     from wwtp.utils import resolve_latest_zonal_sum_column
@@ -202,8 +216,11 @@ def _zonal_sum_prefixed(old_root):
 # H8 - robust bounds. pop_at_risk_figures used iqr_factor 1.5 and raised on
 # empty; composite used 1.0 and passed empty through. That gap is deliberate.
 # --------------------------------------------------------------------------
-@case("H8 robust_bounds vs pop_at_risk_figures baseline", "same",
-      "iqr_factor 1.5 + raise-on-empty semantics must be preserved exactly")
+@case(
+    "H8 robust_bounds vs pop_at_risk_figures baseline",
+    "same",
+    "iqr_factor 1.5 + raise-on-empty semantics must be preserved exactly",
+)
 def _robust_bounds(old_root):
     old_pf = load_baseline(old_root, "figures_scripts/pop_at_risk_figures")
     from wwtp.utils import robust_bounds
@@ -217,8 +234,11 @@ def _robust_bounds(old_root):
     )
 
 
-@case("H8 robust_bounds positive_only", "same",
-      "the positive-only branch feeds log-scaled axes; a shift moves every marker")
+@case(
+    "H8 robust_bounds positive_only",
+    "same",
+    "the positive-only branch feeds log-scaled axes; a shift moves every marker",
+)
 def _robust_bounds_positive(old_root):
     old_pf = load_baseline(old_root, "figures_scripts/pop_at_risk_figures")
     from wwtp.utils import robust_bounds
@@ -232,8 +252,11 @@ def _robust_bounds_positive(old_root):
     )
 
 
-@case("H8 clip_to_robust_bounds vs composite baseline", "same",
-      "composite keeps iqr_factor 1.0 and empty-passthrough - the documented gap")
+@case(
+    "H8 clip_to_robust_bounds vs composite baseline",
+    "same",
+    "composite keeps iqr_factor 1.0 and empty-passthrough - the documented gap",
+)
 def _clip_outliers(old_root):
     old_ca = load_baseline(old_root, "figures_scripts/composite_area_population_plots")
     from wwtp.utils import clip_to_robust_bounds
@@ -251,21 +274,25 @@ def _clip_outliers(old_root):
 # H7 - piechart size scaling. The interactive variant had no finite guard, so
 # NaN reached the SVG; the figure variant used a log scale with a mid-degenerate.
 # --------------------------------------------------------------------------
-@case("H7 calculate_size vs piechart_figure baseline", "same",
-      "log scale, mid-degenerate, no non-positive floor - figure variant semantics")
+@case(
+    "H7 calculate_size vs piechart_figure baseline",
+    "same",
+    "log scale, mid-degenerate, no non-positive floor - figure variant semantics",
+)
 def _calculate_size_figure(old_root):
     old_pf = load_baseline(old_root, "figures_scripts/piechart_figure")
     from wwtp.figures_scripts.piechart_figure import calculate_size
 
     old_fn = old_pf.calculate_size
-    trials = [(50, 1, 1000, 5, 40), (1, 1, 1000, 5, 40), (1000, 1, 1000, 5, 40),
-              (10, 10, 10, 5, 40)]
-    return ([normalize(old_fn(*t)) for t in trials],
-            [normalize(calculate_size(*t)) for t in trials])
+    trials = [(50, 1, 1000, 5, 40), (1, 1, 1000, 5, 40), (1000, 1, 1000, 5, 40), (10, 10, 10, 5, 40)]
+    return ([normalize(old_fn(*t)) for t in trials], [normalize(calculate_size(*t)) for t in trials])
 
 
-@case("H7 calculate_size NaN guard (interactive)", "differ",
-      "the interactive baseline let NaN through to the SVG; H7 added the guard")
+@case(
+    "H7 calculate_size NaN guard (interactive)",
+    "differ",
+    "the interactive baseline let NaN through to the SVG; H7 added the guard",
+)
 def _calculate_size_nan(old_root):
     old_pi = load_baseline(old_root, "figures_scripts/piechart_interactive")
     from wwtp.figures_scripts.piechart_interactive import calculate_size

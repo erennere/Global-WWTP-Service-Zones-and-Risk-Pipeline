@@ -1,4 +1,5 @@
 """The size and radius calibration recovers known relations and scores size classes equally."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -21,8 +22,15 @@ def _plants(n=3000, seed=0):
     footprint = np.where(undetected, 0.0, F)
     people = np.where(lagoon | undetected, 2500.0, people)
     quality = np.where(rng.random(n) < 0.05, 4, 2)
-    return pd.DataFrame({"footprint_m2": footprint, "lagoon": lagoon, "sized": (footprint > 0) & ~lagoon,
-                         "POP_SERVED": np.where(quality == 4, 1e7, people), "QUAL_POP": quality})
+    return pd.DataFrame(
+        {
+            "footprint_m2": footprint,
+            "lagoon": lagoon,
+            "sized": (footprint > 0) & ~lagoon,
+            "POP_SERVED": np.where(quality == 4, 1e7, people),
+            "QUAL_POP": quality,
+        }
+    )
 
 
 def test_footprint_fit_recovers_the_relation_and_skips_11km_estimates():
@@ -70,9 +78,11 @@ def test_radius_choice_recovers_the_rule_of_a_synthetic_world(monkeypatch):
     for (x, y), s, r in zip(centres, size, radius):
         k = 400
         rr, th = r * np.sqrt(rng.uniform(0, 1, k)), rng.uniform(0, 2 * np.pi, k)
-        pts.append(np.column_stack([x + rr * np.cos(th), y + rr * np.sin(th)])); pop.append(np.full(k, s / k))
+        pts.append(np.column_stack([x + rr * np.cos(th), y + rr * np.sin(th)]))
+        pop.append(np.full(k, s / k))
         rr, th = rng.uniform(r * 1.05, r * 3, 300), rng.uniform(0, 2 * np.pi, 300)  # unsewered ring
-        pts.append(np.column_stack([x + rr * np.cos(th), y + rr * np.sin(th)])); pop.append(np.full(300, s / 3000))
+        pts.append(np.column_stack([x + rr * np.cos(th), y + rr * np.sin(th)]))
+        pop.append(np.full(300, s / 3000))
         polys.append(shapely.Point(x, y).buffer(r, 128))
     pts, pop = np.vstack(pts), np.concatenate(pop)
     ll = gpd.GeoSeries(gpd.points_from_xy(pts[:, 0], pts[:, 1]), crs=5070).to_crs(4326)
@@ -92,8 +102,15 @@ def test_load_plants_reads_footprint_lagoons_and_cwns(tmp_path):
     from wwtp.calibration.service_radius import load_plants
 
     path = tmp_path / "plants.csv"
-    pd.DataFrame({"lon": [8.0, 9.0, None], "lat": [50.0, 51.0, 52.0], "footprint_m2": [1000.0, None, 5.0],
-                  "lagoon_detected": ["False", "True", "False"], "CWNS_2022_ID": ["12345.0", None, "7"]}).to_csv(path, index=False)
+    pd.DataFrame(
+        {
+            "lon": [8.0, 9.0, None],
+            "lat": [50.0, 51.0, 52.0],
+            "footprint_m2": [1000.0, None, 5.0],
+            "lagoon_detected": ["False", "True", "False"],
+            "CWNS_2022_ID": ["12345.0", None, "7"],
+        }
+    ).to_csv(path, index=False)
     df = load_plants(str(path))
     assert len(df) == 2 and df["sized"].tolist() == [True, False]
     assert df["cwns"].tolist()[0] == "00000012345" and pd.isna(df["cwns"].tolist()[1])

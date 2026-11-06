@@ -7,6 +7,7 @@ from the ``sweep`` section. Every path here is computed by the same code the
 stages use (``starter.load_config`` and the path helpers in ``pipelines``), so
 the files Snakemake expects are the files the stages write.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,9 +41,20 @@ class Variant:
 
     def cli(self):
         """The same values as command-line flags of every stage (quote them: weight_func can be '')."""
-        args = ["--level", self.level, "--version", self.version, "--buffer", str(self.buffer),
-                "--weight-method", self.weight_method, "--weight-func", self.weight_func,
-                "--dynamic-buffering", str(self.dynamic_buffering).lower()]
+        args = [
+            "--level",
+            self.level,
+            "--version",
+            self.version,
+            "--buffer",
+            str(self.buffer),
+            "--weight-method",
+            self.weight_method,
+            "--weight-func",
+            self.weight_func,
+            "--dynamic-buffering",
+            str(self.dynamic_buffering).lower(),
+        ]
         if self.size_measure is not None:
             args += ["--size-measure", self.size_measure]
         return args
@@ -78,16 +90,21 @@ def sweep_variants(weight_funcs=None):
     default = default_variant()
     variants = []
     for level in cfg["sweep_levels"]:
-        for weight_func in (cfg["sweep_weight_funcs"] if weight_funcs is None else weight_funcs):
+        for weight_func in cfg["sweep_weight_funcs"] if weight_funcs is None else weight_funcs:
             for method in cfg["sweep_weight_methods"]:
                 if (weight_func == "" and method != "linear") or (method == "size" and weight_func != "mult"):
                     continue
                 for buffer in cfg["sweep_rigid_buffers"]:
                     # size_measure still picks the plant size that weight_method 'size' uses
-                    variants.append(Variant(str(level), default.version, int(buffer), method, weight_func, False,
-                                            default.size_measure))
+                    variants.append(
+                        Variant(
+                            str(level), default.version, int(buffer), method, weight_func, False, default.size_measure
+                        )
+                    )
                 for measure in cfg["sweep_size_measures"]:
-                    variants.append(Variant(str(level), default.version, default.buffer, method, weight_func, True, measure))
+                    variants.append(
+                        Variant(str(level), default.version, default.buffer, method, weight_func, True, measure)
+                    )
     return variants
 
 
@@ -145,13 +162,18 @@ def industrial_land(level, version):
 
 def impact_polygons(variant):
     cfg = config("impact_polygons_pop", variant)
-    return [impact_polygons_output_path(cfg["paths"]["impact_pop_polygons_outpath"], radius)
-            for radius in cfg["impact_polygons_pop_params"]["impact_radii"]]
+    return [
+        impact_polygons_output_path(cfg["paths"]["impact_pop_polygons_outpath"], radius)
+        for radius in cfg["impact_polygons_pop_params"]["impact_radii"]
+    ]
 
 
 def diff_layer(variant):
     cfg = config("find_diff_pop", variant)
-    return os.path.join(cfg["paths"]["pop_dif_output_dir"], f"diff_{os.path.basename(population_layer(variant, figure_approach(variant)))}")
+    return os.path.join(
+        cfg["paths"]["pop_dif_output_dir"],
+        f"diff_{os.path.basename(population_layer(variant, figure_approach(variant)))}",
+    )
 
 
 def annotation_grid():
@@ -162,7 +184,9 @@ def annotation_grid():
 
 def osm_layers():
     """NEW_03's merged OSM polygons and lines (``<annotations>/data``), read by download_bing_annotate."""
-    folder = os.path.join(os.path.dirname(config("NEW_03_WASTEWATERJOIN_GEOJSON")["paths"]["annotations_grid_dir"]), "data")
+    folder = os.path.join(
+        os.path.dirname(config("NEW_03_WASTEWATERJOIN_GEOJSON")["paths"]["annotations_grid_dir"]), "data"
+    )
     return [os.path.join(folder, "merged_polygons.parquet"), os.path.join(folder, "merged_lines.parquet")]
 
 

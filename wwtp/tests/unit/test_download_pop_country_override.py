@@ -99,9 +99,7 @@ def test_main_unknown_country_flag_raises_clear_error(monkeypatch):
 def test_country_flag_takes_precedence_over_country_limit(monkeypatch):
     # country_limit=1 would alphabetically keep only "deu" - request "zaf",
     # which sorts outside that window, and confirm it's still selected.
-    captured = _stub_main_dependencies(
-        monkeypatch, _base_cfg(country_limit=1), _fake_args(country="zaf")
-    )
+    captured = _stub_main_dependencies(monkeypatch, _base_cfg(country_limit=1), _fake_args(country="zaf"))
 
     download_pop.main()
 
@@ -109,9 +107,7 @@ def test_country_flag_takes_precedence_over_country_limit(monkeypatch):
 
 
 def test_country_limit_still_applies_when_no_country_flag(monkeypatch):
-    captured = _stub_main_dependencies(
-        monkeypatch, _base_cfg(country_limit=1), _fake_args(country=None)
-    )
+    captured = _stub_main_dependencies(monkeypatch, _base_cfg(country_limit=1), _fake_args(country=None))
 
     download_pop.main()
 
@@ -140,8 +136,6 @@ def test_merged_output_path_matches_process_single_country_output(monkeypatch, t
 
     monkeypatch.setattr(download_pop, "mosaic_large_rasters", fake_mosaic)
 
-    download_pop.process_single_country(
-        {"deu": FAKE_COUNTRY_URLS["deu"]}, "deu", data_dir=str(data_dir)
-    )
+    download_pop.process_single_country({"deu": FAKE_COUNTRY_URLS["deu"]}, "deu", data_dir=str(data_dir))
 
     assert written_to["path"] == download_pop.merged_output_path(str(data_dir), "deu")

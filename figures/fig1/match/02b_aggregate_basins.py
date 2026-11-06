@@ -12,21 +12,24 @@ plants lie mostly in such countries is flagged 'uncovered'.
 Usage: python 02b_aggregate_basins.py <hydrobasins_dir> <agg_dir> [radius_tag]
   <hydrobasins_dir> holds hybas_lev03_v1c.gpkg, hybas_lev04_v1c.gpkg and hybas_lev09_v1c_attributes.csv
 """
+
 import sys, json
 import numpy as np, pandas as pd, geopandas as gpd
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
 
 HB, AGG = sys.argv[1:3]
 TAG = sys.argv[3] if len(sys.argv) > 3 else TAG
-SIMPLIFY_M = 3000   # plotting only; 1 px at 600 dpi on an 88 mm global map is ~16 km
+SIMPLIFY_M = 3000  # plotting only; 1 px at 600 dpi on an 88 mm global map is ~16 km
 
 pts = pd.read_csv(f"{AGG}/plants_with_units_{TAG}.csv", keep_default_na=False, na_values=[""])
 ref = pd.read_csv(f"{AGG}/reference_with_units_{TAG}.csv", keep_default_na=False, na_values=[""])
 cty = gpd.read_file(f"{AGG}/units_country_{TAG}.gpkg", ignore_geometry=True)
 unc_cty = set(cty.loc[cty.status == "uncovered", "iso2"])
-pts["in_unc"] = pts.unit.isin(unc_cty); ref["in_unc"] = ref.unit.isin(unc_cty)
+pts["in_unc"] = pts.unit.isin(unc_cty)
+ref["in_unc"] = ref.unit.isin(unc_cty)
 
 att9 = pd.read_csv(f"{HB}/hybas_lev09_v1c_attributes.csv")
 pfaf9 = dict(zip(att9.HYBAS_ID.astype("int64"), att9.PFAF_ID.astype("int64")))
@@ -38,24 +41,27 @@ def spatial(df, polys, key):
     j = j[~j.index.duplicated()]
     miss = j[key].isna()
     if miss.any():
-        nn = gpd.sjoin_nearest(g[miss].to_crs(8857), polys[[key, "geometry"]].to_crs(8857), how="left",
-                               max_distance=25000)
+        nn = gpd.sjoin_nearest(
+            g[miss].to_crs(8857), polys[[key, "geometry"]].to_crs(8857), how="left", max_distance=25000
+        )
         nn = nn[~nn.index.duplicated()]
         j.loc[miss, key] = nn[key].values
     return j[key].values
 
 
 def aggregate(p, r, units, key):
-    a = pd.DataFrame({
-        "n_heigit": p[p.cls != "missing"].groupby("unit").size(),
-        "n_new": p[p.cls == "new"].groupby("unit").size(),
-        "n_corr": p[p.cls == "corrected"].groupby("unit").size(),
-        "n_match": p[p.cls == "matched"].groupby("unit").size(),
-        "med_shift": p[p.cls == "corrected"].groupby("unit").shift_m.median(),
-        "q25_shift": p[p.cls == "corrected"].groupby("unit").shift_m.quantile(.25),
-        "q75_shift": p[p.cls == "corrected"].groupby("unit").shift_m.quantile(.75),
-        "med_shift_all": p[p.cls.isin(["corrected", "matched"])].groupby("unit").shift_m.median(),
-    })
+    a = pd.DataFrame(
+        {
+            "n_heigit": p[p.cls != "missing"].groupby("unit").size(),
+            "n_new": p[p.cls == "new"].groupby("unit").size(),
+            "n_corr": p[p.cls == "corrected"].groupby("unit").size(),
+            "n_match": p[p.cls == "matched"].groupby("unit").size(),
+            "med_shift": p[p.cls == "corrected"].groupby("unit").shift_m.median(),
+            "q25_shift": p[p.cls == "corrected"].groupby("unit").shift_m.quantile(0.25),
+            "q75_shift": p[p.cls == "corrected"].groupby("unit").shift_m.quantile(0.75),
+            "med_shift_all": p[p.cls.isin(["corrected", "matched"])].groupby("unit").shift_m.median(),
+        }
+    )
     rr = pd.DataFrame({"n_ref": r.groupby("unit").size(), "n_missing": r[r.cls == "missing"].groupby("unit").size()})
     a = a.join(rr, how="outer")
     cnt = [c for c in a.columns if c.startswith("n_")]
@@ -87,8 +93,10 @@ for lev in (3, 4):
     agree = float((h.loc[both, "pfaf_route"] == h.loc[both, "spatial_route"]).mean())
     h["unit"] = h.pfaf_route.where(h.pfaf_route.notna(), h.spatial_route)
     # --- reference-only plants and the reference table: spatial
-    m = pts[pts.cls == "missing"].copy(); m["unit"] = spatial(m, polys, key)
-    r = ref.copy(); r["unit"] = spatial(r, polys, key)
+    m = pts[pts.cls == "missing"].copy()
+    m["unit"] = spatial(m, polys, key)
+    r = ref.copy()
+    r["unit"] = spatial(r, polys, key)
     p = pd.concat([h, m], ignore_index=True)
     p_cov, r_cov = p[~p.in_unc], r[~r.in_unc]
     units = aggregate(p_cov, r_cov, polys, key)
@@ -96,18 +104,27 @@ for lev in (3, 4):
     share_unc = r.groupby("unit").in_unc.mean()
     units["share_ref_uncovered"] = units[key].map(share_unc).fillna(0)
     units.loc[(units.share_ref_uncovered >= 0.5) & (units.n_heigit == 0), "status"] = "uncovered"
-    units.loc[units.status == "uncovered_tmp", "status"] = "ok"   # covered basin, all reference plants missing
+    units.loc[units.status == "uncovered_tmp", "status"] = "ok"  # covered basin, all reference plants missing
     units["geometry"] = units.to_crs(8857).geometry.simplify(SIMPLIFY_M).make_valid().to_crs(4326).make_valid().values
     units.to_file(f"{AGG}/units_hybas{lev}_{TAG}.gpkg", driver="GPKG")
     ok = units[units.status == "ok"]
     report[f"lev{lev}"] = dict(
-        basins=len(units), ok=len(ok), uncovered=int((units.status == "uncovered").sum()),
+        basins=len(units),
+        ok=len(ok),
+        uncovered=int((units.status == "uncovered").sum()),
         no_ref=int((units.status == "no_ref").sum()),
-        heigit_with_hybas=int(h.pfaf_route.notna().sum()), pfaf_vs_spatial_agreement=round(agree, 4),
-        unassigned_heigit=int(h.unit.isna().sum()), unassigned_missing=int(m.unit.isna().sum()),
-        n_ref_lt5=int((ok.n_ref < 5).sum()), n_corr_lt5=int((ok.n_corr < 5).sum()),
-        totals=dict(ref=int(units.n_ref.sum()), heigit=int(units.n_heigit.sum()), new=int(units.n_new.sum()),
-                    missing=int(units.n_missing.sum())),
+        heigit_with_hybas=int(h.pfaf_route.notna().sum()),
+        pfaf_vs_spatial_agreement=round(agree, 4),
+        unassigned_heigit=int(h.unit.isna().sum()),
+        unassigned_missing=int(m.unit.isna().sum()),
+        n_ref_lt5=int((ok.n_ref < 5).sum()),
+        n_corr_lt5=int((ok.n_corr < 5).sum()),
+        totals=dict(
+            ref=int(units.n_ref.sum()),
+            heigit=int(units.n_heigit.sum()),
+            new=int(units.n_new.sum()),
+            missing=int(units.n_missing.sum()),
+        ),
     )
     print(json.dumps(report[f"lev{lev}"], indent=1))
 json.dump(report, open(f"{AGG}/basin_aggregation_report_{TAG}.json", "w"), indent=1)

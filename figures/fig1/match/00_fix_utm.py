@@ -13,6 +13,7 @@ Usage: python 00_fix_utm.py <data_dir>
 Reads  heigit_points_original.csv (created from heigit_points.csv on first run), writes heigit_points.csv
 and utm_fixes.csv (one row per repaired plant).
 """
+
 import os, sys
 import numpy as np, pandas as pd, geopandas as gpd, pycountry
 from pyproj import Transformer
@@ -22,7 +23,9 @@ orig = f"{D}/heigit_points_original.csv"
 if not os.path.exists(orig):
     os.rename(f"{D}/heigit_points.csv", orig)
 H = pd.read_csv(orig, dtype={"uwwCode": str, "ISO_2": str}, keep_default_na=False, na_values=[""])
-W = pd.read_csv(f"{D}/HydroWASTE_v10.csv", encoding="latin-1", keep_default_na=False, na_values=[""]).set_index("WASTE_ID")
+W = pd.read_csv(f"{D}/HydroWASTE_v10.csv", encoding="latin-1", keep_default_na=False, na_values=[""]).set_index(
+    "WASTE_ID"
+)
 U = pd.read_csv(f"{D}/uwwtd_points.csv", keep_default_na=False, na_values=[""]).set_index("uwwCode")
 E = pd.read_csv(f"{D}/heigit_epsg.csv")
 
@@ -44,10 +47,14 @@ useU = hasU & ((H.SOURCE_DS == "UWW") | ~hasW)
 wi = H.HW_WASTE_ID.astype("Int64")
 H["ref_lon"] = np.where(useU, U.reindex(H.uwwCode).lon.values, W.reindex(wi).LON_WWTP.values)
 H["ref_lat"] = np.where(useU, U.reindex(H.uwwCode).lat.values, W.reindex(wi).LAT_WWTP.values)
-a2 = lambda x: (pycountry.countries.get(alpha_3=x).alpha_2 if isinstance(x, str) and pycountry.countries.get(alpha_3=x)
-                else {"XKX": "XK"}.get(x))
-H["ref_country"] = np.where(useU, U.reindex(H.uwwCode).ISO_2_UWW.replace({"EL": "GR"}).values,
-                            W.reindex(wi).CNTRY_ISO.map(a2).values)
+a2 = lambda x: (
+    pycountry.countries.get(alpha_3=x).alpha_2
+    if isinstance(x, str) and pycountry.countries.get(alpha_3=x)
+    else {"XKX": "XK"}.get(x)
+)
+H["ref_country"] = np.where(
+    useU, U.reindex(H.uwwCode).ISO_2_UWW.replace({"EL": "GR"}).values, W.reindex(wi).CNTRY_ISO.map(a2).values
+)
 L = H[hasU | hasW].copy()
 L["shift_m"] = hav(L.lon, L.lat, L.ref_lon, L.ref_lat)
 L["zone_heigit"] = zone_epsg(L.lon, L.lat)
@@ -57,7 +64,8 @@ fx, fy = [], []
 for _, r in C.iterrows():
     e, n = Transformer.from_crs(4326, int(r.zone_heigit), always_xy=True).transform(r.lon, r.lat)
     lo, la = Transformer.from_crs(int(r.zone_ref), 4326, always_xy=True).transform(e, n)
-    fx.append(lo); fy.append(la)
+    fx.append(lo)
+    fy.append(la)
 C["fixed_lon"], C["fixed_lat"] = fx, fy
 C["fixed_shift_m"] = hav(C.fixed_lon, C.fixed_lat, C.ref_lon, C.ref_lat)
 fix = C[C.fixed_shift_m < 5000].copy()
@@ -66,10 +74,14 @@ fix = C[C.fixed_shift_m < 5000].copy()
 ne = gpd.read_file(f"{D}/ne_50m_admin_0_countries.geojson")
 ne["iso2"] = ne.ISO_A2_EH.where(ne.ISO_A2_EH != "-99", ne.ADM0_A3)
 ne = ne[["iso2", "geometry"]].to_crs(8857)
+
+
 def country(lon, lat):
     g = gpd.GeoDataFrame(geometry=gpd.points_from_xy(lon, lat), crs=4326).to_crs(8857)
     j = gpd.sjoin_nearest(g, ne, how="left", max_distance=30000)
     return j[~j.index.duplicated()].iso2.values
+
+
 fix["country_old"] = country(fix.lon, fix.lat)
 fix["country_new"] = country(fix.fixed_lon, fix.fixed_lat)
 fix = fix.merge(E, on="fid", how="left")
@@ -84,9 +96,29 @@ out.loc[idx, "ISO_2"] = out.loc[idx, "fid"].map(m.country_new)
 out.loc[idx, "HYBAS_ID"] = np.nan
 out.loc[idx, "utm_fixed"] = 1
 out.to_csv(f"{D}/heigit_points.csv", index=False)
-cols = ["fid", "SOURCE_DS", "HW_WASTE_ID", "uwwCode", "ref_country", "country_old", "country_new", "epsg",
-        "zone_heigit", "zone_ref", "lat", "lon", "fixed_lat", "fixed_lon", "ref_lat", "ref_lon", "shift_m", "fixed_shift_m"]
+cols = [
+    "fid",
+    "SOURCE_DS",
+    "HW_WASTE_ID",
+    "uwwCode",
+    "ref_country",
+    "country_old",
+    "country_new",
+    "epsg",
+    "zone_heigit",
+    "zone_ref",
+    "lat",
+    "lon",
+    "fixed_lat",
+    "fixed_lon",
+    "ref_lat",
+    "ref_lon",
+    "shift_m",
+    "fixed_shift_m",
+]
 fix[cols].to_csv(f"{D}/utm_fixes.csv", index=False)
 print(f"candidates (other zone, > 50 km): {len(C)}; repaired (within 5 km after re-projection): {len(fix)}")
-print(f"repaired shift: max {fix.fixed_shift_m.max():.0f} m, median {fix.fixed_shift_m.median():.0f} m;"
-      f" country now matches reference: {int((fix.country_new == fix.ref_country).sum())}/{len(fix)}")
+print(
+    f"repaired shift: max {fix.fixed_shift_m.max():.0f} m, median {fix.fixed_shift_m.median():.0f} m;"
+    f" country now matches reference: {int((fix.country_new == fix.ref_country).sum())}/{len(fix)}"
+)

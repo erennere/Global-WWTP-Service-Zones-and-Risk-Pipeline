@@ -1,4 +1,5 @@
 """NEW_04_EXPORTGEOTIFF: one georeferenced image per grid cell."""
+
 import sys
 
 import geopandas as gpd
@@ -14,14 +15,20 @@ def test_new04_exports_one_georeferenced_patch_per_cell(tmp_path, monkeypatch):
     data = tmp_path / "data"
     grid_dir = data / "annotations" / "GRID"
     grid_dir.mkdir(parents=True)
-    gpd.GeoDataFrame({"idx": [7, 8]}, geometry=[box(0, 0, 100, 100), box(100, 0, 300, 100)],
-                     crs=3857).to_file(grid_dir / "grids_points.gpkg")
+    gpd.GeoDataFrame({"idx": [7, 8]}, geometry=[box(0, 0, 100, 100), box(100, 0, 300, 100)], crs=3857).to_file(
+        grid_dir / "grids_points.gpkg"
+    )
     layer = data / "plants.geojson"
     gpd.GeoDataFrame(geometry=[box(10, 10, 50, 50)], crs=3857).to_crs(4326).to_file(layer)
-    cfg = {"export": {"id_field": "idx", "output_width_px": 64, "output_height_px": 32, "dpi": 16,
-                      "image_format": "png"},
-           "paths": {"corrected_all_filepath": str(data / "points.gpkg"), "annotations_grid_dir": str(grid_dir),
-                     "export_layer_filepath": str(layer), "export_patch_dir": str(data / "PATCH")}}
+    cfg = {
+        "export": {"id_field": "idx", "output_width_px": 64, "output_height_px": 32, "dpi": 16, "image_format": "png"},
+        "paths": {
+            "corrected_all_filepath": str(data / "points.gpkg"),
+            "annotations_grid_dir": str(grid_dir),
+            "export_layer_filepath": str(layer),
+            "export_patch_dir": str(data / "PATCH"),
+        },
+    }
     monkeypatch.setattr(n4, "load_config", lambda **kw: cfg)
     monkeypatch.setattr(sys, "argv", ["prog"])
     n4.main()

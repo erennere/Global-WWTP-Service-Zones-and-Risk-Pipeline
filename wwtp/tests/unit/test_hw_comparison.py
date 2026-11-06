@@ -1,4 +1,5 @@
 """Tests for hw_comparison (moved from the coverage-campaign files)."""
+
 import numpy as np
 import pandas as pd
 import pytest

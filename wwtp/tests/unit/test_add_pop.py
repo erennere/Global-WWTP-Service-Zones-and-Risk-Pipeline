@@ -262,12 +262,16 @@ def test_intersect_all_files_keeps_rows_with_invalid_country_and_marks_populatio
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(add_pop, "find_country_tif_files", lambda countries, tif_dir: {"DE": ["de_2020.tif"], "ZZ": None})
+    monkeypatch.setattr(
+        add_pop, "find_country_tif_files", lambda countries, tif_dir: {"DE": ["de_2020.tif"], "ZZ": None}
+    )
     monkeypatch.setattr(add_pop, "ProcessPoolExecutor", _ImmediateExecutor)
     monkeypatch.setattr(add_pop, "as_completed", lambda futures: futures)
     monkeypatch.setattr(add_pop, "tqdm", lambda iterable, total=None, desc=None: iterable)
     monkeypatch.setattr(
-        add_pop, "intersect_single_file", lambda sub, paths, all_years=True, years=None: sub.assign(**{"2020_zonal_sum": 50.0})
+        add_pop,
+        "intersect_single_file",
+        lambda sub, paths, all_years=True, years=None: sub.assign(**{"2020_zonal_sum": 50.0}),
     )
 
     result = add_pop.intersect_all_files(gdf, tif_dir="unused", max_workers=1, country_col="ISO_2")
@@ -294,7 +298,9 @@ def test_intersect_all_files_rejects_non_positive_workers(monkeypatch):
 
 def test_main_exits_when_config_overrides_are_invalid(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["add_pop.py", "--approach", "1"])
-    monkeypatch.setattr(add_pop, "parse_config_overrides", lambda args=None: (_ for _ in ()).throw(ValueError("invalid override")))
+    monkeypatch.setattr(
+        add_pop, "parse_config_overrides", lambda args=None: (_ for _ in ()).throw(ValueError("invalid override"))
+    )
 
     with pytest.raises(SystemExit, match="1"):
         add_pop.main()
@@ -447,10 +453,11 @@ def test_intersect_single_file_repairs_invalid_polygons_and_leaves_null_geometry
     assert sums[2] == 0.0
 
 
-
 def test_population_years_follow_download_pop(tmp_path):
     """A 2014 raster left from an older download is not read unless include_2014 is on."""
-    assert add_pop.population_years({"start_year": 2015, "end_year": 2024, "include_2014": False}) == set(range(2015, 2025))
+    assert add_pop.population_years({"start_year": 2015, "end_year": 2024, "include_2014": False}) == set(
+        range(2015, 2025)
+    )
     assert 2014 in add_pop.population_years({"start_year": 2015, "end_year": 2024, "include_2014": True})
 
 
@@ -462,8 +469,17 @@ def test_rasters_of_unconfigured_years_are_skipped(tmp_path):
     paths = []
     for year in (2014, 2020):
         path = tmp_path / f"XX_pop_{year}_CN_100m.tif"
-        with rasterio.open(path, "w", driver="GTiff", height=2, width=2, count=1, dtype="float32", crs="EPSG:4326",
-                           transform=from_origin(8.0, 50.0, 0.01, 0.01)) as dst:
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=2,
+            width=2,
+            count=1,
+            dtype="float32",
+            crs="EPSG:4326",
+            transform=from_origin(8.0, 50.0, 0.01, 0.01),
+        ) as dst:
             dst.write(np.ones((2, 2), dtype="float32"), 1)
         paths.append(str(path))
     gdf = gpd.GeoDataFrame({"ISO_2": ["XX"]}, geometry=[box(8.0, 49.98, 8.02, 50.0)], crs=4326)
@@ -485,8 +501,9 @@ def test_orchestrate_intersections_writes_the_enriched_layer(monkeypatch, tmp_pa
 
     monkeypatch.setattr(add_pop, "intersect_all_files", fake_intersect_all_files)
     out = tmp_path / "pop" / "pop_added_appr_1.gpkg"
-    add_pop.orchestrate_intersections(_voronoi_layer(tmp_path / "appr_1.gpkg"), "tifs", str(out), max_workers=3,
-                                      years={2024})
+    add_pop.orchestrate_intersections(
+        _voronoi_layer(tmp_path / "appr_1.gpkg"), "tifs", str(out), max_workers=3, years={2024}
+    )
     assert captured == {"tif_dir": "tifs", "max_workers": 3, "country_col": "ISO_2", "years": {2024}}
     assert gpd.read_file(out)["pop"].tolist() == [1.0, 2.0]
 
@@ -506,11 +523,26 @@ def test_orchestrate_intersections_needs_the_service_areas(tmp_path):
 
 
 def test_main_reads_and_writes_the_paths_of_the_requested_approach(monkeypatch, tmp_path):
-    cfg = {"version": "2", "level": "6", "buffer_path_token": "rep", "weight_func": "mult",
-           "weight_func_suffix": "_mult", "weight_type": "sz", "add_pop_max_workers": 4, "country_output_column": "ISO_2",
-           "overwrite_existing": True, "start_year": 2024, "end_year": 2024, "include_2014": False,
-           "paths": {"buffers_dir": str(tmp_path / "b"), "voronoi_dir": str(tmp_path / "v"),
-                     "pop_output_dir": str(tmp_path / "p"), "pop_tif_dir": "tifs"}}
+    cfg = {
+        "version": "2",
+        "level": "6",
+        "buffer_path_token": "rep",
+        "weight_func": "mult",
+        "weight_func_suffix": "_mult",
+        "weight_type": "sz",
+        "add_pop_max_workers": 4,
+        "country_output_column": "ISO_2",
+        "overwrite_existing": True,
+        "start_year": 2024,
+        "end_year": 2024,
+        "include_2014": False,
+        "paths": {
+            "buffers_dir": str(tmp_path / "b"),
+            "voronoi_dir": str(tmp_path / "v"),
+            "pop_output_dir": str(tmp_path / "p"),
+            "pop_tif_dir": "tifs",
+        },
+    }
     captured = {}
     monkeypatch.setattr(sys, "argv", ["add_pop.py", "--approach", "0"])
     monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
@@ -530,13 +562,23 @@ def test_main_requires_a_known_approach(monkeypatch, argv):
 
 
 def test_main_exits_when_orchestration_fails(monkeypatch, tmp_path):
-    cfg = {"version": "2", "level": "6", "buffer_path_token": "9000", "weight_func": "", "weight_func_suffix": "",
-           "weight_type": "li", "add_pop_max_workers": 1, "country_output_column": "ISO_2", "overwrite_existing": True,
-           "start_year": 2024, "end_year": 2024, "include_2014": False,
-           "paths": {"buffers_dir": "b", "voronoi_dir": "v", "pop_output_dir": "p", "pop_tif_dir": "t"}}
+    cfg = {
+        "version": "2",
+        "level": "6",
+        "buffer_path_token": "9000",
+        "weight_func": "",
+        "weight_func_suffix": "",
+        "weight_type": "li",
+        "add_pop_max_workers": 1,
+        "country_output_column": "ISO_2",
+        "overwrite_existing": True,
+        "start_year": 2024,
+        "end_year": 2024,
+        "include_2014": False,
+        "paths": {"buffers_dir": "b", "voronoi_dir": "v", "pop_output_dir": "p", "pop_tif_dir": "t"},
+    }
     monkeypatch.setattr(sys, "argv", ["add_pop.py", "--approach", "1"])
     monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(add_pop, "orchestrate_intersections", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     with pytest.raises(SystemExit, match="1"):
         add_pop.main()
-

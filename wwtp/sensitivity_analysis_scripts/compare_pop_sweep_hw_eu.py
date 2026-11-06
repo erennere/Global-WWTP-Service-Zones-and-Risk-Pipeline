@@ -26,7 +26,13 @@ import pandas as pd
 import seaborn as sns
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..utils import configure_logging, default_cpu_workers, ensure_output_dir_for_file, reported_population_mask, resolve_latest_zonal_sum_column
+from ..utils import (
+    configure_logging,
+    default_cpu_workers,
+    ensure_output_dir_for_file,
+    reported_population_mask,
+    resolve_latest_zonal_sum_column,
+)
 from ..geo_utils import load_eu_reference_layer
 from ..pop_validation_scripts.hw_comparison import ndvi, multiples, replace_inf
 from ..data_merge.merge_seg_results import assign_to_nearest
@@ -72,7 +78,7 @@ def parse_pop_output_path(filepath):
     # suffix alone ("", "mult", "add").
     weight_type = path_match.group("weight_type") or ""
     tail = file_match.group("weight_func")
-    suffix = tail[len(weight_type) + 1:] if weight_type and tail.startswith("_" + weight_type) else tail
+    suffix = tail[len(weight_type) + 1 :] if weight_type and tail.startswith("_" + weight_type) else tail
     return {
         "filepath": normalized,
         "filename": filename,
@@ -106,7 +112,7 @@ def list_pop_output_files(data_dir):
     parse_failures = []
     seen_empty_wf = set()
     for filepath in sorted(root.rglob("*.gpkg")):
-        if Path(filepath).name.startswith('temp_'):
+        if Path(filepath).name.startswith("temp_"):
             continue
 
         params = parse_pop_output_path(filepath)
@@ -118,12 +124,12 @@ def list_pop_output_files(data_dir):
         # weighting. (Checking weight_func == "" never matched: it always
         # carries "_<weight_type>", so duplicates were all scored.)
         if params["distance_weighting"] == "":
-            key = (params["version"], params["level"], params["buffer"],
-                   params["approach"], params["only_round"])
+            key = (params["version"], params["level"], params["buffer"], params["approach"], params["only_round"])
             if key in seen_empty_wf:
                 logger.debug(
                     "Skipping duplicate empty-weight_func file (weight_type=%s differs but output is identical): %s",
-                    params["weight_type"], filepath,
+                    params["weight_type"],
+                    filepath,
                 )
                 continue
             seen_empty_wf.add(key)
@@ -132,8 +138,7 @@ def list_pop_output_files(data_dir):
 
     if not records and parse_failures:
         logger.warning(
-            "Found %d GPKG files under %s but none matched expected naming/path patterns. "
-            "Examples: %s",
+            "Found %d GPKG files under %s but none matched expected naming/path patterns. Examples: %s",
             len(parse_failures),
             root,
             "; ".join(parse_failures[:5]),
@@ -224,7 +229,7 @@ def compute_sensitivity_metrics(df, prediction_col, reference_col):
     pred = work[prediction_col].clip(lower=0)
     ref = work[reference_col].clip(lower=0)
     log_ratio = np.log((pred + eps) / (ref + eps))
-    rmse_log_ratio = float(np.sqrt(np.nanmean(log_ratio ** 2))) if len(log_ratio) else np.nan
+    rmse_log_ratio = float(np.sqrt(np.nanmean(log_ratio**2))) if len(log_ratio) else np.nan
     spearman_r = float(work[prediction_col].corr(work[reference_col], method="spearman"))
 
     return {
@@ -317,9 +322,7 @@ def build_summary_table(records, eu_ref_filepath, threshold, factor, max_workers
         summary[z_name] = summary.groupby("source")[metric].transform(_safe_zscore)
 
     # Lower score means lower bias/error/instability.
-    summary["sensitivity_score"] = summary[
-        ["z_median_abs_ndi", "z_iqr_ndi", "z_rmse_log_ratio"]
-    ].mean(axis=1)
+    summary["sensitivity_score"] = summary[["z_median_abs_ndi", "z_iqr_ndi", "z_rmse_log_ratio"]].mean(axis=1)
 
     summary["hw_rank"] = summary[summary["source"] == "HW"]["sensitivity_score"].rank(method="dense")
     summary["eu_rank"] = summary[summary["source"] == "EU"]["sensitivity_score"].rank(method="dense")
@@ -424,9 +427,7 @@ def plot_split_metric_profiles(summary, ordered_aliases, output_filepath):
     work["good_spearman"] = work.groupby("source")["spearman_r"].transform(
         lambda s: _to_percentile_goodness(s, lower_is_better=False)
     )
-    work["good_n"] = work.groupby("source")["n"].transform(
-        lambda s: _to_percentile_goodness(s, lower_is_better=False)
-    )
+    work["good_n"] = work.groupby("source")["n"].transform(lambda s: _to_percentile_goodness(s, lower_is_better=False))
 
     profile_cols = [
         "good_abs_ndi",

@@ -35,7 +35,8 @@ lat_dict = {}
 level_dict = {}
 discharge_dict = {}
 
-def create_dicts(river_gdf, next_col, id_col, main_riv_col, discharge_col, weight_col='weight'):
+
+def create_dicts(river_gdf, next_col, id_col, main_riv_col, discharge_col, weight_col="weight"):
     """Build global lookup dictionaries used by worker processes.
 
     Parameters
@@ -64,32 +65,33 @@ def create_dicts(river_gdf, next_col, id_col, main_riv_col, discharge_col, weigh
     # 1. Clean IDs and fill missing weights with 0
     # We keep the rows even if weight is NaN, but we drop rows with no IDs
     river_gdf = river_gdf.dropna(subset=[id_col, next_col, main_riv_col]).copy()
-    
+
     river_gdf[id_col] = river_gdf[id_col].astype(int)
     river_gdf[next_col] = river_gdf[next_col].astype(int)
     river_gdf[main_riv_col] = river_gdf[main_riv_col].astype(int)
-    
+
     river_gdf[weight_col] = river_gdf[weight_col].fillna(0.0).astype(float)
 
     # 2. next_dict: {id: (next_id, weight)}
     # Now getattr will always return a float (0.0 or higher)
     next_dict = {
-        int(getattr(row, id_col)): (int(getattr(row, next_col)), float(getattr(row, weight_col))) 
+        int(getattr(row, id_col)): (int(getattr(row, next_col)), float(getattr(row, weight_col)))
         for row in river_gdf[[id_col, next_col, weight_col]].itertuples(index=False)
     }
 
     # 3. lat_dict
-    lat_dict = dict(zip(river_gdf[id_col], river_gdf['lat'].astype(float)))
+    lat_dict = dict(zip(river_gdf[id_col], river_gdf["lat"].astype(float)))
 
     # 4. geom_dict
     geom_dict = {}
     for utm_zone in river_gdf.utm.unique():
-        if pd.isna(utm_zone): continue
-        mask = river_gdf['utm'] == utm_zone
+        if pd.isna(utm_zone):
+            continue
+        mask = river_gdf["utm"] == utm_zone
         epsg_val = int(float(utm_zone))
         sub_gdf = river_gdf[mask].copy().to_crs(epsg_val)
-        #sub_gdf = river_gdf[mask].copy().to_crs(3857)
-        geom_dict.update(dict(zip(sub_gdf[id_col], sub_gdf['geometry'])))
+        # sub_gdf = river_gdf[mask].copy().to_crs(3857)
+        geom_dict.update(dict(zip(sub_gdf[id_col], sub_gdf["geometry"])))
 
     # 5. level_dict (Topology building)
     upstream_adj = {}
@@ -115,8 +117,9 @@ def create_dicts(river_gdf, next_col, id_col, main_riv_col, discharge_col, weigh
 
     logger.info("Successfully processed %s basins", len(level_dict))
 
-    #discharge info dict
+    # discharge info dict
     discharge_dict = dict(zip(river_gdf[id_col], river_gdf[discharge_col]))
+
 
 def init_worker(shared_next, shared_geom, shared_lat, shared_level, shared_dis):
     """Initializes global dictionaries in each worker process once."""
@@ -127,14 +130,8 @@ def init_worker(shared_next, shared_geom, shared_lat, shared_level, shared_dis):
     level_dict = shared_level
     discharge_dict = shared_dis
 
-def calculate_load_ratio(
-    pop,
-    dis_av_cms,
-    org_per_pop=60.0,
-    c_limit=5.0,
-    least_discharge_cms=0.269,
-    load=None
-):
+
+def calculate_load_ratio(pop, dis_av_cms, org_per_pop=60.0, c_limit=5.0, least_discharge_cms=0.269, load=None):
     """Convert population or load inputs into a normalized concentration ratio.
 
     Parameters
@@ -191,18 +188,21 @@ def calculate_load_ratio(
             load = pop * org_per_pop / dis_av_cms if pop is not None else 0
         return load / c_limit
 
+
 def invert_calculate_load(load_ratio, c_limit=5.0):
     """Convert a normalized load ratio back into an absolute concentration load."""
     return load_ratio * c_limit
 
+
 def calculate_radius(load_ratio, impact_radius=1000):
     """Return the configured plume radius only when the load ratio exceeds one."""
-    return impact_radius if load_ratio >=1 else 0.0
+    return impact_radius if load_ratio >= 1 else 0.0
+
 
 def calculate_kt(lat, base_k=0.23, theta=1.047, water_temp_equator_c=28.0):
     """Compute temperature-adjusted decay coefficient by latitude."""
     temp = water_temp_equator_c * np.cos(np.radians(abs(lat)))
-    return base_k * (theta**(temp - 20))
+    return base_k * (theta ** (temp - 20))
 
 
 def _effective_discharge(dis_av_cms, least_discharge_cms):
@@ -212,8 +212,9 @@ def _effective_discharge(dis_av_cms, least_discharge_cms):
     return float(dis_av_cms)
 
 
-def mix_downstream_concentration(downstream_conc, upstream_exit_conc, upstream_dis_cms, downstream_dis_cms,
-                                 least_discharge_cms=0.269):
+def mix_downstream_concentration(
+    downstream_conc, upstream_exit_conc, upstream_dis_cms, downstream_dis_cms, least_discharge_cms=0.269
+):
     """Concentration in the downstream segment after an upstream segment joins it.
 
     Mass balance: the upstream flux ``C_up * Q_up`` is diluted into the
@@ -228,9 +229,19 @@ def mix_downstream_concentration(downstream_conc, upstream_exit_conc, upstream_d
     return downstream_conc + upstream_exit_conc * min(1.0, q_up / q_down)
 
 
-def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0, c_limit=5.0, base_k=0.23, theta=1.047,
-                                  impact_radii=(1000, 2000), next_state_dict=None, velocity_m_s=1.0,
-                                  water_temp_equator_c=28.0):
+def generate_single_segment_plume(
+    rid,
+    lat,
+    start_load_ratio=None,
+    step_m=100.0,
+    c_limit=5.0,
+    base_k=0.23,
+    theta=1.047,
+    impact_radii=(1000, 2000),
+    next_state_dict=None,
+    velocity_m_s=1.0,
+    water_temp_equator_c=28.0,
+):
     """Generate plume polygons for one river segment and return the exit load.
 
     Parameters
@@ -269,7 +280,7 @@ def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0,
 
     if rid not in state_dict or rid not in geom_dict or rid not in discharge_dict:
         return None, 0.0
-    
+
     if start_load_ratio is None:
         _, start_load_ratio = state_dict[rid]
     else:
@@ -284,7 +295,7 @@ def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0,
     distances = np.arange(0, seg_len, step_m)
     if len(distances) < 2:
         distances = np.array([0.0, seg_len])
-    
+
     times = distances / velocity_m_day
     load_ratios = start_load_ratio * np.exp(-kt * times)
     # load_ratios is already normalized by c_limit upstream, so threshold at 1.0 directly.
@@ -309,40 +320,41 @@ def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0,
     # np.atleast_2d ensures that even a single point is (1, 2) instead of (2,)
     points = np.array([line.interpolate(d).coords[0] for d in distances])
     points = np.atleast_2d(points)
-    
-    eps = 0.1 # Reduced epsilon for better precision on short segments
+
+    eps = 0.1  # Reduced epsilon for better precision on short segments
     lookahead = np.minimum(distances + eps, seg_len)
     next_pts = np.array([line.interpolate(d).coords[0] for d in lookahead])
     next_pts = np.atleast_2d(next_pts)
-    
+
     diff = next_pts - points
     norms = np.linalg.norm(diff, axis=1, keepdims=True)
-    
+
     # Avoid division by zero on zero-length segments
     norms[norms == 0] = 1.0
     tangents = diff / norms
-    
+
     # Left/Right boundaries (Normal vectors)
     normals = np.stack([-tangents[:, 1], tangents[:, 0]], axis=1)
-    
+
     polygons = []
     for impact_radius in impact_radii:
         r_val = calculate_radius(start_load_ratio, impact_radius=impact_radius)
-        
+
         # Calculate offset coordinates
         left_side = points + (normals * r_val)
         right_side = points - (normals * r_val)
-        
+
         # Construct polygon ring: Left side forward, Right side backward
         coords = np.concatenate([left_side, right_side[::-1]], axis=0)
-        
+
         try:
             poly = Polygon(coords)
             polygons.append(poly if poly.is_valid else poly.buffer(0))
         except Exception:
             continue
     return (polygons, exit_load) if polygons else (None, 0.0)
-    
+
+
 def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
     """Generate impact polygons for one basin chunk.
 
@@ -365,9 +377,9 @@ def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
     """
     global next_dict, discharge_dict
     try:
-        if pop_chunk.empty: 
+        if pop_chunk.empty:
             return {}
-        
+
         target_ids = set(pop_chunk[nxt_dis_col])
 
         # 1. Get the topological levels for this specific basin
@@ -375,22 +387,18 @@ def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
         if not levels:
             return {}
 
-        c_limit = model_params['c_limit']
-        base_k = model_params['base_k']
-        theta = model_params['theta']
-        step_m = model_params['step_m']
-        least_discharge_cms = model_params['least_discharge_cms']
-        impact_radii = model_params['impact_radii']
-        velocity_m_s = model_params['velocity_m_s']
-        water_temp_equator_c = model_params['water_temp_equator_c']
+        c_limit = model_params["c_limit"]
+        base_k = model_params["base_k"]
+        theta = model_params["theta"]
+        step_m = model_params["step_m"]
+        least_discharge_cms = model_params["least_discharge_cms"]
+        impact_radii = model_params["impact_radii"]
+        velocity_m_s = model_params["velocity_m_s"]
+        water_temp_equator_c = model_params["water_temp_equator_c"]
 
         # Isolate mutable load propagation state for this basin task only.
         basin_ids = {rid for level in levels for rid in level}
-        local_next_dict = {
-            rid: next_dict[rid]
-            for rid in basin_ids
-            if rid in next_dict
-        }
+        local_next_dict = {rid: next_dict[rid] for rid in basin_ids if rid in next_dict}
 
         # result_geometries stores final polys for IDs in pop_chunk
         result_geometries = {}
@@ -444,11 +452,14 @@ def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
         # 4. Map the calculated geometries back to the pop_chunk
         results = {}
         for index, radius in enumerate(impact_radii):
-            pc = pop_chunk.copy() 
-            pc['geometry'] = pc[nxt_dis_col].map(result_geometries).apply(
-                lambda geoms, i=index: geoms[i] if geoms is not None and len(geoms) > i else None)
-            valid_returns = pc.dropna(subset=['geometry'])
-            results[radius] = valid_returns[['geometry', 'utm', 'country', 'MAIN_RIV', nxt_dis_col]]
+            pc = pop_chunk.copy()
+            pc["geometry"] = (
+                pc[nxt_dis_col]
+                .map(result_geometries)
+                .apply(lambda geoms, i=index: geoms[i] if geoms is not None and len(geoms) > i else None)
+            )
+            valid_returns = pc.dropna(subset=["geometry"])
+            results[radius] = valid_returns[["geometry", "utm", "country", "MAIN_RIV", nxt_dis_col]]
         return results
 
     except Exception as e:
@@ -456,18 +467,20 @@ def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
         logger.error(traceback.format_exc())
         return {}
 
+
 def parallel_dissolve(subset_df, crs_code):
     """Worker function for dissolving a specific group of polygons."""
     if subset_df.empty:
         return gpd.GeoDataFrame()
-    
+
     # Create GDF and perform spatial merge
-    gdf = gpd.GeoDataFrame(subset_df, geometry='geometry', crs=int(crs_code))
+    gdf = gpd.GeoDataFrame(subset_df, geometry="geometry", crs=int(crs_code))
     # dissolve() merges, explode() separates non-contiguous parts
     dissolved = gdf.dissolve().explode(index_parts=False)
-    
+
     # Project to WGS84 here so the main process only has to concat
     return dissolved.to_crs(4326)
+
 
 def orchestrate_logic(pop_gdf, nxt_dis_col, main_riv_col, max_workers, model_params=None):
     """Run plume generation, dissolve regional outputs, and assemble final layers.
@@ -496,15 +509,14 @@ def orchestrate_logic(pop_gdf, nxt_dis_col, main_riv_col, max_workers, model_par
 
     total_chunks = pop_gdf[main_riv_col].unique()
     results_list = {}
-    
+
     # --- STAGE 1: Parallel Plume Generation ---
     logger.info("Distributing %s chunks to %s workers", len(total_chunks), max_workers)
     with ProcessPoolExecutor(
         max_workers=max_workers,
         initializer=init_worker,
-        initargs=(next_dict, geom_dict, lat_dict, level_dict, discharge_dict)
+        initargs=(next_dict, geom_dict, lat_dict, level_dict, discharge_dict),
     ) as executor:
-        
         futures = [
             executor.submit(
                 create_impact_polygons,
@@ -512,9 +524,10 @@ def orchestrate_logic(pop_gdf, nxt_dis_col, main_riv_col, max_workers, model_par
                 main_riv,
                 nxt_dis_col,
                 model_params,
-            ) for main_riv in total_chunks
+            )
+            for main_riv in total_chunks
         ]
-        
+
         for future in tqdm(as_completed(futures), total=len(total_chunks), desc="Generating Plumes"):
             try:
                 res = future.result()
@@ -530,23 +543,23 @@ def orchestrate_logic(pop_gdf, nxt_dis_col, main_riv_col, max_workers, model_par
     if not results_list:
         logger.error("No valid polygons were generated")
         return None
-    
+
     # --- STAGE 2: Parallel Regional Dissolve ---
     gdfs = {}
     for radius, dfs in results_list.items():
         final_df = pd.concat(dfs, ignore_index=True)
-        unique_utms = final_df['utm'].unique()
+        unique_utms = final_df["utm"].unique()
         projected_results = []
-        
+
         logger.info("Parallelizing dissolve across %s UTM groups", len(unique_utms))
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             # Submit slices based on UTM group
             # Using 3857 for spatial operations to ensure global continuity
             dissolve_futures = {
-                executor.submit(parallel_dissolve, final_df[final_df['utm'] == utm].copy(), utm): utm  
+                executor.submit(parallel_dissolve, final_df[final_df["utm"] == utm].copy(), utm): utm
                 for utm in unique_utms
             }
-            
+
             for future in tqdm(as_completed(dissolve_futures), total=len(dissolve_futures), desc="Parallel Dissolving"):
                 try:
                     res = future.result()
@@ -564,24 +577,24 @@ def orchestrate_logic(pop_gdf, nxt_dis_col, main_riv_col, max_workers, model_par
 
         try:
             # 1. Fix any potential invalidities before dissolving
-            combined_gdf['geometry'] = combined_gdf['geometry'].make_valid()
-            
+            combined_gdf["geometry"] = combined_gdf["geometry"].make_valid()
+
             # 2. Use a tiny buffer to merge near-identical points (snapping)
             # This solves 'side location conflict' by giving GEOS a tiny bit of breathing room
-            combined_gdf['geometry'] = combined_gdf['geometry'].buffer(1e-9) 
-            
+            combined_gdf["geometry"] = combined_gdf["geometry"].buffer(1e-9)
+
             # 3. Perform the dissolve
             dissolved = combined_gdf.dissolve()
-            
+
             # 4. Clean up the resulting geometries
             gdfs[radius] = dissolved.explode(index_parts=False).make_valid()
-            
+
         except Exception as e:
             logger.warning("Standard dissolve failed: %s. Attempting robust union", e)
             # Fallback: Union everything at once which is sometimes more stable than dissolve
             all_geoms = combined_gdf.geometry.values
             merged = unary_union(all_geoms)
-            
+
             final_gdf = gpd.GeoDataFrame(geometry=[merged], crs=4326).explode(index_parts=False)
             gdfs[radius] = final_gdf.make_valid()
 
@@ -589,6 +602,7 @@ def orchestrate_logic(pop_gdf, nxt_dis_col, main_riv_col, max_workers, model_par
         logger.error("No valid polygons were generated after global cleanup")
         return None
     return gdfs
+
 
 def main():
     """Load inputs, generate impact polygons, and write final output.
@@ -599,9 +613,7 @@ def main():
 
     ``weight_func`` accepts ``mult``, ``add``, or ``""`` for default.
     """
-    parser = argparse.ArgumentParser(
-        description="Generate downstream impact polygons from non-served population data."
-    )
+    parser = argparse.ArgumentParser(description="Generate downstream impact polygons from non-served population data.")
     parser.add_argument(
         "--max-workers",
         type=int,
@@ -628,81 +640,85 @@ def main():
 
     if args.radius is not None:
         requested_radius = float(args.radius)
-        configured_radii = model_params['impact_radii']
+        configured_radii = model_params["impact_radii"]
         if not any(requested_radius == radius for radius in configured_radii):
             raise ValueError(
                 f"Unknown --radius '{args.radius}'; expected one of "
                 f"{sorted(int(radius) for radius in configured_radii)} "
                 "(impact_polygons_pop_params.impact_radii)."
             )
-        model_params['impact_radii'] = [requested_radius]
+        model_params["impact_radii"] = [requested_radius]
         logger.info("Restricting to single --radius override: %s", requested_radius)
 
     logger.info("Using runtime model params: %s", model_params)
 
     # 1. Load Data
     logger.info("Loading datasets")
-    
+
     # Only pull the ID and Population columns for the settlements
-    pop_cols = ['NXT_DIS', 'pop_sum', 'country', 'utm']
+    pop_cols = ["NXT_DIS", "pop_sum", "country", "utm"]
     pop_gdf = gpd.read_file(
-        cfg['paths']['non_served_nxt_river_outpath'], 
-        columns=pop_cols, 
+        cfg["paths"]["non_served_nxt_river_outpath"],
+        columns=pop_cols,
     ).to_crs("EPSG:4326")
-    
-    river_cols = ['HYRIV_ID', 'NEXT_DOWN', 'geometry', 'MAIN_RIV', 'DIS_AV_CMS']
-    river_gdf = gpd.read_file(
-        cfg['paths']['rivershed_output_path'],
-        columns=river_cols
-    ).to_crs("EPSG:4326")
+
+    river_cols = ["HYRIV_ID", "NEXT_DOWN", "geometry", "MAIN_RIV", "DIS_AV_CMS"]
+    river_gdf = gpd.read_file(cfg["paths"]["rivershed_output_path"], columns=river_cols).to_crs("EPSG:4326")
     logger.info("Loaded %s population rows and %s river rows", len(pop_gdf), len(river_gdf))
 
     # 2. Vectorized Processing (Fast)
-    pop_gdf = pop_gdf[pop_gdf['NXT_DIS'].notna() & pop_gdf['pop_sum'].notna()].reset_index(drop=True)
-    pop_gdf['HYRIV_ID'] = pop_gdf['NXT_DIS'].astype(int)
-    pop_gdf['pop_sum'] = pop_gdf['pop_sum'].astype(int)
-    pop_gdf = pop_gdf[(pop_gdf['HYRIV_ID'] != -1) & (pop_gdf['pop_sum'] > 0)].copy()
-    pop_gdf.drop(['NXT_DIS'], axis=1, inplace=True)
+    pop_gdf = pop_gdf[pop_gdf["NXT_DIS"].notna() & pop_gdf["pop_sum"].notna()].reset_index(drop=True)
+    pop_gdf["HYRIV_ID"] = pop_gdf["NXT_DIS"].astype(int)
+    pop_gdf["pop_sum"] = pop_gdf["pop_sum"].astype(int)
+    pop_gdf = pop_gdf[(pop_gdf["HYRIV_ID"] != -1) & (pop_gdf["pop_sum"] > 0)].copy()
+    pop_gdf.drop(["NXT_DIS"], axis=1, inplace=True)
 
-    river_gdf = river_gdf[river_gdf['NEXT_DOWN'].notna()]
-    river_gdf['HYRIV_ID'] = river_gdf['HYRIV_ID'].astype(int)
-    river_gdf['NEXT_DOWN'] = river_gdf['NEXT_DOWN'].astype(int)
-    river_gdf['utm'], river_gdf['lat'] = batch_estimate_utm_epsg(river_gdf)
+    river_gdf = river_gdf[river_gdf["NEXT_DOWN"].notna()]
+    river_gdf["HYRIV_ID"] = river_gdf["HYRIV_ID"].astype(int)
+    river_gdf["NEXT_DOWN"] = river_gdf["NEXT_DOWN"].astype(int)
+    river_gdf["utm"], river_gdf["lat"] = batch_estimate_utm_epsg(river_gdf)
 
-    pop_gdf = pop_gdf.merge(river_gdf[['HYRIV_ID', 'MAIN_RIV', 'DIS_AV_CMS']], on='HYRIV_ID', how='left')
-    pop_gdf['env_load'] = calculate_load_ratio(pop_gdf['pop_sum'], pop_gdf['DIS_AV_CMS'], org_per_pop=model_params['org_per_pop'], c_limit=model_params['c_limit'],
-                                          least_discharge_cms=model_params['least_discharge_cms'], load=None)
-    pop_gdf = pop_gdf.dropna(subset=['MAIN_RIV', 'env_load']).reset_index(drop=True)
-    pop_gdf.drop(['pop_sum'], axis=1, inplace=True)
-    
-    river_gdf = river_gdf.merge(pop_gdf[['HYRIV_ID', 'env_load']], on='HYRIV_ID', how='left')
-    river_gdf = river_gdf[river_gdf['MAIN_RIV'].isin(pop_gdf['MAIN_RIV'].unique())].reset_index(drop=True)
-    #pop_gdf = pop_gdf[pop_gdf['MAIN_RIV'].isin(pop_gdf['MAIN_RIV'].unique()[0:10])].reset_index(drop=True)
+    pop_gdf = pop_gdf.merge(river_gdf[["HYRIV_ID", "MAIN_RIV", "DIS_AV_CMS"]], on="HYRIV_ID", how="left")
+    pop_gdf["env_load"] = calculate_load_ratio(
+        pop_gdf["pop_sum"],
+        pop_gdf["DIS_AV_CMS"],
+        org_per_pop=model_params["org_per_pop"],
+        c_limit=model_params["c_limit"],
+        least_discharge_cms=model_params["least_discharge_cms"],
+        load=None,
+    )
+    pop_gdf = pop_gdf.dropna(subset=["MAIN_RIV", "env_load"]).reset_index(drop=True)
+    pop_gdf.drop(["pop_sum"], axis=1, inplace=True)
+
+    river_gdf = river_gdf.merge(pop_gdf[["HYRIV_ID", "env_load"]], on="HYRIV_ID", how="left")
+    river_gdf = river_gdf[river_gdf["MAIN_RIV"].isin(pop_gdf["MAIN_RIV"].unique())].reset_index(drop=True)
+    # pop_gdf = pop_gdf[pop_gdf['MAIN_RIV'].isin(pop_gdf['MAIN_RIV'].unique()[0:10])].reset_index(drop=True)
     logger.info("Prepared %s filtered population rows and %s filtered river rows", len(pop_gdf), len(river_gdf))
 
     # 3. Build State
-    create_dicts(river_gdf, 'NEXT_DOWN', 'HYRIV_ID', 'MAIN_RIV', 'DIS_AV_CMS', 'env_load')
-    
+    create_dicts(river_gdf, "NEXT_DOWN", "HYRIV_ID", "MAIN_RIV", "DIS_AV_CMS", "env_load")
+
     # 4. Process
     max_workers = int(args.max_workers)
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
     results = orchestrate_logic(
         pop_gdf,
-        'HYRIV_ID',
-        'MAIN_RIV',
+        "HYRIV_ID",
+        "MAIN_RIV",
         max_workers=max_workers,
         model_params=model_params,
     )
-    
+
     if results is not None:
         for radius, gdf in results.items():
-            output_path = impact_polygons_output_path(cfg['paths']['impact_pop_polygons_outpath'], radius)
+            output_path = impact_polygons_output_path(cfg["paths"]["impact_pop_polygons_outpath"], radius)
             with atomic_output(output_path) as tmp_path:
-                gdf.to_file(tmp_path, driver='GPKG')
+                gdf.to_file(tmp_path, driver="GPKG")
             logger.info("Process complete. Wrote %s geometries for radius %s", len(gdf), radius)
     else:
         logger.warning("No output generated")
+
 
 if __name__ == "__main__":
     configure_logging()

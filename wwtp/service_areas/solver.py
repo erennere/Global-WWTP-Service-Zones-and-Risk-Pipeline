@@ -2,6 +2,7 @@
 
 Part of the service-area stage (``python -m wwtp.create_voronoi``).
 """
+
 import logging
 from typing import Any, cast
 import numpy as np
@@ -49,15 +50,15 @@ def geometry_contains_points(geometry, points):
 def cluster_points(df, threshold):
     """
     Cluster nearby points and assign cluster IDs to DataFrame.
-    
+
     Groups geometries that are within threshold distance using Union-Find
     algorithm after computing pairwise centroid distances. Assigns cluster
     ID to each point based on membership.
-    
+
     Args:
         df (pd.GeoDataFrame): Points with 'geometry' column
         threshold (float): Maximum distance for clustering in same CRS units
-        
+
     Returns:
         pd.GeoDataFrame: One row per cluster: the most complete record, with
         ``weights`` and ``POP_SERVED`` the cluster maximum (never the sum: the
@@ -70,9 +71,9 @@ def cluster_points(df, threshold):
     """
 
     df = df.copy()
-    df['num_missing'] = df.isnull().sum(axis=1)
+    df["num_missing"] = df.isnull().sum(axis=1)
 
-    cluster_sets = cluster_point_indices(df['geometry'], threshold)
+    cluster_sets = cluster_point_indices(df["geometry"], threshold)
     data = []
 
     for cluster_set in cluster_sets:
@@ -80,20 +81,20 @@ def cluster_points(df, threshold):
         if len(sub_df) == 1:
             data.append(sub_df.assign(n_merged_records=1))
         else:
-            weights = sub_df['weights'].max()
+            weights = sub_df["weights"].max()
             # Get the row(s) with the fewest NaNs
-            min_missing = sub_df['num_missing'].min()
-            best_rows = sub_df[sub_df['num_missing'] == min_missing]
+            min_missing = sub_df["num_missing"].min()
+            best_rows = sub_df[sub_df["num_missing"] == min_missing]
             best_row = best_rows.iloc[0].copy()  # Choose the first one if there's a tie
-            best_row['weights'] = weights
-            if 'POP_SERVED' in sub_df.columns:
+            best_row["weights"] = weights
+            if "POP_SERVED" in sub_df.columns:
                 # Records this close are the same plant reported by several
                 # sources; adding their populations double-counts it.
-                best_row['POP_SERVED'] = pd.to_numeric(sub_df['POP_SERVED'], errors='coerce').max()
-            best_row['n_merged_records'] = len(sub_df)
+                best_row["POP_SERVED"] = pd.to_numeric(sub_df["POP_SERVED"], errors="coerce").max()
+            best_row["n_merged_records"] = len(sub_df)
             data.append(pd.DataFrame([best_row]))
     df = pd.concat(data, ignore_index=True)
-    df = df.drop(columns=['num_missing'])
+    df = df.drop(columns=["num_missing"])
     return df
 
 
@@ -128,9 +129,9 @@ def create_ranges(x, y, step, min_step=100):
 def extract_site_coordinates(df, centroid_points):
     """
     Extract Voronoi site coordinates from dataframe geometries.
-    
+
         Derives site coordinates from input geometries with centroid fallback.
-    
+
     Parameters
     ----------
     df : geopandas.GeoDataFrame
@@ -149,7 +150,7 @@ def extract_site_coordinates(df, centroid_points):
     """
     logger.debug(f"Computing centroids from {len(df)} site geometries")
     points = []
-    for geom in df['geometry'].apply(create_centroid_points):
+    for geom in df["geometry"].apply(create_centroid_points):
         if isinstance(geom, Point):
             points.append((geom.x, geom.y))
         elif isinstance(geom, (LineString, MultiLineString, Polygon, MultiPolygon)):
@@ -157,17 +158,17 @@ def extract_site_coordinates(df, centroid_points):
         else:
             points.append((None, None))
     logger.debug(f"Computed {len(points)} site centroids")
-    
+
     return points
 
 
 def finalize_gdf(df_list, cols):
     """
     Finalize and concatenate list of GeoDataFrames into single output.
-    
+
     Concatenates multiple GeoDataFrames from parallel Voronoi workers,
     applies topology normalization, and returns single combined GeoDataFrame.
-    
+
     Parameters
     ----------
     df_list : list
@@ -185,20 +186,20 @@ def finalize_gdf(df_list, cols):
     else:
         # fallback: empty GeoDataFrame with geometry column
         df = pd.DataFrame(columns=cols)
-    df = gpd.GeoDataFrame(df, geometry='geometry', crs='epsg:4326')
+    df = gpd.GeoDataFrame(df, geometry="geometry", crs="epsg:4326")
     if len(df) > 0:
-        df['geometry'] = df['geometry'].map(buffer_geometry)
+        df["geometry"] = df["geometry"].map(buffer_geometry)
     return df
 
 
 def assign_sites_streaming(valid_points, points, weights, distance_fn, factor):
     """
     Assign each grid point to nearest Voronoi site using weighted distance.
-    
+
     Computes distance from each grid point to all sites using the provided
     distance function, tracking minimum distance site for streaming computation.
     Supports multiplicative and additive weighting schemes.
-    
+
     Parameters
     ----------
     valid_points : numpy.ndarray
@@ -233,23 +234,37 @@ def assign_sites_streaming(valid_points, points, weights, distance_fn, factor):
         mask = dist < best_distances
         best_distances[mask] = dist[mask]
         assignments[mask] = idx
-    
+
     assigned_count = np.sum(assignments >= 0)
     logger.debug(f"Assignment complete: {assigned_count}/{n_points} points assigned")
     return assignments
 
 
-def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, n_points=100, distance_fn=default_distance_multiplicative,
-                      scipy_true=False, cv2_true=False, centroid_points=False, buffering=False, threshold=500,
-                      calculate_buffer_fn=calculate_buffer, buffer_fn_kwargs=None, site_id_col='WASTE_ID',
-                      size_weights=False):
+def weighted_voronoi(
+    df,
+    col,
+    country_clip,
+    scale_weights=False,
+    clipping=None,
+    n_points=100,
+    distance_fn=default_distance_multiplicative,
+    scipy_true=False,
+    cv2_true=False,
+    centroid_points=False,
+    buffering=False,
+    threshold=500,
+    calculate_buffer_fn=calculate_buffer,
+    buffer_fn_kwargs=None,
+    site_id_col="WASTE_ID",
+    size_weights=False,
+):
     """
     Generate weighted Voronoi diagram from point sites with multiple contour methods.
-    
+
     Creates Voronoi regions using weighted distance metrics. Generates grid of points,
     assigns each to nearest site, then extracts contours using scipy/cv2/rasterio helper
     functions (extract_contours_scipy, extract_contours_cv2, extract_contours_rasterio).
-    
+
     Parameters
     ----------
     df : geopandas.GeoDataFrame
@@ -309,22 +324,22 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     if site_id_col not in df.columns:
         raise KeyError(f"Site identifier column '{site_id_col}' not found in weighted_voronoi input dataframe.")
     logger.info(f"Starting weighted Voronoi generation for {len(df)} sites (n_points={n_points})")
-    
+
     # === PHASE 1: CRS VALIDATION & PROJECTION ===
     # Ensure all geometries have a proper coordinate system
-    # The Projection to UTM must have happened in the previous steps, 
+    # The Projection to UTM must have happened in the previous steps,
     # but we check again here to be safe
     if df.crs is None:
-        df = df.set_crs('epsg:4326')
+        df = df.set_crs("epsg:4326")
         utm = estimate_utm_crs(df)
         df = df.to_crs(utm)
         logger.debug(f"Projected to UTM CRS: {utm}")
     crs = df.crs
-    
+
     # === PHASE 2: SITE PREPROCESSING ===
     # Cluster nearby points to avoid creating duplicate Voronoi regions
     # Points within 'threshold' distance are merged together with aggregate properties
-    df = gpd.GeoDataFrame(cluster_points(df, threshold), geometry='geometry', crs=crs)
+    df = gpd.GeoDataFrame(cluster_points(df, threshold), geometry="geometry", crs=crs)
     logger.debug(f"After clustering: {len(df)} sites")
 
     # === PHASE 3: SITE COORDINATES & WEIGHT INITIALIZATION ===
@@ -342,10 +357,8 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     )
     buffer_lengths = np.asarray(buffer_lengths, dtype=float)
     if len(buffer_lengths) != len(df):
-        raise ValueError(
-            f"calculate_buffer_fn returned {len(buffer_lengths)} buffer lengths for {len(df)} rows"
-        )
-    df['buffer_length'] = buffer_lengths
+        raise ValueError(f"calculate_buffer_fn returned {len(buffer_lengths)} buffer lengths for {len(df)} rows")
+    df["buffer_length"] = buffer_lengths
     if size_weights:
         if distance_fn is not default_distance_multiplicative:
             raise ValueError("size weights need the multiplicative distance (weight_func 'mult')")
@@ -362,60 +375,60 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     # using a much larger clipping geometry can increase computation cost
     # significantly (approximately O(nm) for grid dimensions n and m).
     minx, miny, maxx, maxy = df.geometry.buffer(np.max(buffer_lengths)).total_bounds
-    
+
     # === PHASE 5: CLIPPING GEOMETRY PREPARATION ===
     # Use provided clipping geometry when available (CRS-aligned), otherwise use
     # the buffered extent bounds as the clipping object.
     actual_clipping_object = None
     if clipping is not None and not clipping.empty:
         if clipping.crs is None:
-            clipping = clipping.set_crs('epsg:4326')
+            clipping = clipping.set_crs("epsg:4326")
         if clipping.crs != crs:
             clipping = clipping.to_crs(crs)
         actual_clipping_object = buffer_geometry(unary_union(clipping.geometry))
     else:
         actual_clipping_object = buffer_geometry(box(minx, miny, maxx, maxy))
-    
+
     # === PHASE 6: COUNTRY CRS ALIGNMENT ===
     # Ensure country clipping geometry is aligned with site CRS
     # This is critical for accurate clipping during final boundary operations
     if country_clip is not None:
         if country_clip.crs is None:
-            country_clip = country_clip.set_crs('epsg:4326')
-        if  country_clip.crs != crs:
+            country_clip = country_clip.set_crs("epsg:4326")
+        if country_clip.crs != crs:
             country_clip = country_clip.to_crs(crs)
-    
+
     if len(df) == 1:
         # === PHASE 7: SPECIAL CASE (SINGLE SITE) ===
         # When only one site exists, create Voronoi region from clipping boundary
         # This is NOT a true Voronoi diagram, but the site's service area
         region_polygons = df.copy()
         point_df = df.copy().reset_index(drop=True)
-        region_geom = df.iloc[0]['geometry'].buffer(df.iloc[0]['buffer_length'])
-        geom = df.iloc[0]['geometry']
+        region_geom = df.iloc[0]["geometry"].buffer(df.iloc[0]["buffer_length"])
+        geom = df.iloc[0]["geometry"]
 
         if isinstance(region_geom, (Point, Polygon, MultiPolygon, LineString, MultiLineString)):
             region_geom = buffer_geometry(region_geom)  # type: ignore[index]
 
         # Optionally intersect region with buffer around site point
         if buffering:
-            point_buffer = geom.centroid.buffer(df.iloc[0]['buffer_length'])
+            point_buffer = geom.centroid.buffer(df.iloc[0]["buffer_length"])
             region_geom = region_geom.intersection(point_buffer).buffer(0)  # type: ignore[union-attr, index]
-        region_polygons.at[region_polygons.index[0], 'geometry'] = cast(Any, region_geom)  # type: ignore[index]
+        region_polygons.at[region_polygons.index[0], "geometry"] = cast(Any, region_geom)  # type: ignore[index]
 
         # Clip region to actual clipping geometry to ensure it does not exceed bounds
         region_polygons = gpd.clip(region_polygons, actual_clipping_object)  # type: ignore[arg-type]
-        region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
-        
+        region_polygons["geometry"] = region_polygons["geometry"].map(buffer_geometry)
+
         # Apply country boundary clipping if provided
         if country_clip is not None and not country_clip.empty:
             region_polygons = gpd.clip(region_polygons, country_clip)
-        region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
+        region_polygons["geometry"] = region_polygons["geometry"].map(buffer_geometry)
 
         # Same 'area' column the multi-site branch emits, computed in the metric
         # CRS before reprojecting - without it downstream consumers see the
         # column only for multi-site groups.
-        region_polygons['area'] = region_polygons.geometry.area
+        region_polygons["area"] = region_polygons.geometry.area
 
         # Convert all outputs to WGS84 for standard output format
         region_polygons = region_polygons.to_crs(4326)
@@ -433,7 +446,7 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     del xv, yv
     grid_minx = x_coords[0]
     grid_miny = y_coords[0]
-  
+
     # === PHASE 9: GRID MASKING & SITE ASSIGNMENT ===
     # Filter grid points to include only those within the clipping boundary to optimize assignment.
     # Extract only points that are inside the clipping boundary
@@ -455,7 +468,7 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
     assignment_grid[valid_flat_indices] = assignments
     assignment_grid_2d = assignment_grid.reshape(len(y_coords), len(x_coords))
     del assignment_grid, valid_flat_indices, valid_points
-    
+
     # === PHASE 10: REGION BOUNDARY EXTRACTION ===
     # Build Voronoi region polygon for each site
     region_polygons = []
@@ -464,14 +477,14 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
         assigned_to_site = assignments == i
         if not np.any(assigned_to_site):
             # No points assigned to this site: create empty region placeholder
-            region_polygons.append({site_id_col: row[site_id_col], 'geometry': None})
+            region_polygons.append({site_id_col: row[site_id_col], "geometry": None})
             continue
 
         # === CONTOUR EXTRACTION ===
         # Create 2D binary mask indicating which grid points belong to this site
         # Reshape 1D mask back to 2D grid for contour detection
         region_mask_2d = assignment_grid_2d == i
-        
+
         # Extract contours (region boundaries) from binary mask using selected method:
         # Different contour extraction algorithms have different speed/accuracy tradeoffs
         if scipy_true:
@@ -489,46 +502,44 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
             # Optionally intersect region with buffer around site for local influence zone
             if buffering:
                 point_buffer = None
-                point_buffer = Point(point).buffer(row['buffer_length'])
+                point_buffer = Point(point).buffer(row["buffer_length"])
                 polygons = polygons.intersection(point_buffer).buffer(0)
-            region_polygons.append({site_id_col: row[site_id_col], 'geometry': polygons})
+            region_polygons.append({site_id_col: row[site_id_col], "geometry": polygons})
         else:
             # No contours found for this site
-            region_polygons.append({site_id_col: row[site_id_col], 'geometry': None})
+            region_polygons.append({site_id_col: row[site_id_col], "geometry": None})
 
     del assignment_grid_2d, assignments, mask
 
     # === PHASE 11: GEODATAFRAME CONVERSION & DEDUPLICATION ===
     # Convert region list to DataFrame for further processing
     region_polygons = pd.DataFrame(region_polygons)
-    region_polygons = pd.merge(region_polygons, df.drop(['geometry'], axis=1), on=[site_id_col])
-    region_polygons = gpd.GeoDataFrame(region_polygons, geometry='geometry', crs=crs)
-    region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
+    region_polygons = pd.merge(region_polygons, df.drop(["geometry"], axis=1), on=[site_id_col])
+    region_polygons = gpd.GeoDataFrame(region_polygons, geometry="geometry", crs=crs)
+    region_polygons["geometry"] = region_polygons["geometry"].map(buffer_geometry)
     region_polygons = drop_duplicates(region_polygons, site_id_col)
-    
+
     # === PHASE 12: OVERLAP RESOLUTION ===
     # Remove overlapping areas between adjacent Voronoi regions
     # Each region intersection is assigned to larger polygon via area comparison
     non_intersecting_polygons = resolve_polygon_overlaps(region_polygons)
-    region_polygons['geometry'] = non_intersecting_polygons 
-    region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
+    region_polygons["geometry"] = non_intersecting_polygons
+    region_polygons["geometry"] = region_polygons["geometry"].map(buffer_geometry)
 
     # === PHASE 13: FINAL BOUNDARY CLIPPING ===
     # Clip regions to computed bounding box
     region_polygons = gpd.clip(region_polygons, actual_clipping_object)  # type: ignore[arg-type]
-    region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
+    region_polygons["geometry"] = region_polygons["geometry"].map(buffer_geometry)
 
     # Clip regions to country boundary if provided (second clipping operation)
     if country_clip is not None and not country_clip.empty:
         region_polygons = gpd.clip(region_polygons, country_clip)
-        region_polygons['geometry'] = region_polygons['geometry'].map(buffer_geometry)
+        region_polygons["geometry"] = region_polygons["geometry"].map(buffer_geometry)
 
     # Area is measured on the final (clipped) polygons, in the metric CRS,
     # so it matches the geometry that is actually written out.
-    region_polygons = region_polygons[
-        region_polygons.geometry.notna() & ~region_polygons.geometry.is_empty
-    ].copy()
-    region_polygons['area'] = region_polygons.geometry.area
+    region_polygons = region_polygons[region_polygons.geometry.notna() & ~region_polygons.geometry.is_empty].copy()
+    region_polygons["area"] = region_polygons.geometry.area
 
     # Keep the sites whose region survived clipping. Matching is by site id:
     # matching on the weight column would keep/drop sites that merely share a
@@ -545,28 +556,57 @@ def weighted_voronoi(df, col, country_clip, scale_weights=False, clipping=None, 
 def voronoi_worker(args):
     """
     Worker function for parallel Voronoi generation.
-    
+
     Unpacks tuple of arguments and calls weighted_voronoi function.
     Designed for use with multiprocessing.Pool.map().
-    
+
     Args:
         args (tuple): Packed arguments for weighted_voronoi function
-        
+
     Returns:
         tuple: (region_polygons, point_df) from weighted_voronoi
-        
+
     Notes:
         Catches and prints exceptions during unpacking.
     """
     try:
-        (sub_df, col, country_clip, scale_weights, clipping, n_points, distance_fn,
-        scipy_true, cv2_true, centroid_points, buffering, threshold, calculate_buffer_fn,
-        buffer_fn_kwargs, site_id_col, size_weights) = args
+        (
+            sub_df,
+            col,
+            country_clip,
+            scale_weights,
+            clipping,
+            n_points,
+            distance_fn,
+            scipy_true,
+            cv2_true,
+            centroid_points,
+            buffering,
+            threshold,
+            calculate_buffer_fn,
+            buffer_fn_kwargs,
+            site_id_col,
+            size_weights,
+        ) = args
         logger.debug(f"voronoi_worker: Unpacked arguments for {len(sub_df)} sites")
     except Exception as err:
         logger.error(f"voronoi_worker: Error unpacking arguments: {err}")
         raise
     return weighted_voronoi(
-        sub_df, col, country_clip, scale_weights, clipping, n_points, distance_fn,
-        scipy_true, cv2_true, centroid_points, buffering, threshold, calculate_buffer_fn,
-        buffer_fn_kwargs, site_id_col, size_weights)
+        sub_df,
+        col,
+        country_clip,
+        scale_weights,
+        clipping,
+        n_points,
+        distance_fn,
+        scipy_true,
+        cv2_true,
+        centroid_points,
+        buffering,
+        threshold,
+        calculate_buffer_fn,
+        buffer_fn_kwargs,
+        site_id_col,
+        size_weights,
+    )

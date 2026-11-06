@@ -14,8 +14,10 @@ Usage: python 05b_service_country.py <data_dir> <agg_dir> <out_dir> [radius_tag]
 Writes <out_dir>/service_country.gpkg and service_country_table.csv, and adds a "country" entry to
 service_report.json.
 """
+
 import sys, json, os
 import numpy as np, pandas as pd, geopandas as gpd
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
 
@@ -43,8 +45,9 @@ def assign(df, polys, key, max_km=25):
     j = j[~j.index.duplicated()]
     miss = j[key].isna()
     if miss.any():
-        nn = gpd.sjoin_nearest(g[miss].to_crs(EA), polys[[key, "geometry"]].to_crs(EA), how="left",
-                               max_distance=max_km * 1000)
+        nn = gpd.sjoin_nearest(
+            g[miss].to_crs(EA), polys[[key, "geometry"]].to_crs(EA), how="left", max_distance=max_km * 1000
+        )
         nn = nn[~nn.index.duplicated()]
         j.loc[miss, key] = nn[key].values
     return j[key].values
@@ -60,15 +63,20 @@ if "country" in ns.columns:
     best = 0.0
     for col in ("iso2", "ADM0_A3", "ISO_A3_EH", "name"):
         m = dict(zip(ne.iso2, ne[col].astype(str)))
-        best = max(best, float((ns.loc[got, "unit"].map(m).str.upper() == ns.loc[got, "country"].astype(str).str.upper()).mean()))
+        best = max(
+            best,
+            float((ns.loc[got, "unit"].map(m).str.upper() == ns.loc[got, "country"].astype(str).str.upper()).mean()),
+        )
     agree = round(best, 4)
 
-agg = pd.DataFrame({
-    "P_non": ns.groupby("unit").pop_sum.sum(),
-    "n_areas": ns.groupby("unit").size(),
-    "P_served": hp.groupby("unit").zonal_sum_2024.sum(),
-    "n_plants": hp.groupby("unit").size(),
-}).fillna(0)
+agg = pd.DataFrame(
+    {
+        "P_non": ns.groupby("unit").pop_sum.sum(),
+        "n_areas": ns.groupby("unit").size(),
+        "P_served": hp.groupby("unit").zonal_sum_2024.sum(),
+        "n_plants": hp.groupby("unit").size(),
+    }
+).fillna(0)
 u = ne.merge(agg, left_on="iso2", right_index=True, how="left")
 for c in ("P_non", "n_areas", "P_served", "n_plants"):
     u[c] = u[c].fillna(0)
@@ -84,13 +92,20 @@ u.drop(columns="geometry").to_csv(f"{OUT}/service_country_table.csv", index=Fals
 
 ok = u[u.status == "ok"]
 rep = dict(
-    countries_ok=int(len(ok)), uncovered=int((u.status == "uncovered").sum()), no_data=int((u.status == "no_data").sum()),
-    non_served_unassigned_pop=float(ns.pop_sum[ns.unit.isna()].sum()), heigit_unassigned=int(hp.unit.isna().sum()),
+    countries_ok=int(len(ok)),
+    uncovered=int((u.status == "uncovered").sum()),
+    no_data=int((u.status == "no_data").sum()),
+    non_served_unassigned_pop=float(ns.pop_sum[ns.unit.isna()].sum()),
+    heigit_unassigned=int(hp.unit.isna().sum()),
     country_column_agreement=agree,
-    P_non_in_units=float(u.P_non.sum()), P_served_in_units=float(u.P_served.sum()),
+    P_non_in_units=float(u.P_non.sum()),
+    P_served_in_units=float(u.P_served.sum()),
     P_non_in_uncovered=float(u.loc[u.status == "uncovered", "P_non"].sum()),
     R_global=round(float(ok.P_non.sum() / (ok.P_served.sum() + ok.P_non.sum())), 4),
-    top_non_served=ok.sort_values("P_non", ascending=False).head(10)[["iso2", "name", "P_non"]].round(0).to_dict("records"),
+    top_non_served=ok.sort_values("P_non", ascending=False)
+    .head(10)[["iso2", "name", "P_non"]]
+    .round(0)
+    .to_dict("records"),
 )
 path = f"{OUT}/service_report.json"
 report = json.load(open(path)) if os.path.exists(path) else {}

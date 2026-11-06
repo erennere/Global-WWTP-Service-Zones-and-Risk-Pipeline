@@ -1,4 +1,5 @@
 """Tests for create_rasters (moved from the coverage-campaign files)."""
+
 import argparse
 import geopandas as gpd
 import numpy as np
@@ -62,7 +63,9 @@ def test_create_rasters_main_smoke(monkeypatch, tmp_path):
         return watershed.copy()
 
     monkeypatch.setattr(cr.gpd, "read_file", _read_file)
-    monkeypatch.setattr(cr, "find_newest_country_tif_files", lambda countries, tif_dir: {"DEU": str(tmp_path / "deu.tif")})
+    monkeypatch.setattr(
+        cr, "find_newest_country_tif_files", lambda countries, tif_dir: {"DEU": str(tmp_path / "deu.tif")}
+    )
     monkeypatch.setattr(cr.os, "chdir", lambda path: None)
     monkeypatch.setattr(cr.os.path, "exists", lambda p: False)
     monkeypatch.setattr(cr.os, "makedirs", lambda *args, **kwargs: None)
@@ -79,13 +82,15 @@ def test_create_rasters_main_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cr,
         "orchestrate_intersections",
-        lambda tif_dict, gdf, watershed_gdf, output_tif_dir, csv_output_filepath, non_served_outpath, max_workers, **kwargs: seen.update(
-            {
-                "tif_count": len(tif_dict),
-                "gdf_rows": len(gdf),
-                "watershed_rows": len(watershed_gdf),
-                "max_workers": max_workers,
-            }
+        lambda tif_dict, gdf, watershed_gdf, output_tif_dir, csv_output_filepath, non_served_outpath, max_workers, **kwargs: (
+            seen.update(
+                {
+                    "tif_count": len(tif_dict),
+                    "gdf_rows": len(gdf),
+                    "watershed_rows": len(watershed_gdf),
+                    "max_workers": max_workers,
+                }
+            )
         ),
     )
 
@@ -98,46 +103,38 @@ def test_create_rasters_main_smoke(monkeypatch, tmp_path):
 
 class TestCreateRastersUtilities:
     """Test utility functions in create_rasters."""
-    
+
     def test_extract_worldpop_with_minimal_data(self):
         """Test extract_worldpop_universal with minimal test data."""
         # Create minimal test data
-        hybas_gdf = gpd.GeoDataFrame(
-            {'geometry': [Point(0, 0).buffer(1)], 'HYBAS_ID': [1]},
-            crs='EPSG:4326'
-        )
-        exclude_gdf = gpd.GeoDataFrame(
-            columns=['geometry'],
-            crs='EPSG:4326'
-        )
-        
+        hybas_gdf = gpd.GeoDataFrame({"geometry": [Point(0, 0).buffer(1)], "HYBAS_ID": [1]}, crs="EPSG:4326")
+        exclude_gdf = gpd.GeoDataFrame(columns=["geometry"], crs="EPSG:4326")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a minimal valid raster
             import rasterio
             from rasterio.transform import from_bounds
-            
+
             raster_path = Path(tmpdir) / "test.tif"
-            
+
             # Create test raster
             data = np.ones((10, 10), dtype=np.float32) * 100
             transform = from_bounds(0, 0, 1, 1, 10, 10)
-            
+
             with rasterio.open(
-                str(raster_path), 'w',
-                driver='GTiff',
-                height=10, width=10,
-                count=1, dtype=np.float32,
-                crs='EPSG:4326',
-                transform=transform
+                str(raster_path),
+                "w",
+                driver="GTiff",
+                height=10,
+                width=10,
+                count=1,
+                dtype=np.float32,
+                crs="EPSG:4326",
+                transform=transform,
             ) as dst:
                 dst.write(data, 1)
-            
-            result = cr.extract_worldpop_universal(
-                str(raster_path),
-                hybas_gdf,
-                exclude_gdf,
-                min_pixels=1
-            )
+
+            result = cr.extract_worldpop_universal(str(raster_path), hybas_gdf, exclude_gdf, min_pixels=1)
 
             assert isinstance(result, gpd.GeoDataFrame)
 
@@ -451,14 +448,14 @@ def test_create_rasters_main_watershed_requires_crs_and_read_file_no_crs_kwarg(m
     monkeypatch.setattr(create_rasters.os.path, "exists", lambda _p: True)
     monkeypatch.setattr(create_rasters.os, "makedirs", lambda *args, **kwargs: None)
     monkeypatch.setattr(create_rasters.os, "chdir", lambda _p: None)
-    monkeypatch.setattr(create_rasters, "find_newest_country_tif_files", lambda countries, tif_dir: {"DEU": str(tmp_path / "deu.tif")})
+    monkeypatch.setattr(
+        create_rasters, "find_newest_country_tif_files", lambda countries, tif_dir: {"DEU": str(tmp_path / "deu.tif")}
+    )
 
     with pytest.raises(ValueError, match="Watershed dataset must include CRS metadata"):
         create_rasters.main()
 
     assert calls["watershed_kwargs"] == {}
-
-
 
 
 @pytest.mark.real_atomic_output

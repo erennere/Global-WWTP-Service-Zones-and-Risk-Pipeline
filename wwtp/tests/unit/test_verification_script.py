@@ -1,4 +1,5 @@
 """Tests for verification_script (moved from the coverage-campaign files)."""
+
 import pandas as pd
 import pytest
 from wwtp.pop_validation_scripts import verification_script

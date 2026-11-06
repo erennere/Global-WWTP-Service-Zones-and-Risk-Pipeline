@@ -34,6 +34,7 @@ urls = [
 ]
 pause_seconds = 0.1
 
+
 def clean_columns(gdf):
     """Clean column names and ensure valid types for GeoJSON export."""
     if gdf.empty:
@@ -86,7 +87,7 @@ def query_overpass(bbox, queries, url, retries=3, pause_seconds=0.1):
     for attempt in range(1, retries + 1):
         try:
             r = session.get(url, params={"data": q}, timeout=300)
-            
+
             if r.status_code == 200:
                 try:
                     return r.json()
@@ -113,7 +114,7 @@ def elements_to_gdf(data):
 
     elements = data["elements"]
     nodes = {el["id"]: (el["lon"], el["lat"]) for el in elements if el["type"] == "node"}
-    ways  = {el["id"]: el for el in elements if el["type"] == "way"}
+    ways = {el["id"]: el for el in elements if el["type"] == "way"}
 
     lns, polys = [], []
 
@@ -142,13 +143,22 @@ def elements_to_gdf(data):
                 except Exception:
                     pass
 
-    gdf_lns  = gpd.GeoDataFrame(lns, geometry="geometry", crs="EPSG:4326") if lns else gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
-    gdf_poly = gpd.GeoDataFrame(polys, geometry="geometry", crs="EPSG:4326") if polys else gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    gdf_lns = (
+        gpd.GeoDataFrame(lns, geometry="geometry", crs="EPSG:4326")
+        if lns
+        else gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    )
+    gdf_poly = (
+        gpd.GeoDataFrame(polys, geometry="geometry", crs="EPSG:4326")
+        if polys
+        else gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    )
     return gdf_lns, gdf_poly
 
 
 def timer(label):
     """Return a decorator that prints the runtime of the wrapped function."""
+
     def wrap(func):
         def inner(*args, **kwargs):
             t0 = time.time()
@@ -156,8 +166,11 @@ def timer(label):
             dt = time.time() - t0
             print(f"⏱️ {label}: {dt:.5f} sec")
             return result
+
         return inner
+
     return wrap
+
 
 def find_bbox(geometry):
     """Return an Overpass bbox string for a geometry, or None when invalid."""
@@ -170,6 +183,7 @@ def find_bbox(geometry):
 
     minx, miny, maxx, maxy = geometry.bounds
     return f"{miny},{minx},{maxy},{maxx}"
+
 
 def create_tasks(gdf, batch_size, endpoint_urls=None):
     """Yield batched Overpass download tasks across the configured endpoints.
@@ -193,9 +207,9 @@ def create_tasks(gdf, batch_size, endpoint_urls=None):
     url_count = len(endpoint_urls)
 
     for start in range(0, len(rows), batch_size):
-        batch = rows[start:start+batch_size]
-        yield [(r.bbox, r.idx, endpoint_urls[i % url_count]) 
-               for i, r in enumerate(batch)]
+        batch = rows[start : start + batch_size]
+        yield [(r.bbox, r.idx, endpoint_urls[i % url_count]) for i, r in enumerate(batch)]
+
 
 def row_operation(bbox, idx_val, url, output_folder, pause_seconds=0.1):
     """Fetch and persist OSM features for one grid-cell bbox.
@@ -213,7 +227,8 @@ def row_operation(bbox, idx_val, url, output_folder, pause_seconds=0.1):
     pause_seconds : float
         Base backoff delay passed through to ``query_overpass``.
     """
-    if bbox is None: return
+    if bbox is None:
+        return
     line_path = os.path.join(output_folder, f"idx_{idx_val}_lines.geojson")
     poly_path = os.path.join(output_folder, f"idx_{idx_val}_polygons.geojson")
     data = query_overpass(bbox, queries, url, pause_seconds=pause_seconds)
@@ -232,6 +247,7 @@ def row_operation(bbox, idx_val, url, output_folder, pause_seconds=0.1):
         with atomic_output(poly_path) as tmp_path:
             all_polys.to_file(tmp_path, driver="GeoJSON")
         print(f"✅ Saved {poly_path}")
+
 
 def parse_args():
     """Parse the standardized named config-override flags."""
@@ -260,21 +276,21 @@ def main():
     points_path = cfg["paths"]["corrected_all_filepath"]
 
     grid_filedir = cfg["paths"]["annotations_grid_dir"]
-    grid_filepath = os.path.join(grid_filedir, f'grids_{os.path.basename(points_path)}')
+    grid_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(points_path)}")
     output_folder = cfg["paths"]["annotations_by_osm_dir"]
 
     os.makedirs(output_folder, exist_ok=True)
     max_workers = int(cfg["annotations"]["max_workers"])
-    batch_size  = max_workers * len(urls)
+    batch_size = max_workers * len(urls)
 
     poly = gpd.read_file(grid_filepath).to_crs(4326)
-    poly['bbox'] = poly['geometry'].map(find_bbox)
+    poly["bbox"] = poly["geometry"].map(find_bbox)
 
     for _ in range(retrials):
         if not overwrite:
             output_list = set(os.listdir(output_folder))
             mask = []
-            for idx in poly['idx'].values:
+            for idx in poly["idx"].values:
                 line_file = f"idx_{idx}_lines.geojson"
                 poly_file = f"idx_{idx}_polygons.geojson"
                 if line_file in output_list or poly_file in output_list:
@@ -285,10 +301,10 @@ def main():
             if poly.empty:
                 print("🎉 All idx features already processed, no retrials needed!")
                 return
-            
+
         print(len(poly))
         print(poly.head())
-        
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for tasks in create_tasks(poly, batch_size, urls):
                 futures = [
@@ -301,6 +317,7 @@ def main():
                     except Exception as e:
                         print(f"⚠️ Error processing task: {e}")
             print("\n🎯 All requested idx features processed successfully!")
+
 
 if __name__ == "__main__":
     configure_logging()

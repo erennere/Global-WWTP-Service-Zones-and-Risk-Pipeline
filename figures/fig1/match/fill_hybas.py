@@ -16,6 +16,7 @@ Usage (one line in PowerShell):
   python fill_hybas.py --gpkg <path>\\national_wwtp_AU_JP_NZ_ZA.gpkg
       --hybas <path>\\hybas_af_lev09_v1c.shp <path>\\hybas_as_lev09_v1c.shp <path>\\hybas_au_lev09_v1c.shp
 """
+
 import argparse
 import os
 from pathlib import Path
@@ -30,6 +31,7 @@ def read_basins(path: Path, bbox):
     src = f"/vsizip/{path.resolve()}" if path.suffix.lower() == ".zip" else str(path)
     if path.suffix.lower() == ".zip":
         import zipfile
+
         shp = [n for n in zipfile.ZipFile(path).namelist() if n.lower().endswith(".shp")]
         src = f"{src}/{shp[0]}"
     g = gpd.read_file(src, bbox=bbox, columns=["HYBAS_ID"])
@@ -56,8 +58,7 @@ def main(argv=None):
         # coastal plants just outside the polygons: nearest basin within 5 km
         todo = pts[hyb.isna()]
         if len(todo):
-            near = gpd.sjoin_nearest(todo[["geometry"]].to_crs(6933), b.to_crs(6933),
-                                     how="inner", max_distance=5_000)
+            near = gpd.sjoin_nearest(todo[["geometry"]].to_crs(6933), b.to_crs(6933), how="inner", max_distance=5_000)
             near = near[~near.index.duplicated()]
             hyb.loc[near.index] = near["HYBAS_ID"].to_numpy()
         print(f"{f.name}: {int(hyb.notna().sum())} of {len(pts)} plants have a basin so far")

@@ -4,6 +4,7 @@
 - decay: a plume leaves its segment at C0 exp(-k L / v)
 - confluence: mixing conserves the pollutant flux
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -21,8 +22,10 @@ def test_load_ratio_in_hand_computed_units():
     assert ip.calculate_load_ratio(1000, 1.0, org_per_pop=60.0, c_limit=5.0) == pytest.approx(60000 / 86.4 / 1000 / 5)
 
 
-@given(q=st.one_of(st.floats(1e-4, 50), st.floats(-5, 0), st.just(float("nan"))),  # HydroRIVERS: >= 0.001 m3/s
-       pop=st.floats(0, 1e6, allow_nan=False))
+@given(
+    q=st.one_of(st.floats(1e-4, 50), st.floats(-5, 0), st.just(float("nan"))),  # HydroRIVERS: >= 0.001 m3/s
+    pop=st.floats(0, 1e6, allow_nan=False),
+)
 def test_scalar_and_vectorized_load_ratio_agree(q, pop):
     scalar = ip.calculate_load_ratio(pop, q)
     vector = ip.calculate_load_ratio(np.array([pop]), np.array([q]))[0]
@@ -34,8 +37,9 @@ def test_scalar_and_vectorized_load_ratio_agree(q, pop):
 def test_plume_leaves_its_segment_at_exponential_decay_over_the_whole_length():
     length, start, lat, v = 1000.0, 3.0, 50.0, 0.01  # slow flow so the decay is visible
     ip.init_worker({1: (None, start)}, {1: LineString([(0, 0), (length, 0)])}, {1: lat}, {1: 0}, {1: 1.0})
-    polygons, exit_load = ip.generate_single_segment_plume(1, lat, step_m=100.0, c_limit=5.0, velocity_m_s=v,
-                                                           impact_radii=[1000])
+    polygons, exit_load = ip.generate_single_segment_plume(
+        1, lat, step_m=100.0, c_limit=5.0, velocity_m_s=v, impact_radii=[1000]
+    )
     k = ip.calculate_kt(lat)
     assert polygons
     assert exit_load == pytest.approx(5.0 * start * np.exp(-k * length / (86400 * v)))
@@ -43,7 +47,7 @@ def test_plume_leaves_its_segment_at_exponential_decay_over_the_whole_length():
 
 def test_decay_rate_follows_the_temperature_model():
     # 28 C at the equator -> k = 0.23 * 1.047 ** 8; 20 C (k = base) at arccos(20/28)
-    assert ip.calculate_kt(0.0) == pytest.approx(0.23 * 1.047 ** 8)
+    assert ip.calculate_kt(0.0) == pytest.approx(0.23 * 1.047**8)
     assert ip.calculate_kt(np.degrees(np.arccos(20 / 28))) == pytest.approx(0.23)
 
 

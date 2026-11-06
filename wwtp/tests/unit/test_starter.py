@@ -27,9 +27,19 @@ def test_parse_config_overrides_from_argv_parses_all_supported_types():
     overrides = starter.parse_config_overrides(
         argv=[
             "prog",
-            "--level", "9", "--version", "3", "--buffer", "12000",
-            "--weight-method", "square_root", "--weight-func=",
-            "--dynamic-buffering", "yes", "--size-measure", "footprint",
+            "--level",
+            "9",
+            "--version",
+            "3",
+            "--buffer",
+            "12000",
+            "--weight-method",
+            "square_root",
+            "--weight-func=",
+            "--dynamic-buffering",
+            "yes",
+            "--size-measure",
+            "footprint",
         ]
     )
 
@@ -73,15 +83,24 @@ def test_parse_config_overrides_from_namespace_normalizes_optional_values():
 def test_add_standard_override_arguments_parses_named_flags():
     parser = argparse.ArgumentParser()
     starter.add_standard_override_arguments(parser)
-    args = parser.parse_args([
-        "--level", "7",
-        "--version", "3",
-        "--buffer", "1200",
-        "--weight-method", "logarithmic",
-        "--weight-func", "mult",
-        "--dynamic-buffering", "true",
-        "--size-measure", "footprint",
-    ])
+    args = parser.parse_args(
+        [
+            "--level",
+            "7",
+            "--version",
+            "3",
+            "--buffer",
+            "1200",
+            "--weight-method",
+            "logarithmic",
+            "--weight-func",
+            "mult",
+            "--dynamic-buffering",
+            "true",
+            "--size-measure",
+            "footprint",
+        ]
+    )
 
     overrides = starter.parse_config_overrides(args=args)
 
@@ -118,10 +137,22 @@ def test_parse_config_overrides_ignores_positional_tokens():
 def test_parse_config_overrides_reads_named_flags_from_argv():
     overrides = starter.parse_config_overrides(
         argv=[
-            "prog", "positional-arg",
-            "--level", "8", "--version", "4", "--buffer", "1500",
-            "--weight-method", "linear", "--weight-func", "mult",
-            "--dynamic-buffering", "0", "--size-measure", "reported",
+            "prog",
+            "positional-arg",
+            "--level",
+            "8",
+            "--version",
+            "4",
+            "--buffer",
+            "1500",
+            "--weight-method",
+            "linear",
+            "--weight-func",
+            "mult",
+            "--dynamic-buffering",
+            "0",
+            "--size-measure",
+            "reported",
         ],
     )
 
@@ -267,12 +298,24 @@ def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_te
 
 def test_fixed_buffering_needs_no_radius_calibration(write_test_config):
     config_path = write_test_config(
-        {"create_voronoi": {"buffer": 9000, "dynamic_buffering": False, "max_buffer": 50000, **SIZE_CONFIG,
-                            "radius_calibration": {}}}
+        {
+            "create_voronoi": {
+                "buffer": 9000,
+                "dynamic_buffering": False,
+                "max_buffer": 50000,
+                **SIZE_CONFIG,
+                "radius_calibration": {},
+            }
+        }
     )
     cfg = starter.load_config(script_name="create_voronoi", config=str(config_path))
     # the plant size stays available for weight_method 'size'
-    assert cfg["calculate_buffer_kwargs"] == {"buffer": 9000, "dynamic_buffering": False, "max_buffer": 50000, **SIZE_KWARGS}
+    assert cfg["calculate_buffer_kwargs"] == {
+        "buffer": 9000,
+        "dynamic_buffering": False,
+        "max_buffer": 50000,
+        **SIZE_KWARGS,
+    }
     assert cfg["buffer_path_token"] == "9000"
 
 
@@ -290,8 +333,11 @@ def test_size_measure_without_calibration_entry_is_rejected(write_test_config):
     with pytest.raises(ValueError, match="no radius_calibration entry"):
         starter.load_config(script_name="create_voronoi", config=path, size_measure="reported")
     with pytest.raises(ValueError, match="radius_at_10k_people_km: Field required"):
-        starter.load_config(script_name="create_voronoi", config=config_with({"reported": {"radius_exponent": 0.4}}),
-                            size_measure="reported")
+        starter.load_config(
+            script_name="create_voronoi",
+            config=config_with({"reported": {"radius_exponent": 0.4}}),
+            size_measure="reported",
+        )
 
 
 def test_load_config_normalizes_weight_func_from_yaml(write_test_config):
@@ -443,6 +489,7 @@ def test_resolve_config_limits_nested_inheritance_to_declared_keys():
 
 # --- moved from the coverage-campaign files ---
 
+
 class _Future:
     def __init__(self, fn=None, args=(), kwargs=None, value=None):
         self._fn = fn
@@ -454,6 +501,7 @@ class _Future:
         if self._fn is None:
             return self._value
         return self._fn(*self._args, **self._kwargs)
+
 
 class _Executor:
     def __init__(self, max_workers=None, eager_results=True):
@@ -521,7 +569,11 @@ def test_new03_script_entrypoint_runs_merge_tasks_and_calls_main(monkeypatch, tm
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
     monkeypatch.setattr(pd, "read_parquet", lambda path: df.copy())
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
-    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", lambda max_workers=None: _Executor(max_workers=max_workers, eager_results=False))
+    monkeypatch.setattr(
+        concurrent.futures,
+        "ProcessPoolExecutor",
+        lambda max_workers=None: _Executor(max_workers=max_workers, eager_results=False),
+    )
 
     runpy.run_module(ww3.__name__, run_name="__main__")
 
@@ -545,7 +597,9 @@ def test_new03_script_skips_main_when_output_file_missing(monkeypatch, tmp_path)
     os.makedirs(cfg["paths"]["annotations_grid_dir"], exist_ok=True)
     os.makedirs(cfg["paths"]["annotations_by_osm_dir"], exist_ok=True)
 
-    merged_path = os.path.join(os.path.abspath(os.path.join(cfg["paths"]["annotations_grid_dir"], "..")), "data", "merged_polygons.parquet")
+    merged_path = os.path.join(
+        os.path.abspath(os.path.join(cfg["paths"]["annotations_grid_dir"], "..")), "data", "merged_polygons.parquet"
+    )
     merged_lines_path = merged_path.replace("polygons", "lines")
     original_exists = os.path.exists
     seen = {"merged_checks": 0, "lines_checks": 0}

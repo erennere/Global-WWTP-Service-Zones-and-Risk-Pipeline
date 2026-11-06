@@ -21,7 +21,12 @@ from matplotlib.lines import Line2D
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from ..pipelines import create_pop_output_paths
-from ..utils import clip_to_robust_bounds, configure_logging, ensure_output_dir_for_file, resolve_latest_zonal_sum_column
+from ..utils import (
+    clip_to_robust_bounds,
+    configure_logging,
+    ensure_output_dir_for_file,
+    resolve_latest_zonal_sum_column,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -236,7 +241,9 @@ def make_scatter_plot(country_df, color_col, out_path):
     x1, y1 = _trim_xy_pairs(x1_raw, y1_raw, lower_q=0.12, upper_q=0.88, iqr_factor=0.6)
     country_df_b1 = country_df.loc[x1.index]
 
-    axes[0].scatter(x1, y1, s=46, c=country_df_b1[color_col].map(color_map), alpha=0.9, edgecolors="white", linewidths=0.7)
+    axes[0].scatter(
+        x1, y1, s=46, c=country_df_b1[color_col].map(color_map), alpha=0.9, edgecolors="white", linewidths=0.7
+    )
     add_one_to_one_line(axes[0], x1, y1)
     axes[0].set_title("Plot B1: Aggregate vs Median (Total Area / Population Proxy)", fontsize=12)
     axes[0].set_xlabel("sum(total_area) / sum(zonal_sum)")
@@ -255,7 +262,9 @@ def make_scatter_plot(country_df, color_col, out_path):
     x2, y2 = _trim_xy_pairs(x2_raw, y2_raw, lower_q=0.03, upper_q=0.97, iqr_factor=1.0)
     country_df_b2 = country_df.loc[x2.index]
 
-    axes[1].scatter(x2, y2, s=46, c=country_df_b2[color_col].map(color_map), alpha=0.9, edgecolors="white", linewidths=0.7)
+    axes[1].scatter(
+        x2, y2, s=46, c=country_df_b2[color_col].map(color_map), alpha=0.9, edgecolors="white", linewidths=0.7
+    )
     add_one_to_one_line(axes[1], x2, y2)
     axes[1].set_title("Plot B2: Aggregate vs Median (Circular Fraction)", fontsize=12)
     axes[1].set_xlabel("sum(round_area) / sum(total_area)")
@@ -288,13 +297,33 @@ def make_scatter_plot(country_df, color_col, out_path):
 def parse_args():
     """Parse CLI arguments for composite figure generation."""
     parser = argparse.ArgumentParser(description="Generate composite histograms and scatter plots.")
-    parser.add_argument("--approach", type=str, default=None, help="Approach key for create_pop_output_paths (e.g., 0, 1, 2, 1_only_round)")
-    parser.add_argument("--color-col", type=str, default="ECONOMY", help="Boundary column used for categorical color coding.")
-    parser.add_argument("--zonal-col", type=str, default=None, help="Override zonal-sum column. Defaults to config zonal_sum_default_column.")
-    parser.add_argument("--hist-lower-q", type=float, default=None,
-                        help="Lower quantile for histogram outlier trimming (default: config plot_outlier_quantiles[0]).")
-    parser.add_argument("--hist-upper-q", type=float, default=None,
-                        help="Upper quantile for histogram outlier trimming (default: config plot_outlier_quantiles[1]).")
+    parser.add_argument(
+        "--approach",
+        type=str,
+        default=None,
+        help="Approach key for create_pop_output_paths (e.g., 0, 1, 2, 1_only_round)",
+    )
+    parser.add_argument(
+        "--color-col", type=str, default="ECONOMY", help="Boundary column used for categorical color coding."
+    )
+    parser.add_argument(
+        "--zonal-col",
+        type=str,
+        default=None,
+        help="Override zonal-sum column. Defaults to config zonal_sum_default_column.",
+    )
+    parser.add_argument(
+        "--hist-lower-q",
+        type=float,
+        default=None,
+        help="Lower quantile for histogram outlier trimming (default: config plot_outlier_quantiles[0]).",
+    )
+    parser.add_argument(
+        "--hist-upper-q",
+        type=float,
+        default=None,
+        help="Upper quantile for histogram outlier trimming (default: config plot_outlier_quantiles[1]).",
+    )
 
     add_standard_override_arguments(parser)
     return parser.parse_args()

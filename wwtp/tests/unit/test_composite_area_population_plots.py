@@ -1,4 +1,5 @@
 """Tests for composite_area_population_plots (moved from the coverage-campaign files)."""
+
 import os
 import geopandas as gpd
 import numpy as np
@@ -13,6 +14,7 @@ pytestmark = pytest.mark.unit
 
 def test_composite_main_end_to_end_with_sample_files(tmp_path, monkeypatch):
     import matplotlib
+
     matplotlib.use("Agg")
 
     pop_path = tmp_path / "pop.gpkg"
@@ -249,6 +251,7 @@ def test_make_category_color_map_is_deterministic_for_unique_categories():
 
 def test_add_one_to_one_line_adds_reference_line_for_non_empty_data():
     import matplotlib
+
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
@@ -274,6 +277,7 @@ def test_resolve_zonal_sum_column_ignores_unparseable_candidates():
 
 def test_add_one_to_one_line_skips_empty_series_and_handles_flat_range():
     import matplotlib
+
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 

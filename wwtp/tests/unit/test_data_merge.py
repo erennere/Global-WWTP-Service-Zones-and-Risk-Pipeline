@@ -561,16 +561,22 @@ def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp
     monkeypatch.setattr(final_data_merge.gpd, "read_file", fake_read_file)
     monkeypatch.setattr(final_data_merge.pd, "read_csv", lambda path, encoding=None: canada_csv.copy())
     monkeypatch.setattr(final_data_merge, "get_best_points", lambda gdf: (high.copy(), low.copy()))
-    monkeypatch.setattr(final_data_merge, "find_unmatched_targets", lambda src, target, threshold: target.iloc[[0]].copy())
+    monkeypatch.setattr(
+        final_data_merge, "find_unmatched_targets", lambda src, target, threshold: target.iloc[[0]].copy()
+    )
     monkeypatch.setattr(final_data_merge, "coordinate_corr_locations_wOSM", lambda rad, pdf, df: corrected_low.copy())
     monkeypatch.setattr(final_data_merge, "find_safe_epsg", lambda row: 3857)
     monkeypatch.setattr(
         final_data_merge,
         "find_meter_coordinates",
-        lambda df: gpd.GeoDataFrame(df.assign(meter_geometry=df["geometry"].apply(lambda g: g.wkt)), geometry="geometry", crs=4326),
+        lambda df: gpd.GeoDataFrame(
+            df.assign(meter_geometry=df["geometry"].apply(lambda g: g.wkt)), geometry="geometry", crs=4326
+        ),
     )
     monkeypatch.setattr(final_data_merge, "cluster_points", lambda df, threshold: df)
-    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path))
+    monkeypatch.setattr(
+        "wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path)
+    )
 
     original_to_file = gpd.GeoDataFrame.to_file
 
@@ -681,7 +687,9 @@ def test_correct_locations_main_writes_corrected_and_missing_outputs(monkeypatch
         "coordinate_corr_locations_wOSM",
         lambda rad, pdf, df: corrected_match.copy(),
     )
-    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path))
+    monkeypatch.setattr(
+        "wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path)
+    )
 
     original_to_file = gpd.GeoDataFrame.to_file
 
@@ -851,8 +859,8 @@ def test_correct_locations_used_corrected_geometry_flag_handles_sentinel_values(
     row_new = pd.Series({"neigh_lon": 1})
     row_corrected = pd.Series({"neigh_lon": 9.0})
 
-    used_new = (row_new["neigh_lon"] != 1 and row_new["neigh_lon"] != 2)
-    used_corrected = (row_corrected["neigh_lon"] != 1 and row_corrected["neigh_lon"] != 2)
+    used_new = row_new["neigh_lon"] != 1 and row_new["neigh_lon"] != 2
+    used_corrected = row_corrected["neigh_lon"] != 1 and row_corrected["neigh_lon"] != 2
 
     assert used_new == False
     assert used_corrected == True
@@ -908,7 +916,9 @@ def test_merge_old_reads_zip_csvs_and_writes_output(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(merge_seg_results.pd, "read_csv", lambda path: pd.DataFrame({"File Name": ["1.png"]}))
     monkeypatch.setattr(merge_seg_results.os.path, "exists", lambda path: False)
-    monkeypatch.setattr(merge_seg_results.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok)))
+    monkeypatch.setattr(
+        merge_seg_results.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok))
+    )
     monkeypatch.setattr(merge_seg_results.zipfile, "ZipFile", lambda path, mode: _ZipStub())
     monkeypatch.setattr(merge_seg_results.os, "listdir", lambda path: ["1.csv"] if path == zip_inner else [])
     monkeypatch.setattr(
@@ -1059,8 +1069,6 @@ def test_corr_locations_wosm_skips_missing_source_and_empty_candidates(monkeypat
     assert result["matched_osm_geometry"].isna().all()
 
 
-
-
 def test_correct_locations_script_entrypoint_runs_main_guard(monkeypatch):
     import runpy
 
@@ -1073,5 +1081,3 @@ def test_correct_locations_script_entrypoint_runs_main_guard(monkeypatch):
 
     with pytest.raises(KeyError, match="data_dir"):
         runpy.run_module(module_name, run_name="__main__")
-
-

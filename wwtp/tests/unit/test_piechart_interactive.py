@@ -1,4 +1,5 @@
 """Tests for piechart_interactive (moved from the coverage-campaign files)."""
+
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -33,9 +34,19 @@ def test_piechart_interactive_helpers_cover_branches():
     assert "ratio" in c1.columns
 
     c2 = pd.DataFrame({"population_total": [100], "2024_zonal_sum_sum": [80]})
-    assert piechart_interactive.ensure_population_percentage_column(c2, preferred_col="ratio", zonal_sum_col="2024_zonal_sum") == "ratio"
+    assert (
+        piechart_interactive.ensure_population_percentage_column(
+            c2, preferred_col="ratio", zonal_sum_col="2024_zonal_sum"
+        )
+        == "ratio"
+    )
 
-    assert piechart_interactive.resolve_zonal_sum_column(pd.DataFrame({"2019_zonal_sum": [1], "2024_zonal_sum": [2]}), "missing") == "2024_zonal_sum"
+    assert (
+        piechart_interactive.resolve_zonal_sum_column(
+            pd.DataFrame({"2019_zonal_sum": [1], "2024_zonal_sum": [2]}), "missing"
+        )
+        == "2024_zonal_sum"
+    )
 
     svg = piechart_interactive.get_pie_svg([1, 2], [3, 4], 32)
     assert "<svg" in svg and "path" in svg
@@ -51,7 +62,9 @@ def test_piechart_interactive_helper_error_and_edge_paths():
     assert pif.ensure_population_percentage_column(df_pref, preferred_col="ratio") == "ratio"
 
     with pytest.raises(KeyError):
-        pif.ensure_population_percentage_column(pd.DataFrame({"x": [1]}), preferred_col="ratio", zonal_sum_col="2024_zonal_sum")
+        pif.ensure_population_percentage_column(
+            pd.DataFrame({"x": [1]}), preferred_col="ratio", zonal_sum_col="2024_zonal_sum"
+        )
 
     # resolve_zonal_sum_column preferred path + malformed candidate + no candidates
     df_pref2 = pd.DataFrame({"2020_zonal_sum": [1], "x": [2]})
@@ -78,10 +91,12 @@ def test_piechart_interactive_main_end_to_end(tmp_path, monkeypatch):
             "ISO_A2_EH": ["DE", "FR"],
             "geometry": [
                 Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),
-                MultiPolygon([
-                    Polygon([(3, 0), (5, 0), (5, 2), (3, 2)]),
-                    Polygon([(6, 0), (7, 0), (7, 1), (6, 1)]),
-                ]),
+                MultiPolygon(
+                    [
+                        Polygon([(3, 0), (5, 0), (5, 2), (3, 2)]),
+                        Polygon([(6, 0), (7, 0), (7, 1), (6, 1)]),
+                    ]
+                ),
             ],
         },
         geometry="geometry",

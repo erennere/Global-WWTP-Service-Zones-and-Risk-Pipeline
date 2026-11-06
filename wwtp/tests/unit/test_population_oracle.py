@@ -3,6 +3,7 @@
 - polygons that tile the raster add up to its total (nodata excluded)
 - a polygon equal to one cell gets that cell's value; half a cell gets half
 """
+
 import geopandas as gpd
 import numpy as np
 import pytest
@@ -24,8 +25,18 @@ def raster(tmp_path):
     data = rng.uniform(0, 50, size=(N, N)).astype("float32")
     data[:2, :2] = NODATA  # a lake
     path = tmp_path / "XX_pop_2020_CN_100m.tif"
-    with rasterio.open(path, "w", driver="GTiff", height=N, width=N, count=1, dtype="float32", crs="EPSG:4326",
-                       transform=from_origin(X0, Y0, RES, RES), nodata=NODATA) as dst:
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=N,
+        width=N,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(X0, Y0, RES, RES),
+        nodata=NODATA,
+    ) as dst:
         dst.write(data, 1)
     return path, data
 
@@ -38,8 +49,11 @@ def _cell(i, j):
 def test_tiles_add_up_to_the_raster_total(raster):
     path, data = raster
     half = N // 2
-    tiles = [box(X0 + a * half * RES, Y0 - (b + 1) * half * RES, X0 + (a + 1) * half * RES, Y0 - b * half * RES)
-             for a in (0, 1) for b in (0, 1)]
+    tiles = [
+        box(X0 + a * half * RES, Y0 - (b + 1) * half * RES, X0 + (a + 1) * half * RES, Y0 - b * half * RES)
+        for a in (0, 1)
+        for b in (0, 1)
+    ]
     out = intersect_single_file(gpd.GeoDataFrame({"ISO_2": ["XX"] * 4}, geometry=tiles, crs=4326), [str(path)])
     valid = data[data != NODATA]
     assert out["2020_zonal_sum"].sum() == pytest.approx(float(valid.sum()), rel=1e-5)

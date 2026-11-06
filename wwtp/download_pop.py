@@ -17,6 +17,7 @@ Output directories:
 - ../data/population/rasterized/  : Individual CSV rasterized outputs
 - ../data/population/merged/      : Country mosaics, one per year (pop_<iso3>_<year>_merged.tif)
 """
+
 import argparse
 import requests
 import zipfile
@@ -42,13 +43,14 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
+
 def extract_first_wildcard(test_string, pattern):
     """Extract first capture group from regex pattern match.
-    
+
     Args:
         test_string: String to search
         pattern: Regex pattern with one capture group
-        
+
     Returns:
         First capture group content or None if no match
     """
@@ -56,6 +58,7 @@ def extract_first_wildcard(test_string, pattern):
     if match:
         return match.group(1)
     return None
+
 
 def try_extract_country(name, patterns):
     """Try multiple regex patterns against a filename and return first match."""
@@ -65,12 +68,14 @@ def try_extract_country(name, patterns):
             return result
     return None
 
+
 def add_country_url(country_urls, country, url):
     """Add a URL to the country_urls dict, creating the list if needed."""
     if country in country_urls:
         country_urls[country].append(url)
     else:
         country_urls[country] = [url]
+
 
 def get_urls_from_hdx():
     """Fetch population URLs from HDX for legacy workflows.
@@ -82,6 +87,7 @@ def get_urls_from_hdx():
     from hdx.utilities.easy_logging import setup_logging
     from hdx.api.configuration import Configuration
     from hdx.data.dataset import Dataset
+
     setup_logging()
     Configuration.create(hdx_site="prod", user_agent="HeiGIT", hdx_read_only=True)
     country_set = set()
@@ -89,78 +95,88 @@ def get_urls_from_hdx():
     datasets = Dataset.search_in_hdx("Meta Population")
 
     remaining_countries = {
-        'ANR' : ['ANR_men_geotiff.zip', 'ANR_women_geotiff.zip'],
-        'AUS' : ['population_aus_northeast_2018-10-01_geotiff.zip','population_aus_northwest_2018-10-01_geotiff.zip',
-                'population_aus_southeast_2018-10-01_geotiff.zip','population_aus_southwest_2018-10-01_geotiff.zip'],
-        'BRA' : [
-            'population_bra_northeast_2018-10-01.geotiff.zip',
-            'population_bra_northwest_2018-10-01.geotiff.zip',
-            'population_bra_southeast_2018-10-01.geotiff.zip',
-            'population_bra_southwest_2018-10-01.geotiff.zip'],
-        'DOM' : ['population_dom_2018-10-01.geotiff.zip'],
-        'FJI' : ['population_fji_2018-10-01_geotiff.zip'],
-        'GIB' : ['gib_men_2020_geotiff.zip', 'gib_women_2020_geotiff.zip'],
-        'HKG' : ['population_hkg_2018-10-01_geotiff.zip'],
-        'HND' : ['population_hnd_2018-10-01.geotiff.zip'],
-        'HTI' : ['population_hti_2018-10-01.geotiff.zip'],
-        'IMN' : ['IMN_men_2019-08-03_csv.zip', 'IMN_women_2019-08-03_csv.zip'],
-        'IND' : ['population_ind_pak_general.zip'],
-        'IRL' : ['population_irl_2019-07-01_geotiff.zip'],
-        'JAM' : ['population_jam_2018-10-01.geotiff.zip'],
-        'KAZ' : ['population_kaz_2018-10-01_geotiff.zip'],
-        'KIR' : ['population_kir_2018-10-01_geotiff.zip'],
-        'KNA' : ['population_kna_2018-10-01.geotiff.zip'],
-        'KOR' : ['population_kor_2018-10-01_geotiff.zip'],
-        'LCA' : ['population_lca_2018-10-01.geotiff.zip'],
-        'MEX' : ['population_mex_2018-10-01.geotiff.zip'],
-        'MNG' : ['population_mng_2018-10-01_geotiff.zip'],
-        'MSR' : ['population_msr_2018-10-01.geotiff.zip'],
-        'NCL' : ['population_ncl_2018-10-01_geotiff.zip'],
-        'NIC' : ['population_nic_2018-10-01.geotiff.zip'],
-        'NPL' : ['population_npl_2018-10-01_geotiff.zip'],
-        'NZL' : ['population_nzl_2018-10-01_geotiff.zip'],
-        'PAK' : ['population_ind_pak_general.zip'],
-        'PAN' : ['population_pan_2018-10-01.geotiff.zip'],
-        'PRI' : ['population_pri_2018-10-01.geotiff.zip'],
-        'PYF' : ['population_pyf_2018-10-01_geotiff.zip'],
-        'REU' : ['population_reu_2018-10-01_geotiff.zip'],
-        'SLB' : ['population_slb_2018-10-01_geotiff.zip'],
-        'SLV' : ['population_slv_2018-10-01.geotiff.zip'],
-        'SVN' : ['population_svn_2019-07-01_geotiff.zip'],
-        'SYC' : ['population_syc_2018-10-01_geotiff.zip'],
-        'TTO' : ['population_tto_2018-10-01.geotiff.zip'],
-        'TUR' : ['population_turkey_2020_tif.zip'],
-        'USA' : ['population_usa.part_1_of_6.csv.zip','population_usa.part_2_of_6.csv.zip',
-                'population_usa.part_3_of_6.csv.zip','population_usa.part_4_of_6.csv.zip',
-                'population_usa.part_5_of_6.csv.zip','population_usa.part_6_of_6.csv.zip'],
-        'UZB' : ['population_uzb_2018-10-01_geotiff.zip'],
-        'VCT' : ['population_vct_2018-10-01.geotiff.zip'],
-        'VGB' : ['population_vgb_2018-10-01.geotiff.zip'],
-        'VIR' : ['population_vir_2018-10-01.geotiff.zip'],
-        'VUT' : ['population_vut_2018-10-01_geotiff.zip'],
-        'WLF' : ['population_wlf_2018-10-01_geotiff.zip'],
-        'WSM' : ['population_wsm_2018-10-01_geotiff.zip']
+        "ANR": ["ANR_men_geotiff.zip", "ANR_women_geotiff.zip"],
+        "AUS": [
+            "population_aus_northeast_2018-10-01_geotiff.zip",
+            "population_aus_northwest_2018-10-01_geotiff.zip",
+            "population_aus_southeast_2018-10-01_geotiff.zip",
+            "population_aus_southwest_2018-10-01_geotiff.zip",
+        ],
+        "BRA": [
+            "population_bra_northeast_2018-10-01.geotiff.zip",
+            "population_bra_northwest_2018-10-01.geotiff.zip",
+            "population_bra_southeast_2018-10-01.geotiff.zip",
+            "population_bra_southwest_2018-10-01.geotiff.zip",
+        ],
+        "DOM": ["population_dom_2018-10-01.geotiff.zip"],
+        "FJI": ["population_fji_2018-10-01_geotiff.zip"],
+        "GIB": ["gib_men_2020_geotiff.zip", "gib_women_2020_geotiff.zip"],
+        "HKG": ["population_hkg_2018-10-01_geotiff.zip"],
+        "HND": ["population_hnd_2018-10-01.geotiff.zip"],
+        "HTI": ["population_hti_2018-10-01.geotiff.zip"],
+        "IMN": ["IMN_men_2019-08-03_csv.zip", "IMN_women_2019-08-03_csv.zip"],
+        "IND": ["population_ind_pak_general.zip"],
+        "IRL": ["population_irl_2019-07-01_geotiff.zip"],
+        "JAM": ["population_jam_2018-10-01.geotiff.zip"],
+        "KAZ": ["population_kaz_2018-10-01_geotiff.zip"],
+        "KIR": ["population_kir_2018-10-01_geotiff.zip"],
+        "KNA": ["population_kna_2018-10-01.geotiff.zip"],
+        "KOR": ["population_kor_2018-10-01_geotiff.zip"],
+        "LCA": ["population_lca_2018-10-01.geotiff.zip"],
+        "MEX": ["population_mex_2018-10-01.geotiff.zip"],
+        "MNG": ["population_mng_2018-10-01_geotiff.zip"],
+        "MSR": ["population_msr_2018-10-01.geotiff.zip"],
+        "NCL": ["population_ncl_2018-10-01_geotiff.zip"],
+        "NIC": ["population_nic_2018-10-01.geotiff.zip"],
+        "NPL": ["population_npl_2018-10-01_geotiff.zip"],
+        "NZL": ["population_nzl_2018-10-01_geotiff.zip"],
+        "PAK": ["population_ind_pak_general.zip"],
+        "PAN": ["population_pan_2018-10-01.geotiff.zip"],
+        "PRI": ["population_pri_2018-10-01.geotiff.zip"],
+        "PYF": ["population_pyf_2018-10-01_geotiff.zip"],
+        "REU": ["population_reu_2018-10-01_geotiff.zip"],
+        "SLB": ["population_slb_2018-10-01_geotiff.zip"],
+        "SLV": ["population_slv_2018-10-01.geotiff.zip"],
+        "SVN": ["population_svn_2019-07-01_geotiff.zip"],
+        "SYC": ["population_syc_2018-10-01_geotiff.zip"],
+        "TTO": ["population_tto_2018-10-01.geotiff.zip"],
+        "TUR": ["population_turkey_2020_tif.zip"],
+        "USA": [
+            "population_usa.part_1_of_6.csv.zip",
+            "population_usa.part_2_of_6.csv.zip",
+            "population_usa.part_3_of_6.csv.zip",
+            "population_usa.part_4_of_6.csv.zip",
+            "population_usa.part_5_of_6.csv.zip",
+            "population_usa.part_6_of_6.csv.zip",
+        ],
+        "UZB": ["population_uzb_2018-10-01_geotiff.zip"],
+        "VCT": ["population_vct_2018-10-01.geotiff.zip"],
+        "VGB": ["population_vgb_2018-10-01.geotiff.zip"],
+        "VIR": ["population_vir_2018-10-01.geotiff.zip"],
+        "VUT": ["population_vut_2018-10-01_geotiff.zip"],
+        "WLF": ["population_wlf_2018-10-01_geotiff.zip"],
+        "WSM": ["population_wsm_2018-10-01_geotiff.zip"],
     }
 
     patterns = [
-        r'^population_([a-z]{3})\.geotiff\.zip$',
-        r'^(.*?)_general_(.*?)_geotiff\.zip$',
-        r'^([a-z]{3})_population_\d{4}_geotiff\.zip$',
-        r'^([a-z]{3})_general_.*_csv\.zip$',
-        r'^([a-z]{3})_population_\d{4}_csv\.zip$'
+        r"^population_([a-z]{3})\.geotiff\.zip$",
+        r"^(.*?)_general_(.*?)_geotiff\.zip$",
+        r"^([a-z]{3})_population_\d{4}_geotiff\.zip$",
+        r"^([a-z]{3})_general_.*_csv\.zip$",
+        r"^([a-z]{3})_population_\d{4}_csv\.zip$",
     ]
     all_vals_flattened = [v for key, val in remaining_countries.items() for v in val]
-    all_vals_flattened_keys  = [key for key, val in remaining_countries.items() for v in val]
-    all_vals_dict = {k:v.lower() for k, v in zip(all_vals_flattened, all_vals_flattened_keys)}
+    all_vals_flattened_keys = [key for key, val in remaining_countries.items() for v in val]
+    all_vals_dict = {k: v.lower() for k, v in zip(all_vals_flattened, all_vals_flattened_keys)}
 
     for i, elm in enumerate(datasets):
         for j, res in enumerate(elm.get_resources()):
-            url = res.get('download_url')
-            name = res.get('name')
-            
+            url = res.get("download_url")
+            name = res.get("name")
+
             # Try to extract country code from filename patterns
             country = try_extract_country(name, patterns)
-            
+
             if country is not None:
                 if country in country_set:
                     continue
@@ -174,8 +190,10 @@ def get_urls_from_hdx():
                 add_country_url(country_urls, iso3, url)
     return country_urls
 
-def get_urls(start_year=2015, end_year=2024, worldpop_2014_template=None, worldpop_yearly_template=None,
-             include_2014=False):
+
+def get_urls(
+    start_year=2015, end_year=2024, worldpop_2014_template=None, worldpop_yearly_template=None, include_2014=False
+):
     """
     Generate WorldPop population data URLs for all countries.
     Returns a dictionary mapping country codes to lists of download URLs.
@@ -187,9 +205,9 @@ def get_urls(start_year=2015, end_year=2024, worldpop_2014_template=None, worldp
     alpha_3_to_2, alpha_2_to_3, alpha_3_to_names, alpha_2_to_names = get_iso_codes()
     all_countries = list(alpha_3_to_2.keys())
     if worldpop_2014_template is None:
-        worldpop_2014_template = 'https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2014/{country_upper}/{country_lower}_ppp_2014_1km_Aggregated.tif'
+        worldpop_2014_template = "https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2014/{country_upper}/{country_lower}_ppp_2014_1km_Aggregated.tif"
     if worldpop_yearly_template is None:
-        worldpop_yearly_template = 'https://data.worldpop.org/GIS/Population/Global_2015_2030/R2024B/{year}/{country_upper}/v1/100m/constrained/{country_lower}_pop_{year}_CN_100m_R2024B_v1.tif'
+        worldpop_yearly_template = "https://data.worldpop.org/GIS/Population/Global_2015_2030/R2024B/{year}/{country_upper}/v1/100m/constrained/{country_lower}_pop_{year}_CN_100m_R2024B_v1.tif"
 
     country_urls = {
         k.lower(): (
@@ -208,6 +226,7 @@ def get_urls(start_year=2015, end_year=2024, worldpop_2014_template=None, worldp
             )
     return country_urls
 
+
 def download_file(url, output_path):
     """Stream a remote file to disk using an adaptive chunk size."""
     try:
@@ -215,7 +234,7 @@ def download_file(url, output_path):
         with session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS) as response:
             response.raise_for_status()
 
-            total_size = int(response.headers.get('Content-Length', 0))
+            total_size = int(response.headers.get("Content-Length", 0))
             if total_size == 0:
                 chunk_size = 8192
             elif total_size < 10 * 1024 * 1024:
@@ -226,9 +245,9 @@ def download_file(url, output_path):
                 chunk_size = 262144
             print(f"Downloading with chunk size: {chunk_size // 1024} KB")
             ensure_output_dir_for_file(output_path)
-            with open(output_path, 'wb') as f:
+            with open(output_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk: 
+                    if chunk:
                         f.write(chunk)
         print(f"Saved to {output_path}")
         return True
@@ -236,65 +255,67 @@ def download_file(url, output_path):
         print(f"Download error for {url}: {e}")
         return False
 
-def download_save_and_unzip_pop(url, country, data_dir='../data/population'):
+
+def download_save_and_unzip_pop(url, country, data_dir="../data/population"):
     """Download and extract population data file.
-    
+
     Args:
         url: Download URL for the file
         country: ISO3 country code
         data_dir: Base directory for data storage
-        
+
     Returns:
         Path to extracted folder or None if download/extraction failed
     """
-    filename = url.split('/')[-1]
-    zip_folder = os.path.join(data_dir, 'zipped')
-    extract_folder = os.path.join(data_dir, 'unzipped', country)
+    filename = url.split("/")[-1]
+    zip_folder = os.path.join(data_dir, "zipped")
+    extract_folder = os.path.join(data_dir, "unzipped", country)
     zip_filename = os.path.join(zip_folder, filename)
 
     os.makedirs(zip_folder, exist_ok=True)
     os.makedirs(extract_folder, exist_ok=True)
 
-    if url.endswith('zip'):
+    if url.endswith("zip"):
         try:
             response = requests.get(url)
             ensure_output_dir_for_file(zip_filename)
             with open(zip_filename, "wb") as f:
                 f.write(response.content)
         except Exception as err:
-            logger.warning(f'Download failed for {url}: {err}')
+            logger.warning(f"Download failed for {url}: {err}")
             try:
-                logger.info('Attempting fallback URL with maxar_v1')
-                response = requests.get(url.replace('BSGM', 'maxar_v1'))
+                logger.info("Attempting fallback URL with maxar_v1")
+                response = requests.get(url.replace("BSGM", "maxar_v1"))
                 ensure_output_dir_for_file(zip_filename)
                 with open(zip_filename, "wb") as f:
                     f.write(response.content)
             except Exception as err:
-                logger.error(f'Fallback download also failed: {err}')
+                logger.error(f"Fallback download also failed: {err}")
                 return None
         try:
-            with zipfile.ZipFile(zip_filename, 'r') as zip_ref:
+            with zipfile.ZipFile(zip_filename, "r") as zip_ref:
                 zip_ref.extractall(extract_folder)
         except Exception as err:
-            logger.error(f'Extraction failed for {zip_filename}: {err}') 
+            logger.error(f"Extraction failed for {zip_filename}: {err}")
             return None
         return extract_folder
     else:
         output_file = os.path.join(extract_folder, os.path.basename(url))
         if not download_file(url, output_file):
-            logger.info('Attempting fallback URL with maxar_v1')
-            if not download_file(url.replace('BSGM', 'maxar_v1'), output_file):
+            logger.info("Attempting fallback URL with maxar_v1")
+            if not download_file(url.replace("BSGM", "maxar_v1"), output_file):
                 return None
         return extract_folder
-            
-def download_save_and_unzip_pops(country_urls, country, data_dir='../data/population'):
+
+
+def download_save_and_unzip_pops(country_urls, country, data_dir="../data/population"):
     """Download and extract all population files for a country.
-    
+
     Args:
         country_urls: Dictionary mapping countries to lists of URLs
         country: ISO3 country code
         data_dir: Base directory for data storage
-        
+
     Returns:
         Path to extracted folder or None if all downloads failed
     """
@@ -306,13 +327,14 @@ def download_save_and_unzip_pops(country_urls, country, data_dir='../data/popula
             extract_folder = result
     return extract_folder
 
+
 def find_type(folder, file_type):
     """Recursively find all files with given extension in folder.
-    
+
     Args:
         folder: Directory path
         file_type: File extension to search for (e.g., '.tif')
-        
+
     Returns:
         List of file paths matching the extension
     """
@@ -324,22 +346,24 @@ def find_type(folder, file_type):
             result.extend(find_type(entry.path, file_type))
     return result
 
+
 def find_files(folder):
     """Find GeoTIFF or CSV files in folder hierarchy.
-    
+
     Args:
         folder: Directory path
-        
+
     Returns:
         Tuple of (file_list, is_tif_format)
         - file_list: List of found .tif or .csv files
         - is_tif_format: True if TIFFs found, False if CSVs
     """
-    result = find_type(folder, '.tif')
+    result = find_type(folder, ".tif")
     if not result:
-        return find_type(folder, '.csv'), False
+        return find_type(folder, ".csv"), False
     return result, True
-    
+
+
 METRES_PER_DEGREE_LAT = 111_320.0
 
 
@@ -371,16 +395,16 @@ def rasterize_csv(df, output_path, res=30):
     df.columns = [c.lower() for c in df.columns]
 
     try:
-        lat_col = next(c for c in df.columns if c.startswith('lat'))
-        lon_col = next(c for c in df.columns if c.startswith('lon'))
-        pop_col = next(c for c in df.columns if 'pop' in c or 'general' in c)
+        lat_col = next(c for c in df.columns if c.startswith("lat"))
+        lon_col = next(c for c in df.columns if c.startswith("lon"))
+        pop_col = next(c for c in df.columns if "pop" in c or "general" in c)
     except StopIteration:
         logger.error(f"Missing required column in CSV. Available columns: {list(df.columns)}")
         return None
 
-    lat = pd.to_numeric(df[lat_col], errors='coerce').to_numpy(dtype=float)
-    lon = pd.to_numeric(df[lon_col], errors='coerce').to_numpy(dtype=float)
-    pop = pd.to_numeric(df[pop_col], errors='coerce').to_numpy(dtype=float)
+    lat = pd.to_numeric(df[lat_col], errors="coerce").to_numpy(dtype=float)
+    lon = pd.to_numeric(df[lon_col], errors="coerce").to_numpy(dtype=float)
+    pop = pd.to_numeric(df[pop_col], errors="coerce").to_numpy(dtype=float)
     ok = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(pop)
     if not ok.any():
         logger.error("No valid points to rasterize for %s", output_path)
@@ -394,12 +418,24 @@ def rasterize_csv(df, output_path, res=30):
     grid = np.zeros((rows.max() + 1, cols.max() + 1), dtype=np.float64)
     np.add.at(grid, (rows, cols), pop)
 
-    with atomic_output(output_path) as tmp_path, \
-            rasterio.open(tmp_path, "w", driver='GTiff', height=grid.shape[0], width=grid.shape[1], count=1,
-                          dtype='float32', crs="EPSG:4326", transform=from_origin(west, north, cell, cell),
-                          compress='lzw') as dst:
-        dst.write(grid.astype('float32'), 1)
+    with (
+        atomic_output(output_path) as tmp_path,
+        rasterio.open(
+            tmp_path,
+            "w",
+            driver="GTiff",
+            height=grid.shape[0],
+            width=grid.shape[1],
+            count=1,
+            dtype="float32",
+            crs="EPSG:4326",
+            transform=from_origin(west, north, cell, cell),
+            compress="lzw",
+        ) as dst,
+    ):
+        dst.write(grid.astype("float32"), 1)
     return output_path
+
 
 def mosaic_large_rasters(raster_files, output_path):
     """Mosaic raster tiles of ONE year into a single output file.
@@ -431,24 +467,29 @@ def mosaic_large_rasters(raster_files, output_path):
                 f"or CRS {sorted(map(str, crss))}"
             )
         nodata = next((src.nodata for src in sources if src.nodata is not None), None)
-        data, transform = merge(sources, nodata=nodata, method='first')
+        data, transform = merge(sources, nodata=nodata, method="first")
         profile = sources[0].profile.copy()
     finally:
         for src in sources:
             src.close()
 
     profile.update(
-        driver='GTiff', height=data.shape[1], width=data.shape[2], count=data.shape[0],
-        transform=transform, nodata=nodata, compress='lzw',
+        driver="GTiff",
+        height=data.shape[1],
+        width=data.shape[2],
+        count=data.shape[0],
+        transform=transform,
+        nodata=nodata,
+        compress="lzw",
     )
-    profile.pop('blockxsize', None)
-    profile.pop('blockysize', None)
-    profile.pop('tiled', None)
-    with atomic_output(output_path) as tmp_path, rasterio.open(tmp_path, 'w', **profile) as dst:
+    profile.pop("blockxsize", None)
+    profile.pop("blockysize", None)
+    profile.pop("tiled", None)
+    with atomic_output(output_path) as tmp_path, rasterio.open(tmp_path, "w", **profile) as dst:
         dst.write(data)
 
 
-_YEAR_TOKEN = re.compile(r'(?<!\d)(20\d{2})(?!\d)')
+_YEAR_TOKEN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 
 
 def group_rasters_by_year(raster_files):
@@ -466,11 +507,11 @@ def group_rasters_by_year(raster_files):
 
 def merged_output_path(pop_dir, country, year=None):
     """Canonical path of one country's merged population mosaic for one year."""
-    year_part = f'_{int(year)}' if year is not None else ''
-    return os.path.join(pop_dir, 'merged', f'pop_{country.lower()}{year_part}_merged.tif')
+    year_part = f"_{int(year)}" if year is not None else ""
+    return os.path.join(pop_dir, "merged", f"pop_{country.lower()}{year_part}_merged.tif")
 
 
-def process_single_country(country_urls, country, res=30, data_dir='../data/population'):
+def process_single_country(country_urls, country, res=30, data_dir="../data/population"):
     """Download, prepare, and mosaic population data for one country.
 
     Parameters
@@ -486,12 +527,12 @@ def process_single_country(country_urls, country, res=30, data_dir='../data/popu
     """
     extract_folder = download_save_and_unzip_pops(country_urls, country, data_dir)
     if extract_folder is None:
-        logger.warning(f'Failed to download data for {country}')
+        logger.warning(f"Failed to download data for {country}")
         return None
     result, if_tif = find_files(extract_folder)
 
     merged_path = merged_output_path(data_dir, country)
-    output_path = os.path.join(data_dir, 'rasterized', country)
+    output_path = os.path.join(data_dir, "rasterized", country)
     os.makedirs(os.path.dirname(merged_path), exist_ok=True)
     os.makedirs(output_path, exist_ok=True)
 
@@ -503,22 +544,23 @@ def process_single_country(country_urls, country, res=30, data_dir='../data/popu
     else:
         filepaths = []
         for index, csv_filepath in enumerate(result):
-            part_output_path = os.path.join(output_path, f'pop_{country}_part_{int(index+1)}.tif')
+            part_output_path = os.path.join(output_path, f"pop_{country}_part_{int(index + 1)}.tif")
             try:
                 df = pd.read_csv(csv_filepath)
                 result_path = rasterize_csv(df, part_output_path, res)
                 if result_path is not None:
                     filepaths.append(part_output_path)
             except Exception as err:
-                logger.error(f'Failed to rasterize {csv_filepath}: {err}')
+                logger.error(f"Failed to rasterize {csv_filepath}: {err}")
                 continue
         filepaths = [f for f in filepaths if os.path.exists(f)]
         if filepaths:
             mosaic_large_rasters(filepaths, merged_path)
         else:
-            logger.error(f'No successfully rasterized files for {country}')
+            logger.error(f"No successfully rasterized files for {country}")
 
-def process_all_countries(country_urls, res=30, max_workers=16, data_dir='../data/population'):
+
+def process_all_countries(country_urls, res=30, max_workers=16, data_dir="../data/population"):
     """Process population data for all configured countries in parallel.
 
     Parameters
@@ -533,15 +575,18 @@ def process_all_countries(country_urls, res=30, max_workers=16, data_dir='../dat
         Base directory for downloaded and processed files.
     """
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(process_single_country, country_urls, country, res, data_dir) 
-                   for country in country_urls.keys()]
-        
+        futures = [
+            executor.submit(process_single_country, country_urls, country, res, data_dir)
+            for country in country_urls.keys()
+        ]
+
         # Progress bar for country processing
         for future in tqdm(as_completed(futures), total=len(futures), desc="Processing countries"):
             try:
                 future.result()
             except Exception as err:
-                logger.error(f'Error processing country: {err}')
+                logger.error(f"Error processing country: {err}")
+
 
 def parse_args():
     """Parse the standardized named config-override flags plus download_pop's
@@ -587,13 +632,13 @@ def main(res=30, max_workers=8):
     provenance.write_run_manifest(cfg, "download_pop")
     data_dir = os.path.abspath(cfg["paths"]["pop_dir"])
 
-    logger.info('Retrieving population data URLs')
+    logger.info("Retrieving population data URLs")
     country_urls = get_urls(
-        start_year=cfg['start_year'],
-        end_year=cfg['end_year'],
-        worldpop_2014_template=cfg['worldpop_2014_url_template'],
-        worldpop_yearly_template=cfg['worldpop_yearly_url_template'],
-        include_2014=bool(cfg['include_2014']),
+        start_year=cfg["start_year"],
+        end_year=cfg["end_year"],
+        worldpop_2014_template=cfg["worldpop_2014_url_template"],
+        worldpop_yearly_template=cfg["worldpop_yearly_url_template"],
+        include_2014=bool(cfg["include_2014"]),
     )
 
     if args.country:
@@ -608,7 +653,7 @@ def main(res=30, max_workers=8):
     else:
         # 0 means "no limit"; YAML cannot express a literal null here because
         # the config resolver reads null as "inherit from an earlier section".
-        country_limit = int(cfg['country_limit'])
+        country_limit = int(cfg["country_limit"])
         if country_limit < 0:
             raise ValueError("country_limit must be >= 0 (0 disables the limit)")
         if country_limit:
@@ -616,10 +661,11 @@ def main(res=30, max_workers=8):
             country_urls = {k: country_urls[k] for k in selected_countries}
             logger.info("Applying configured country limit: %s", country_limit)
 
-    logger.info(f'Processing {len(country_urls)} countries with {max_workers} workers')
+    logger.info(f"Processing {len(country_urls)} countries with {max_workers} workers")
     process_all_countries(country_urls, res, max_workers, data_dir)
-    logger.info('Population data processing complete')
+    logger.info("Population data processing complete")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     configure_logging()
     main()

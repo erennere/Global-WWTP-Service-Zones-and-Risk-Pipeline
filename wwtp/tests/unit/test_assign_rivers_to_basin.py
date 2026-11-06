@@ -1,4 +1,5 @@
 """Tests for assign_rivers_to_basin (moved from the coverage-campaign files)."""
+
 import sys
 import geopandas as gpd
 import pandas as pd
@@ -305,7 +306,11 @@ def test_assign_rivers_main_uses_default_workers_for_non_digit_argv(monkeypatch,
 
     original_to_file = gpd.GeoDataFrame.to_file
     try:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, path, driver=None, index=None, **kwargs: captured.setdefault("written", path))
+        monkeypatch.setattr(
+            gpd.GeoDataFrame,
+            "to_file",
+            lambda self, path, driver=None, index=None, **kwargs: captured.setdefault("written", path),
+        )
         assign_rivers_to_basin.main()
     finally:
         monkeypatch.setattr(gpd.GeoDataFrame, "to_file", original_to_file)

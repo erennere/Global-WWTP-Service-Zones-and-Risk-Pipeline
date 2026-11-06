@@ -14,9 +14,7 @@ pytestmark = pytest.mark.unit
 
 def test_decode_gen_text_parses_number_name_and_justification():
     number, name, why = merge_annotations.decode_gen_text(
-        "Analysis: tanks are visible.\n\n"
-        "Decision: 3. Industrial\n"
-        "Justification: visible clarifier tanks"
+        "Analysis: tanks are visible.\n\nDecision: 3. Industrial\nJustification: visible clarifier tanks"
     )
 
     assert number == "3"
@@ -30,9 +28,7 @@ def test_decode_gen_text_returns_none_fields_for_malformed_or_non_string_inputs(
     assert merge_annotations.decode_gen_text("just some prose") == (None, None, None)
     # Bracketed placeholders mean "model did not fill this in"; _clean_field
     # drops them, so only the number survives.
-    assert merge_annotations.decode_gen_text(
-        "Decision: 3. [unclear]\nJustification: [unclear]"
-    ) == ("3", None, None)
+    assert merge_annotations.decode_gen_text("Decision: 3. [unclear]\nJustification: [unclear]") == ("3", None, None)
 
 
 def test_parse_idx_from_image_name_extracts_trailing_digits_or_none():

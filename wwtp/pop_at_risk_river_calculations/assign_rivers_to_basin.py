@@ -19,7 +19,7 @@ from ..utils import atomic_output, configure_logging
 logger = logging.getLogger(__name__)
 
 
-def assign_hybas_id_by_length(lines_gdf, poly_gdf, id_col='HYBAS_ID'):
+def assign_hybas_id_by_length(lines_gdf, poly_gdf, id_col="HYBAS_ID"):
     """Assign basin IDs to lines using maximum intersection length.
 
     Parameters
@@ -46,59 +46,53 @@ def assign_hybas_id_by_length(lines_gdf, poly_gdf, id_col='HYBAS_ID'):
     # 1. Ensure CRS match
     if lines_gdf.crs != poly_gdf.crs:
         lines_gdf = lines_gdf.to_crs(poly_gdf.crs)
-    
+
     # 2. Add temporary unique ID
-    lines_gdf['_tmp_id'] = range(len(lines_gdf))
-    
+    lines_gdf["_tmp_id"] = range(len(lines_gdf))
+
     # 3. Fast Spatial Join to find potential matches
     potential_matches = gpd.sjoin(
-        lines_gdf[['_tmp_id', 'geometry']], 
-        poly_gdf[[id_col, 'geometry']], 
-        how='inner', 
-        predicate='intersects'
+        lines_gdf[["_tmp_id", "geometry"]], poly_gdf[[id_col, "geometry"]], how="inner", predicate="intersects"
     )
     if potential_matches.empty:
         lines_gdf[id_col] = None
-        return lines_gdf.drop(columns=['_tmp_id'])
-    
-    counts = potential_matches['_tmp_id'].value_counts()
+        return lines_gdf.drop(columns=["_tmp_id"])
+
+    counts = potential_matches["_tmp_id"].value_counts()
     single_match_ids = counts[counts == 1].index
     multi_match_ids = counts[counts > 1].index
-    
+
     # 4. Handle Single Matches
-    single_matches = potential_matches[potential_matches['_tmp_id'].isin(single_match_ids)]
-    results_map = single_matches.set_index('_tmp_id')[id_col].to_dict()
-    
+    single_matches = potential_matches[potential_matches["_tmp_id"].isin(single_match_ids)]
+    results_map = single_matches.set_index("_tmp_id")[id_col].to_dict()
+
     # 5. Handle Multi-Matches (The "Heavy" Path)
     if not multi_match_ids.empty:
-        multi_lines = lines_gdf[lines_gdf['_tmp_id'].isin(multi_match_ids)]
-        
+        multi_lines = lines_gdf[lines_gdf["_tmp_id"].isin(multi_match_ids)]
+
         # Intersect lines with polygons
-        fragments = gpd.overlay(multi_lines, poly_gdf[[id_col, 'geometry']], how='intersection')
-        
+        fragments = gpd.overlay(multi_lines, poly_gdf[[id_col, "geometry"]], how="intersection")
+
         # CRITICAL: Project to Equal Area (meters) for accurate length comparison
         # We use World Cylindrical Equal Area (EPSG:54034) or similar
-        fragments['len'] = fragments.to_crs(epsg=3857).geometry.length
-        
-        winners = fragments.sort_values('len', ascending=False).drop_duplicates('_tmp_id')
-        results_map.update(winners.set_index('_tmp_id')[id_col].to_dict())
-    
-    # 6. Final Assignment
-    lines_gdf[id_col] = lines_gdf['_tmp_id'].map(results_map)
-    return lines_gdf.drop(columns=['_tmp_id'])
+        fragments["len"] = fragments.to_crs(epsg=3857).geometry.length
 
-def extract_first_digit(df, source_col, new_col='first_digit'):
+        winners = fragments.sort_values("len", ascending=False).drop_duplicates("_tmp_id")
+        results_map.update(winners.set_index("_tmp_id")[id_col].to_dict())
+
+    # 6. Final Assignment
+    lines_gdf[id_col] = lines_gdf["_tmp_id"].map(results_map)
+    return lines_gdf.drop(columns=["_tmp_id"])
+
+
+def extract_first_digit(df, source_col, new_col="first_digit"):
     """Extract the first character of `source_col` into `new_col`."""
     if source_col not in df.columns:
         raise KeyError(f"Missing source column '{source_col}'")
 
-    df[new_col] = (
-        df[source_col]
-        .astype('string')
-        .str.strip()
-        .str[0]
-    )
+    df[new_col] = df[source_col].astype("string").str.strip().str[0]
     return df
+
 
 def orchestrate_intersections(hybas_gdf, rivers_gdf, hybas_col, hyshed_col, new_col, max_workers=2):
     """Run per-region basin assignment in parallel and concatenate results.
@@ -149,7 +143,8 @@ def orchestrate_intersections(hybas_gdf, rivers_gdf, hybas_col, hyshed_col, new_
                 # through unmodified - an unassigned river is not a result.
                 logger.warning(
                     "Region %s: no matching basin polygons; discarding %s river segments.",
-                    c, len(r_chunk),
+                    c,
+                    len(r_chunk),
                 )
                 discarded_regions.append(c)
                 continue
@@ -176,10 +171,13 @@ def orchestrate_intersections(hybas_gdf, rivers_gdf, hybas_col, hyshed_col, new_
     if failed_regions:
         logger.error(
             "Basin assignment incomplete: %s of %s submitted region(s) failed (%s).",
-            len(failed_regions), len(failed_regions) + len(gdfs), ", ".join(map(str, failed_regions)),
+            len(failed_regions),
+            len(failed_regions) + len(gdfs),
+            ", ".join(map(str, failed_regions)),
         )
     logger.info("Completed intersections. Combining %s region outputs", len(gdfs))
     return gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True), crs=rivers_gdf.crs)
+
 
 def main():
     """Load config, assign basin IDs to rivers, and write output GeoPackage.
@@ -188,9 +186,7 @@ def main():
         python -m ...assign_rivers_to_basin --max-workers 2 [--level ... --version ...]
     """
 
-    parser = argparse.ArgumentParser(
-        description="Assign river segments to HydroBASINS polygons."
-    )
+    parser = argparse.ArgumentParser(description="Assign river segments to HydroBASINS polygons.")
     parser.add_argument(
         "--max-workers",
         type=int,
@@ -204,14 +200,14 @@ def main():
     cfg = load_config(script_name="assign_rivers_to_basin", **overrides)
     provenance.write_run_manifest(cfg, "assign_rivers_to_basin")
 
-    hyshed_col = 'HYRIV_ID'
-    hybas_col = 'HYBAS_ID'
+    hyshed_col = "HYRIV_ID"
+    hybas_col = "HYBAS_ID"
     max_workers = int(args.max_workers)
-    new_col = 'continent'
+    new_col = "continent"
 
-    poly_path = cfg['paths']['watershed']
-    line_path = cfg['paths']['rivershed']
-    output_path = cfg['paths']['rivershed_output_path']
+    poly_path = cfg["paths"]["watershed"]
+    line_path = cfg["paths"]["rivershed"]
+    output_path = cfg["paths"]["rivershed_output_path"]
 
     logger.info("Reading input files")
     hybas_gdf = gpd.read_file(poly_path)
@@ -219,19 +215,15 @@ def main():
     logger.info("Loaded %s watersheds and %s river segments", len(hybas_gdf), len(rivers_gdf))
 
     final_rivers = orchestrate_intersections(
-        hybas_gdf, 
-        rivers_gdf, 
-        hybas_col, 
-        hyshed_col, 
-        new_col, 
-        max_workers=max_workers
+        hybas_gdf, rivers_gdf, hybas_col, hyshed_col, new_col, max_workers=max_workers
     )
 
     logger.info("Saving %s results to %s", len(final_rivers), output_path)
     with atomic_output(output_path) as tmp_path:
-        final_rivers.to_file(tmp_path, driver='GPKG', index=False)
+        final_rivers.to_file(tmp_path, driver="GPKG", index=False)
     logger.info("Process complete")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     configure_logging()
     main()

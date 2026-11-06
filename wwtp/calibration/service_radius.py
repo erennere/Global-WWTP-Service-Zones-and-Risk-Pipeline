@@ -36,6 +36,7 @@ Usage::
         --epa-gdb data/validation_data/usa_epa_sewersheds/Version_1_3.gdb \\
         --blockgroups block_group2020.rda --out notes/service_radius_calibration.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -90,14 +91,17 @@ def load_plants(path):
 def us_matches(plants, gdb, states):
     """Our plants matched one-to-one to EPA sourced sewersheds in ``states``."""
     s = gpd.read_file(gdb, layer="Sewersheds")
-    s = s[(s["Method"] == "Sourced") & s["STATE_CODE"].isin(states) & ~s["CWNS_ID"].str.contains(";")
-          & s["Flag"].isna()]
+    s = s[
+        (s["Method"] == "Sourced") & s["STATE_CODE"].isin(states) & ~s["CWNS_ID"].str.contains(";") & s["Flag"].isna()
+    ]
     j = plants.reset_index().merge(s[["CWNS_ID", "STATE_CODE", "geometry"]], left_on="cwns", right_on="CWNS_ID")
     j = j[j.groupby("CWNS_ID")["CWNS_ID"].transform("size") == 1].reset_index(drop=True)
     poly = gpd.GeoSeries(j["geometry"], crs=4326).to_crs(US_ALBERS).make_valid()
     pt = gpd.GeoSeries(gpd.points_from_xy(j["lon"], j["lat"]), crs=4326).to_crs(US_ALBERS)
     near = poly.buffer(500).contains(pt).to_numpy()  # plant at its catchment
-    return pd.DataFrame({"plant": j["index"], "state": j["STATE_CODE"], "poly": poly.values})[near].reset_index(drop=True)
+    return pd.DataFrame({"plant": j["index"], "state": j["STATE_CODE"], "poly": poly.values})[near].reset_index(
+        drop=True
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -111,9 +115,14 @@ def fit_footprint_to_people(plants, reported_size_columns, reported_size_skip):
     x, y = np.log10(plants.loc[fit, "footprint_m2"].to_numpy()), np.log10(reported[fit])
     slope, intercept = np.polyfit(x, y, 1)
     unsized = ~plants["sized"].to_numpy() & has
-    return {"intercept": round(float(intercept), 3), "slope": round(float(slope), 3),
-            "unsized_people": round(float(np.median(reported[unsized]))),
-            "r2": float(np.corrcoef(x, y)[0, 1] ** 2), "n_fit": int(fit.sum()), "n_unsized": int(unsized.sum())}
+    return {
+        "intercept": round(float(intercept), 3),
+        "slope": round(float(slope), 3),
+        "unsized_people": round(float(np.median(reported[unsized]))),
+        "r2": float(np.corrcoef(x, y)[0, 1] ** 2),
+        "n_fit": int(fit.sum()),
+        "n_unsized": int(unsized.sum()),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -134,9 +143,13 @@ def class_balanced_error(pred, truth):
 def summary(pred, truth):
     cls = np.digitize(truth, SIZE_CLASSES)
     err = _abs_log_error(pred, truth)
-    out = {"class_balanced_error_x": 10 ** class_balanced_error(pred, truth), "typical_error_x": 10 ** float(np.median(err)),
-           "within_factor_2": float(np.mean(err <= np.log10(2))), "total_ratio": float(pred.sum() / truth.sum()),
-           "n": int(len(truth))}
+    out = {
+        "class_balanced_error_x": 10 ** class_balanced_error(pred, truth),
+        "typical_error_x": 10 ** float(np.median(err)),
+        "within_factor_2": float(np.mean(err <= np.log10(2))),
+        "total_ratio": float(pred.sum() / truth.sum()),
+        "n": int(len(truth)),
+    }
     for c, label in enumerate(("<10k", "10k-100k", ">100k")):
         if (cls == c).any():
             out[f"ratio {label}"] = float(pred[cls == c].sum() / truth[cls == c].sum())
@@ -179,8 +192,7 @@ def choose_radius(plants, size_people, matches, blockgroups, max_buffer_m, state
         preds[(e, float(r10))] = np.bincount(owner[m], weights=popv[m], minlength=len(plxy))[ev_idx]
 
     def best(mask):
-        unbiased = [key for key in preds
-                    if abs(preds[key][mask].sum() / truth[mask].sum() - 1) <= TOTAL_TOLERANCE]
+        unbiased = [key for key in preds if abs(preds[key][mask].sum() / truth[mask].sum() - 1) <= TOTAL_TOLERANCE]
         if not unbiased:
             raise RuntimeError("no radius on the grid keeps the total population within TOTAL_TOLERANCE")
         return min(unbiased, key=lambda key: class_balanced_error(preds[key][mask], truth[mask]))
@@ -191,18 +203,30 @@ def choose_radius(plants, size_people, matches, blockgroups, max_buffer_m, state
     for st in sorted(set(state)):
         train = state != st
         key = best(train)
-        folds.append({"held_out": st, "radius_exponent": key[0], "radius_at_10k_people_km": key[1],
-                      **summary(preds[key][~train], truth[~train])})
+        folds.append(
+            {
+                "held_out": st,
+                "radius_exponent": key[0],
+                "radius_at_10k_people_km": key[1],
+                **summary(preds[key][~train], truth[~train]),
+            }
+        )
     by_exponent = {}
     for e in EXPONENTS:
         keys = [k for k in preds if k[0] == e and abs(preds[k].sum() / truth.sum() - 1) <= TOTAL_TOLERANCE]
         if keys:
             key = min(keys, key=lambda k: class_balanced_error(preds[k], truth))
             by_exponent[e] = {"radius_at_10k_people_km": key[1], **summary(preds[key], truth)}
-    return {"states": sorted(states), "n_plants": int(len(ev)), "people_in_sewersheds": float(truth.sum()),
-            "radius_exponent": chosen[0], "radius_at_10k_people_km": chosen[1],
-            "in_sample": summary(preds[chosen], truth), "best_per_exponent": by_exponent,
-            "leave_one_state_out": folds}
+    return {
+        "states": sorted(states),
+        "n_plants": int(len(ev)),
+        "people_in_sewersheds": float(truth.sum()),
+        "radius_exponent": chosen[0],
+        "radius_at_10k_people_km": chosen[1],
+        "in_sample": summary(preds[chosen], truth),
+        "best_per_exponent": by_exponent,
+        "leave_one_state_out": folds,
+    }
 
 
 def main():
@@ -216,26 +240,34 @@ def main():
     cfg = load_config(script_name="create_voronoi")
     plants = load_plants(args.plants)
     to_people = fit_footprint_to_people(plants, cfg["reported_size_columns"], cfg["reported_size_skip"])
-    print(f"people per footprint: log10 S = {to_people['intercept']} + {to_people['slope']} log10 F "
-          f"(n {to_people['n_fit']}, R2 {to_people['r2']:.2f}); size-free plants {to_people['unsized_people']} people "
-          f"(n {to_people['n_unsized']})")
+    print(
+        f"people per footprint: log10 S = {to_people['intercept']} + {to_people['slope']} log10 F "
+        f"(n {to_people['n_fit']}, R2 {to_people['r2']:.2f}); size-free plants {to_people['unsized_people']} people "
+        f"(n {to_people['n_unsized']})"
+    )
     matches = us_matches(plants, args.epa_gdb, DEFAULT_STATES)
     result = {"footprint_to_people": to_people, "radius_calibration": {}}
     for measure in ("reported", "footprint"):
         size = plant_size_people(plants, measure, to_people, cfg["reported_size_columns"], cfg["reported_size_skip"])
         res = choose_radius(plants, size, matches, args.blockgroups, cfg["max_buffer"])
         result["radius_calibration"][measure] = res
-        print(f"\n== {measure}: radius_exponent {res['radius_exponent']}, radius_at_10k_people_km "
-              f"{res['radius_at_10k_people_km']} ({res['n_plants']} plants)")
+        print(
+            f"\n== {measure}: radius_exponent {res['radius_exponent']}, radius_at_10k_people_km "
+            f"{res['radius_at_10k_people_km']} ({res['n_plants']} plants)"
+        )
         print(pd.DataFrame(res["best_per_exponent"]).T.round(3).to_string())
         print(pd.DataFrame(res["leave_one_state_out"]).round(3).to_string(index=False))
     print("\nconfig.yaml (create_voronoi):")
-    print(f"  footprint_to_people: {{intercept: {to_people['intercept']}, slope: {to_people['slope']}, "
-          f"unsized_people: {to_people['unsized_people']}}}")
+    print(
+        f"  footprint_to_people: {{intercept: {to_people['intercept']}, slope: {to_people['slope']}, "
+        f"unsized_people: {to_people['unsized_people']}}}"
+    )
     print("  radius_calibration:")
     for measure, res in result["radius_calibration"].items():
-        print(f"    {measure}: {{radius_exponent: {res['radius_exponent']}, "
-              f"radius_at_10k_people_km: {res['radius_at_10k_people_km']}}}")
+        print(
+            f"    {measure}: {{radius_exponent: {res['radius_exponent']}, "
+            f"radius_at_10k_people_km: {res['radius_at_10k_people_km']}}}"
+        )
     if args.out:
         with open(args.out, "w") as f:
             json.dump(result, f, indent=1, default=float)

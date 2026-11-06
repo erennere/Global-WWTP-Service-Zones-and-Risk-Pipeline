@@ -54,9 +54,18 @@ SUBSET_TYPES = ("ver", "unver", "single")
 
 # Columns written to every partial CSV — the merge step needs all of them.
 _PARAM_COLS = [
-    "alias", "level", "version", "buffer", "buffer_path_token",
-    "weight_method", "weight_type", "weight_func", "weight_func_suffix",
-    "dynamic_buffering", "size_measure", "approach",
+    "alias",
+    "level",
+    "version",
+    "buffer",
+    "buffer_path_token",
+    "weight_method",
+    "weight_type",
+    "weight_func",
+    "weight_func_suffix",
+    "dynamic_buffering",
+    "size_measure",
+    "approach",
 ]
 
 # ── Process-local globals for parallel workers ────────────────────────────────
@@ -67,6 +76,7 @@ _PERCENT_VERIFICATION = None
 
 
 # ── Combo enumeration ─────────────────────────────────────────────────────────
+
 
 def enumerate_sweep_records(approach, weight_funcs=None):
     """The expected population layer of ``approach`` for every combination of the sweep grid.
@@ -88,22 +98,24 @@ def enumerate_sweep_records(approach, weight_funcs=None):
     for idx, variant in enumerate(workflow.sweep_variants(weight_funcs), start=1):
         cfg = workflow.config("add_pop", variant)
         filepath = workflow.population_layer(variant, approach)
-        records.append({
-            "alias": f"F{idx:03d}",
-            "filepath": filepath,
-            "exists": os.path.isfile(filepath),
-            "level": int(variant.level),
-            "version": variant.version,
-            "buffer": variant.buffer,
-            "buffer_path_token": cfg["buffer_path_token"],
-            "weight_method": variant.weight_method,
-            "weight_type": cfg["weight_type"],
-            "weight_func": variant.weight_func,
-            "weight_func_suffix": cfg["weight_func_suffix"],
-            "dynamic_buffering": str(variant.dynamic_buffering).lower(),
-            "size_measure": variant.size_measure if variant.dynamic_buffering else "",
-            "approach": approach,
-        })
+        records.append(
+            {
+                "alias": f"F{idx:03d}",
+                "filepath": filepath,
+                "exists": os.path.isfile(filepath),
+                "level": int(variant.level),
+                "version": variant.version,
+                "buffer": variant.buffer,
+                "buffer_path_token": cfg["buffer_path_token"],
+                "weight_method": variant.weight_method,
+                "weight_type": cfg["weight_type"],
+                "weight_func": variant.weight_func,
+                "weight_func_suffix": cfg["weight_func_suffix"],
+                "dynamic_buffering": str(variant.dynamic_buffering).lower(),
+                "size_measure": variant.size_measure if variant.dynamic_buffering else "",
+                "approach": approach,
+            }
+        )
     return records
 
 
@@ -115,6 +127,7 @@ def filter_by_task(records, task_id, num_tasks=NUM_TASKS, shuffle_seed=DEFAULT_S
 
 
 # ── Worker initialiser and per-record function ────────────────────────────────
+
 
 def _init_ver_worker(eu_ref_filepath, factor, threshold, percent_verification):
     """Load EU reference into process-local state shared by all workers in the pool."""
@@ -145,7 +158,7 @@ def _process_ver_record(record):
         return []
 
     subset_masks = {
-        "ver":   gdf["watersheds_chosen"],
+        "ver": gdf["watersheds_chosen"],
         "unver": (~gdf["watersheds_chosen"]) & (~gdf["is_single_points"]),
         "single": gdf["is_single_points"],
     }
@@ -182,8 +195,8 @@ def _process_ver_record(record):
 
 # ── Raw metrics collection ────────────────────────────────────────────────────
 
-def collect_metrics(records, eu_ref_filepath, factor, threshold,
-                    percent_verification, max_workers=None):
+
+def collect_metrics(records, eu_ref_filepath, factor, threshold, percent_verification, max_workers=None):
     """Process all records in parallel and return a DataFrame of raw metric rows."""
     if max_workers is None:
         max_workers = default_cpu_workers()
@@ -209,6 +222,7 @@ def collect_metrics(records, eu_ref_filepath, factor, threshold,
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
 
+
 def compute_subset_scores(df):
     """Add ``subset_score`` by z-scoring error metrics within (subset_type, source).
 
@@ -228,8 +242,7 @@ def compute_subgroup_scores(subset_df):
     Z-scores the aggregated metrics within each source group to produce
     ``subgroup_score``.  Also carries the parameter columns through.
     """
-    error_metrics = ["median_abs_ndi", "iqr_ndi", "rmse_log_ratio", "spearman_r",
-                     "median_ndi", "median_alpha"]
+    error_metrics = ["median_abs_ndi", "iqr_ndi", "rmse_log_ratio", "spearman_r", "median_ndi", "median_alpha"]
 
     # Param cols that are NOT groupby keys — alias and source come from reset_index().
     non_key_params = [c for c in _PARAM_COLS if c != "alias"]
@@ -249,35 +262,22 @@ def compute_subgroup_scores(subset_df):
                 result[col] = group[col].iloc[0]
         return pd.Series(result)
 
-    subgroup = (
-        subset_df.groupby(["alias", "source"])
-        .apply(_wavg, include_groups=False)
-        .reset_index()
-    )
+    subgroup = subset_df.groupby(["alias", "source"]).apply(_wavg, include_groups=False).reset_index()
     for metric in ("median_abs_ndi", "iqr_ndi", "rmse_log_ratio"):
         subgroup[f"z_{metric}"] = subgroup.groupby("source")[metric].transform(_safe_zscore)
-    subgroup["subgroup_score"] = (
-        subgroup[["z_median_abs_ndi", "z_iqr_ndi", "z_rmse_log_ratio"]].mean(axis=1)
-    )
+    subgroup["subgroup_score"] = subgroup[["z_median_abs_ndi", "z_iqr_ndi", "z_rmse_log_ratio"]].mean(axis=1)
     return subgroup
 
 
 def compute_config_scores(subgroup_df, hw_weight):
     """Combine HW and EU subgroup scores per alias into a single ``config_score``."""
     eu_weight = 1.0 - hw_weight
-    pivot = subgroup_df.pivot_table(
-        index="alias", columns="source", values="subgroup_score", aggfunc="mean"
-    )
+    pivot = subgroup_df.pivot_table(index="alias", columns="source", values="subgroup_score", aggfunc="mean")
     hw_s = pivot["HW"] if "HW" in pivot.columns else pd.Series(np.nan, index=pivot.index)
     eu_s = pivot["EU"] if "EU" in pivot.columns else pd.Series(np.nan, index=pivot.index)
 
-    avail = (
-        (~hw_s.isna()).astype(float) * hw_weight
-        + (~eu_s.isna()).astype(float) * eu_weight
-    )
-    pivot["config_score"] = (
-        hw_s.fillna(0) * hw_weight + eu_s.fillna(0) * eu_weight
-    ) / avail.replace(0, np.nan)
+    avail = (~hw_s.isna()).astype(float) * hw_weight + (~eu_s.isna()).astype(float) * eu_weight
+    pivot["config_score"] = (hw_s.fillna(0) * hw_weight + eu_s.fillna(0) * eu_weight) / avail.replace(0, np.nan)
     pivot = pivot.rename(columns={"HW": "subgroup_score_HW", "EU": "subgroup_score_EU"})
     pivot["hw_weight"] = hw_weight
     pivot["eu_weight"] = eu_weight
@@ -285,15 +285,11 @@ def compute_config_scores(subgroup_df, hw_weight):
     # _PARAM_COLS[0] is "alias" which is already the index — exclude it to avoid
     # duplicating the column before set_index, which produces all-NaN after join.
     non_alias_params = [c for c in _PARAM_COLS if c != "alias"]
-    params = (
-        subgroup_df.drop_duplicates("alias")[["alias"] + non_alias_params]
-        .set_index("alias")
-    )
+    params = subgroup_df.drop_duplicates("alias")[["alias"] + non_alias_params].set_index("alias")
     config = pivot.join(params, how="left").reset_index()
 
     # Put meaningful param columns first so the CSV is readable without alias codes.
-    score_cols = ["config_score", "subgroup_score_HW", "subgroup_score_EU",
-                  "hw_weight", "eu_weight"]
+    score_cols = ["config_score", "subgroup_score_HW", "subgroup_score_EU", "hw_weight", "eu_weight"]
     ordered_cols = non_alias_params + score_cols + ["alias"]
     ordered_cols = [c for c in ordered_cols if c in config.columns]
     config = config[ordered_cols]
@@ -302,6 +298,7 @@ def compute_config_scores(subgroup_df, hw_weight):
 
 
 # ── Output ────────────────────────────────────────────────────────────────────
+
 
 def _add_rank(df, sort_col):
     df = df.sort_values(sort_col, ascending=True).reset_index(drop=True)
@@ -316,10 +313,7 @@ def save_rankings(subset_df, subgroup_df, config_df, out_dir):
     # ── Subset rankings (one file per subset_type × source) ──────────────────
     for subset_type in SUBSET_TYPES:
         for source in ("HW", "EU"):
-            sub = subset_df[
-                (subset_df["subset_type"] == subset_type)
-                & (subset_df["source"] == source)
-            ].copy()
+            sub = subset_df[(subset_df["subset_type"] == subset_type) & (subset_df["source"] == source)].copy()
             if sub.empty:
                 continue
             sub = _add_rank(sub, "subset_score")
@@ -345,6 +339,7 @@ def save_rankings(subset_df, subgroup_df, config_df, out_dir):
 
 
 # ── CLI modes ─────────────────────────────────────────────────────────────────
+
 
 def _load_script_cfg(overrides=None):
     """Return the sweep_ver_ranking section of config.yaml."""
@@ -378,14 +373,21 @@ def main_worker(task_id, shuffle_seed, overrides=None):
 
     logger.info(
         "Task %d: %d assigned combos — %d with output files, %d pending.",
-        task_id, len(assigned), len(existing), pending,
+        task_id,
+        len(assigned),
+        len(existing),
+        pending,
     )
     if not existing:
         logger.warning("Task %d: no output files found — nothing to process.", task_id)
         return
 
     metrics_df = collect_metrics(
-        existing, eu_ref_filepath, factor, threshold, percent_verification,
+        existing,
+        eu_ref_filepath,
+        factor,
+        threshold,
+        percent_verification,
         max_workers=max_workers,
     )
     if metrics_df.empty:
@@ -426,9 +428,7 @@ def main_merge(overrides=None):
 
 def main():
     """Dispatch to worker or merge mode based on CLI arguments."""
-    parser = argparse.ArgumentParser(
-        description="Sweep verification ranking: worker or merge mode."
-    )
+    parser = argparse.ArgumentParser(description="Sweep verification ranking: worker or merge mode.")
     parser.add_argument(
         "--task-id",
         type=int,

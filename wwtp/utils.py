@@ -25,8 +25,7 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
 
 
-def requests_session_with_retries(total_retries=3, backoff_factor=0.5,
-                                   status_forcelist=(429, 500, 502, 503, 504)):
+def requests_session_with_retries(total_retries=3, backoff_factor=0.5, status_forcelist=(429, 500, 502, 503, 504)):
     """Build a ``requests.Session`` with bounded automatic retry/backoff.
 
     Centralizes the retry policy that several download sites previously
@@ -155,8 +154,9 @@ def industrial_category_mask(df, industrial_categories, mix_use_categories, colu
     return df[column].astype(str).isin(wanted)
 
 
-def select_industrial_categories(df, industrial_categories, mix_use_categories,
-                                 keep=True, column=INDUSTRIAL_CATEGORY_COLUMN, logger=None):
+def select_industrial_categories(
+    df, industrial_categories, mix_use_categories, keep=True, column=INDUSTRIAL_CATEGORY_COLUMN, logger=None
+):
     """Keep only industrial/mixed-use rows (``keep=True``) or drop them.
 
     ``keep=True`` is the industrial pipeline's direction; ``keep=False`` is what
@@ -171,19 +171,24 @@ def select_industrial_categories(df, industrial_categories, mix_use_categories,
     if mask is None:
         log.warning(
             "Column '%s' is absent; industrial %s filter skipped and all %d row(s) kept.",
-            column, "keep-only" if keep else "discard", len(df),
+            column,
+            "keep-only" if keep else "discard",
+            len(df),
         )
         return df
 
     selected = df[mask if keep else ~mask].copy()
     log.info(
         "Industrial %s filter on '%s': %d of %d row(s) retained.",
-        "keep-only" if keep else "discard", column, len(selected), len(df),
+        "keep-only" if keep else "discard",
+        column,
+        len(selected),
+        len(df),
     )
     return selected
 
 
-def reported_population_mask(df, column='QUAL_POP'):
+def reported_population_mask(df, column="QUAL_POP"):
     """True where HydroWASTE marks POP_SERVED as reported (``QUAL_POP == 1``).
 
     The column is read as a number, so ``1``, ``1.0`` and ``'1.0'`` all count.
@@ -196,7 +201,7 @@ def reported_population_mask(df, column='QUAL_POP'):
             f"Column '{column}' is required to select plants with reported population; "
             "it is missing from the comparison input."
         )
-    return pd.to_numeric(df[column], errors='coerce').eq(1)
+    return pd.to_numeric(df[column], errors="coerce").eq(1)
 
 
 @contextmanager
@@ -258,9 +263,15 @@ def parse_zonal_sum_year(column):
         return None
 
 
-def resolve_latest_zonal_sum_column(df, preferred=None, exclude_years=(),
-                                    lexicographic=False, keep_unparseable=True,
-                                    required=True, missing_message=None):
+def resolve_latest_zonal_sum_column(
+    df,
+    preferred=None,
+    exclude_years=(),
+    lexicographic=False,
+    keep_unparseable=True,
+    required=True,
+    missing_message=None,
+):
     """Resolve the zonal-sum column to use, preferring ``preferred`` if present.
 
     The five previous implementations differed in exactly three ways, so those
@@ -310,7 +321,7 @@ def resolve_latest_zonal_sum_column(df, preferred=None, exclude_years=(),
 
 def _clean_numeric_series(values, positive_only=False):
     """Coerce array-like input to a finite, NaN-free numeric Series."""
-    clean = pd.Series(pd.to_numeric(values, errors='coerce')).replace([np.inf, -np.inf], np.nan).dropna()
+    clean = pd.Series(pd.to_numeric(values, errors="coerce")).replace([np.inf, -np.inf], np.nan).dropna()
     if positive_only:
         clean = clean[clean > 0]
     return clean

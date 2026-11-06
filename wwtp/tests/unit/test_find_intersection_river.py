@@ -1,4 +1,5 @@
 """Tests for find_intersection_river (moved from the coverage-campaign files)."""
+
 import os
 import sys
 import geopandas as gpd
@@ -68,7 +69,11 @@ def test_find_intersection_orchestration_and_main_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(fir, "ProcessPoolExecutor", _Exec)
     monkeypatch.setattr(fir, "as_completed", lambda futures: list(futures))
     monkeypatch.setattr(fir, "tqdm", lambda iterable, **kwargs: iterable)
-    monkeypatch.setattr(fir, "optimize_river_lookup", lambda *args, **kwargs: gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs="EPSG:4326"))
+    monkeypatch.setattr(
+        fir,
+        "optimize_river_lookup",
+        lambda *args, **kwargs: gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs="EPSG:4326"),
+    )
 
     out = fir.orchestrate_settlement_river_intersections(polygons.copy(), rivers.copy(), x_distance=1000, max_workers=1)
     assert "river_list" in out.columns
@@ -82,7 +87,7 @@ def test_find_intersection_orchestration_and_main_smoke(monkeypatch, tmp_path):
             "non_served_above_threshold_outpath": str(tmp_path / "poly.gpkg"),
             "rivershed_output_path": str(tmp_path / "rivers.gpkg"),
             "non_served_nxt_river_outpath": str(tmp_path / "out.gpkg"),
-        }
+        },
     }
     monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(fir, "parse_config_overrides", lambda *a, **k: {})
@@ -108,7 +113,11 @@ def test_find_intersection_orchestration_and_main_smoke(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(fir.gpd, "read_file", _read_file)
-    monkeypatch.setattr(fir, "orchestrate_settlement_river_intersections", lambda p, r, x_distance, max_workers=1: p.assign(river_list=[[10]]))
+    monkeypatch.setattr(
+        fir,
+        "orchestrate_settlement_river_intersections",
+        lambda p, r, x_distance, max_workers=1: p.assign(river_list=[[10]]),
+    )
     monkeypatch.setattr(fir, "assign_main_riv", lambda p, r: p.assign(MAIN_RIV=[100]))
     monkeypatch.setattr(fir, "orchestrate_river_assignment", lambda p, r, max_workers=1: p.assign(NXT_DIS=[10]))
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
@@ -126,7 +135,7 @@ def test_find_intersection_main_raises_when_missing_crs(monkeypatch, tmp_path):
             "non_served_above_threshold_outpath": str(tmp_path / "poly.gpkg"),
             "rivershed_output_path": str(tmp_path / "rivers.gpkg"),
             "non_served_nxt_river_outpath": str(tmp_path / "out.gpkg"),
-        }
+        },
     }
     monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(fir, "parse_config_overrides", lambda *a, **k: {})
@@ -134,12 +143,24 @@ def test_find_intersection_main_raises_when_missing_crs(monkeypatch, tmp_path):
 
     no_crs_poly = gpd.GeoDataFrame({"HYBAS_ID": [1], "geometry": [box(0, 0, 1, 1)]}, geometry="geometry")
     ok_rivers = gpd.GeoDataFrame(
-        {"HYRIV_ID": [1], "NEXT_DOWN": [0], "MAIN_RIV": [1], "HYBAS_ID": [1], "geometry": [LineString([(0, 0), (1, 1)])]},
+        {
+            "HYRIV_ID": [1],
+            "NEXT_DOWN": [0],
+            "MAIN_RIV": [1],
+            "HYBAS_ID": [1],
+            "geometry": [LineString([(0, 0), (1, 1)])],
+        },
         geometry="geometry",
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(fir.gpd, "read_file", lambda path, columns=None, **kwargs: no_crs_poly.copy() if str(path).endswith("poly.gpkg") else ok_rivers.copy())
+    monkeypatch.setattr(
+        fir.gpd,
+        "read_file",
+        lambda path, columns=None, **kwargs: (
+            no_crs_poly.copy() if str(path).endswith("poly.gpkg") else ok_rivers.copy()
+        ),
+    )
     monkeypatch.setattr(sys, "argv", ["prog", "--max-workers", "4"])
 
     with pytest.raises(ValueError):
@@ -154,7 +175,7 @@ def test_find_intersection_main_rejects_non_positive_workers(monkeypatch, tmp_pa
             "non_served_above_threshold_outpath": str(tmp_path / "poly.gpkg"),
             "rivershed_output_path": str(tmp_path / "rivers.gpkg"),
             "non_served_nxt_river_outpath": str(tmp_path / "out.gpkg"),
-        }
+        },
     }
     monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(fir, "parse_config_overrides", lambda *a, **k: {})
@@ -163,7 +184,9 @@ def test_find_intersection_main_rejects_non_positive_workers(monkeypatch, tmp_pa
     monkeypatch.setattr(
         fir.gpd,
         "read_file",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("read_file should not be called for invalid workers")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("read_file should not be called for invalid workers")
+        ),
     )
 
     with pytest.raises(ValueError, match="max_workers"):

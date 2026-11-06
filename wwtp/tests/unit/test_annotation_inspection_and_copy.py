@@ -137,7 +137,11 @@ def test_organize_files_by_category_counts_copy_errors(monkeypatch, tmp_path):
     image_path.write_text("stub", encoding="utf-8")
     df = pd.DataFrame({"filepath": [str(image_path)], "category_name": ["A"]})
 
-    monkeypatch.setattr(annotations_inspection.shutil, "copy2", lambda src_path, dst_path: (_ for _ in ()).throw(RuntimeError("copy fail")))
+    monkeypatch.setattr(
+        annotations_inspection.shutil,
+        "copy2",
+        lambda src_path, dst_path: (_ for _ in ()).throw(RuntimeError("copy fail")),
+    )
 
     annotations_inspection.organize_files_by_category(df, "filepath", "category_name", str(tmp_path / "out"))
 
@@ -192,7 +196,9 @@ def test_annotations_inspection_main_runs_sampling_and_exports(monkeypatch, tmp_
     monkeypatch.setattr(
         annotations_inspection,
         "organize_files_by_category",
-        lambda frame, source_col, category_col, base_dir: captured.setdefault("organized", (len(frame), source_col, category_col, base_dir)),
+        lambda frame, source_col, category_col, base_dir: captured.setdefault(
+            "organized", (len(frame), source_col, category_col, base_dir)
+        ),
     )
 
     original_to_csv = pd.DataFrame.to_csv

@@ -15,6 +15,7 @@ from ..starter import add_standard_override_arguments, load_config, parse_config
 from ..utils import atomic_output, configure_logging
 from ..geo_utils import nearest_within_threshold
 
+
 def assign_to_nearest(gdf_source, gdf_target, threshold=None, one_to_one=False):
     """Attach nearest target attributes to each source geometry.
 
@@ -43,38 +44,38 @@ def assign_to_nearest(gdf_source, gdf_target, threshold=None, one_to_one=False):
     gdf_source = gdf_source.to_crs(gdf_target.crs)
     sindex = gdf_target.sindex
 
-    nearest_matches = [
-        nearest_within_threshold(sindex, geom, threshold) for geom in gdf_source.geometry
-    ]
+    nearest_matches = [nearest_within_threshold(sindex, geom, threshold) for geom in gdf_source.geometry]
 
-    gdf_source['nearest_index'] = nearest_matches
+    gdf_source["nearest_index"] = nearest_matches
     if one_to_one:
-        matched = gdf_source['nearest_index'].notna()
+        matched = gdf_source["nearest_index"].notna()
         if matched.any():
-            target_idx = gdf_source.loc[matched, 'nearest_index'].astype(int).to_numpy()
+            target_idx = gdf_source.loc[matched, "nearest_index"].astype(int).to_numpy()
             distance = gdf_source.loc[matched].geometry.distance(
-                gpd.GeoSeries(gdf_target.geometry.to_numpy()[target_idx], index=gdf_source.index[matched],
-                              crs=gdf_target.crs)
+                gpd.GeoSeries(
+                    gdf_target.geometry.to_numpy()[target_idx], index=gdf_source.index[matched], crs=gdf_target.crs
+                )
             )
-            order = pd.DataFrame({'target': target_idx, 'distance': distance.to_numpy(),
-                                  'pos': np.arange(len(target_idx))}, index=gdf_source.index[matched])
-            keep = order.sort_values(['target', 'distance', 'pos']).drop_duplicates('target').index
+            order = pd.DataFrame(
+                {"target": target_idx, "distance": distance.to_numpy(), "pos": np.arange(len(target_idx))},
+                index=gdf_source.index[matched],
+            )
+            keep = order.sort_values(["target", "distance", "pos"]).drop_duplicates("target").index
             losers = gdf_source.index[matched].difference(keep)
-            gdf_source.loc[losers, 'nearest_index'] = None
-    gdf_source_na = gdf_source[gdf_source['nearest_index'].isna()]
-    gdf_source = gdf_source[gdf_source['nearest_index'].notna()].copy()
-    gdf_source['nearest_index'] = gdf_source['nearest_index'].astype(int)
-    gdf_source = gdf_source.merge(
-        gdf_target, left_on='nearest_index', right_index=True, suffixes=('', '_nearest')
-    )
+            gdf_source.loc[losers, "nearest_index"] = None
+    gdf_source_na = gdf_source[gdf_source["nearest_index"].isna()]
+    gdf_source = gdf_source[gdf_source["nearest_index"].notna()].copy()
+    gdf_source["nearest_index"] = gdf_source["nearest_index"].astype(int)
+    gdf_source = gdf_source.merge(gdf_target, left_on="nearest_index", right_index=True, suffixes=("", "_nearest"))
     gdf_source = pd.concat([gdf_source, gdf_source_na], ignore_index=True)
-    gdf_source = gpd.GeoDataFrame(gdf_source, geometry='geometry', crs=gdf_target.crs)
+    gdf_source = gpd.GeoDataFrame(gdf_source, geometry="geometry", crs=gdf_target.crs)
 
-    if 'nearest_index' in gdf_source.columns:
-        gdf_source.drop(columns=['nearest_index'], inplace=True)
-    if 'geometry_nearest' in gdf_source.columns:
-        gdf_source.drop(columns=['geometry_nearest'], inplace=True)
+    if "nearest_index" in gdf_source.columns:
+        gdf_source.drop(columns=["nearest_index"], inplace=True)
+    if "geometry_nearest" in gdf_source.columns:
+        gdf_source.drop(columns=["geometry_nearest"], inplace=True)
     return gdf_source.to_crs(source_crs)
+
 
 def merge_old(cfg):
     """Merge zipped segmentation outputs into the legacy corrected dataset.
@@ -84,41 +85,44 @@ def merge_old(cfg):
     cfg : dict
         Runtime configuration dictionary.
     """
-    paths = cfg['paths']
+    paths = cfg["paths"]
     mapping_filepath = paths["dl_mapfile"]
     zip_filepath = paths["dl_zipfile"]
-    zip_output_path = os.path.join(paths['data_dir'], paths["dl_dir"], os.path.basename(paths["dl_zipfile"]).split('.')[-2])
+    zip_output_path = os.path.join(
+        paths["data_dir"], paths["dl_dir"], os.path.basename(paths["dl_zipfile"]).split(".")[-2]
+    )
 
     gdf = gpd.read_file(paths["corrected_south"])
     mapping = gpd.read_file(os.path.abspath(mapping_filepath))
-    mapping['idx'] = mapping['idx'].astype(int)
+    mapping["idx"] = mapping["idx"].astype(int)
 
     if not os.path.exists(zip_output_path):
         os.makedirs(zip_output_path, exist_ok=True)
 
-    with zipfile.ZipFile(zip_filepath, 'r') as zip_ref:
+    with zipfile.ZipFile(zip_filepath, "r") as zip_ref:
         zip_ref.extractall(zip_output_path)
 
     data = []
-    zip_output_path = os.path.join(zip_output_path, os.path.basename(paths["dl_zipfile"]).split('.')[-2])
-    for file in [os.path.join(zip_output_path, f) for f in os.listdir(zip_output_path) if f.endswith('.csv')]:
+    zip_output_path = os.path.join(zip_output_path, os.path.basename(paths["dl_zipfile"]).split(".")[-2])
+    for file in [os.path.join(zip_output_path, f) for f in os.listdir(zip_output_path) if f.endswith(".csv")]:
         data.append(pd.read_csv(file))
 
     if not data:
         raise FileNotFoundError(f"No CSV segmentation files found in extracted archive path: {zip_output_path}")
 
     data = pd.concat(data, ignore_index=True)
-    data['idx'] = data['File Name'].apply(lambda val: int(val.split('.')[0]))
-    data['idx'] = data['idx'].astype(int)
-    data = data.sort_values(by='idx', ascending=True)
-    data = pd.merge(data, mapping, on=['idx'])
-    data = gpd.GeoDataFrame(data, geometry='geometry', crs=mapping.crs)
-    not_valids = gdf[gdf['geometry'].isna()]
-    main_data = assign_to_nearest(gdf[gdf['geometry'].notna()], data)
+    data["idx"] = data["File Name"].apply(lambda val: int(val.split(".")[0]))
+    data["idx"] = data["idx"].astype(int)
+    data = data.sort_values(by="idx", ascending=True)
+    data = pd.merge(data, mapping, on=["idx"])
+    data = gpd.GeoDataFrame(data, geometry="geometry", crs=mapping.crs)
+    not_valids = gdf[gdf["geometry"].isna()]
+    main_data = assign_to_nearest(gdf[gdf["geometry"].notna()], data)
     main_data = pd.concat([main_data, not_valids], ignore_index=True)
     output_path = os.path.join(paths["data_dir"], paths["seg_corrected_south"])
     with atomic_output(output_path) as tmp_path:
-        main_data.to_file(tmp_path, driver='GPKG', index=False)
+        main_data.to_file(tmp_path, driver="GPKG", index=False)
+
 
 def merge_new(cfg):
     """Merge flat CSV segmentation outputs into the current corrected dataset.
@@ -128,47 +132,49 @@ def merge_new(cfg):
     cfg : dict
         Runtime configuration dictionary.
     """
-    paths = cfg['paths']
-    points_df = gpd.read_file(paths['corrected_all_filepath'])
-    if 'idx' not in points_df.columns:
+    paths = cfg["paths"]
+    points_df = gpd.read_file(paths["corrected_all_filepath"])
+    if "idx" not in points_df.columns:
         raise KeyError("corrected_all dataset must include 'idx' column")
-    points_df['idx'] = points_df['idx'].astype(int)
-    seg_results = pd.read_csv(paths['seg_results_filepath'])
-    if 'img_name' not in seg_results.columns:
+    points_df["idx"] = points_df["idx"].astype(int)
+    seg_results = pd.read_csv(paths["seg_results_filepath"])
+    if "img_name" not in seg_results.columns:
         raise KeyError("seg_results file must include 'img_name' column")
 
-    seg_results['idx'] = pd.to_numeric(
-        seg_results['img_name'].astype(str).str.split('.').str[0],
-        errors='coerce',
+    seg_results["idx"] = pd.to_numeric(
+        seg_results["img_name"].astype(str).str.split(".").str[0],
+        errors="coerce",
     )
-    if seg_results['idx'].isna().any():
+    if seg_results["idx"].isna().any():
         raise ValueError("All seg_results img_name values must start with an integer id")
-    seg_results['idx'] = seg_results['idx'].astype(int)
+    seg_results["idx"] = seg_results["idx"].astype(int)
 
-    cols = ['num_detection_circle', 'diameters', 'num_detection_rect', 'wwtp_area_rect']
-    extra_cols = ['wwtp_area_square', 'num_detection_square']
+    cols = ["num_detection_circle", "diameters", "num_detection_rect", "wwtp_area_rect"]
+    extra_cols = ["wwtp_area_square", "num_detection_square"]
     cols_to_drop = [col for col in cols + extra_cols if col in points_df.columns]
     points_df = points_df.drop(columns=cols_to_drop)
 
     merged_df = gpd.GeoDataFrame(
-        pd.merge(points_df, seg_results, on='idx', how='left'),
-        geometry='geometry',
+        pd.merge(points_df, seg_results, on="idx", how="left"),
+        geometry="geometry",
         crs=points_df.crs,
     )
-    with atomic_output(paths['corrected_all_filepath']) as tmp_path:
-        merged_df.to_file(tmp_path, index=False, driver='GPKG')
+    with atomic_output(paths["corrected_all_filepath"]) as tmp_path:
+        merged_df.to_file(tmp_path, index=False, driver="GPKG")
+
 
 def parse_args():
     """Parse command-line arguments for merge workflow selection."""
-    parser = argparse.ArgumentParser(description='Merge segmentation outputs into geospatial datasets.')
+    parser = argparse.ArgumentParser(description="Merge segmentation outputs into geospatial datasets.")
     add_standard_override_arguments(parser)
     parser.add_argument(
-        '--variant',
-        choices=['old', 'new'],
-        default='old',
-        help='Choose the merge workflow: old (zipped tiles + mapping) or new (single CSV results).',
+        "--variant",
+        choices=["old", "new"],
+        default="old",
+        help="Choose the merge workflow: old (zipped tiles + mapping) or new (single CSV results).",
     )
     return parser.parse_args()
+
 
 def main():
     """Parse CLI options and run the selected segmentation-merge workflow.
@@ -182,12 +188,13 @@ def main():
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="merge_seg_results", **overrides)
 
-    if args.variant == 'old':
-        if cfg['legacy_merge']:
+    if args.variant == "old":
+        if cfg["legacy_merge"]:
             merge_old(cfg)
         return
     merge_new(cfg)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     configure_logging()
     main()

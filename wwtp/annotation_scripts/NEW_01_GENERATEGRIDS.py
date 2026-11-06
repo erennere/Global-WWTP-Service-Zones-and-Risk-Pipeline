@@ -17,14 +17,13 @@ from ..utils import atomic_output, configure_logging
 
 logger = logging.getLogger(__name__)
 
+
 def point_to_square(geom, half):
     """Return a square polygon centered on a point geometry."""
     if geom is None or geom.is_empty:
         return None
-    return box(
-        geom.x - half, geom.y - half,
-        geom.x + half, geom.y + half
-    )
+    return box(geom.x - half, geom.y - half, geom.x + half, geom.y + half)
+
 
 def parse_args():
     """Parse the standardized named config-override flags."""
@@ -48,7 +47,7 @@ def main(cell_size, half, points_path, output_path):
         Output GeoPackage path for the generated grid.
     """
     gdf = gpd.read_file(points_path)
-    gdf = gdf[gdf['geometry'].map(lambda geom: pd.notna(geom) and isinstance(geom, Point))].reset_index(drop=True)
+    gdf = gdf[gdf["geometry"].map(lambda geom: pd.notna(geom) and isinstance(geom, Point))].reset_index(drop=True)
     if not all(gdf.geometry.geom_type == "Point"):
         raise ValueError("Input layer must contain only Point geometries")
 
@@ -61,7 +60,8 @@ def main(cell_size, half, points_path, output_path):
         gdf_3857.to_file(tmp_path, driver="GPKG")
     print(f"✅ Created {cell_size:.2f} m × {cell_size:.2f} m grid squares (Zoom 17, 3072×3072 px).")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     configure_logging()
     logger.info("Starting Bing annotation pipeline")
     overrides = parse_config_overrides(args=parse_args())
@@ -70,7 +70,7 @@ if __name__ == '__main__':
 
     cell_size = int(cfg["annotations"]["cell_size"])
     factor = float(cfg["annotations"]["factor"])
-    cell_size = cell_size * factor   # meters (~3667.97 m)
+    cell_size = cell_size * factor  # meters (~3667.97 m)
     half = cell_size / 2
 
     points_path = cfg["paths"]["corrected_all_filepath"]
@@ -79,6 +79,5 @@ if __name__ == '__main__':
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
-    output_path = os.path.join(output_dir, f'grids_{os.path.basename(points_path)}')
+    output_path = os.path.join(output_dir, f"grids_{os.path.basename(points_path)}")
     main(cell_size, half, points_path, output_path)
-

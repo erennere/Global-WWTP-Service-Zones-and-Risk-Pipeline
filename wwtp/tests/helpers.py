@@ -1,4 +1,5 @@
 """Shared test helpers."""
+
 import importlib
 import pkgutil
 
@@ -13,7 +14,9 @@ def patch_service_areas(monkeypatch, name, value):
     import wwtp.create_voronoi as cli
     import wwtp.service_areas as pkg
 
-    modules = [cli, pkg] + [importlib.import_module(f"{pkg.__name__}.{m.name}") for m in pkgutil.iter_modules(pkg.__path__)]
+    modules = [cli, pkg] + [
+        importlib.import_module(f"{pkg.__name__}.{m.name}") for m in pkgutil.iter_modules(pkg.__path__)
+    ]
     hits = [mod for mod in modules if name in vars(mod)]
     if not hits:
         raise AttributeError(f"no service-area module defines {name!r}")

@@ -7,6 +7,7 @@ uncommitted changes, the versions of the geospatial packages, and the size,
 modification time and (up to ``hash_max_mb``) SHA-256 of every input file the
 config names that exists when the stage starts.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -22,8 +23,21 @@ import yaml
 from .starter import load_config
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PACKAGES = ("numpy", "pandas", "geopandas", "shapely", "pyproj", "pyogrio", "rasterio", "exactextract", "duckdb",
-            "scipy", "scikit-learn", "opencv-python-headless", "pyarrow")
+PACKAGES = (
+    "numpy",
+    "pandas",
+    "geopandas",
+    "shapely",
+    "pyproj",
+    "pyogrio",
+    "rasterio",
+    "exactextract",
+    "duckdb",
+    "scipy",
+    "scikit-learn",
+    "opencv-python-headless",
+    "pyarrow",
+)
 
 
 def _git(*args):
@@ -39,8 +53,12 @@ def code_version():
     sha, err = _git("rev-parse", "HEAD")
     branch, _ = _git("rev-parse", "--abbrev-ref", "HEAD")
     status, _ = _git("status", "--porcelain", "--untracked-files=no")
-    return {"commit": sha, "branch": branch, "uncommitted_changes": bool(status) if status is not None else None,
-            "error": err}
+    return {
+        "commit": sha,
+        "branch": branch,
+        "uncommitted_changes": bool(status) if status is not None else None,
+        "error": err,
+    }
 
 
 def package_versions():
@@ -56,8 +74,10 @@ def package_versions():
 def file_fingerprint(path, hash_max_mb):
     """Size, modification time and, for files up to ``hash_max_mb``, SHA-256."""
     stat = os.stat(path)
-    out = {"bytes": stat.st_size,
-           "modified_utc": _dt.datetime.fromtimestamp(stat.st_mtime, _dt.timezone.utc).isoformat(timespec="seconds")}
+    out = {
+        "bytes": stat.st_size,
+        "modified_utc": _dt.datetime.fromtimestamp(stat.st_mtime, _dt.timezone.utc).isoformat(timespec="seconds"),
+    }
     if stat.st_size <= hash_max_mb * 1024 * 1024:
         digest = hashlib.sha256()
         with open(path, "rb") as f:
@@ -95,8 +115,9 @@ def write_run_manifest(cfg, stage, argv=None):
         "started_utc": now.isoformat(timespec="seconds"),
         "command": list(sys.argv if argv is None else argv),
         "host": platform.node(),
-        "slurm_job": {k: os.environ[k] for k in ("SLURM_JOB_ID", "SLURM_ARRAY_JOB_ID", "SLURM_ARRAY_TASK_ID")
-                      if k in os.environ},
+        "slurm_job": {
+            k: os.environ[k] for k in ("SLURM_JOB_ID", "SLURM_ARRAY_JOB_ID", "SLURM_ARRAY_TASK_ID") if k in os.environ
+        },
         "code": code_version(),
         "packages": package_versions(),
         "inputs_found_at_start": inputs,

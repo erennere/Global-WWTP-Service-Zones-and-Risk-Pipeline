@@ -98,9 +98,7 @@ def _assign_polygon_min_zoom(gdf: gpd.GeoDataFrame, min_zoom: int, max_zoom: int
     # Large polygons appear earlier (lower zoom); small polygons appear later.
     norm = (log_area - lo) / (hi - lo)
     assigned = max_zoom - norm * float(max_zoom - min_zoom)
-    work["tile_min_zoom"] = (
-        assigned.fillna(float(min_zoom)).round().clip(lower=min_zoom, upper=max_zoom).astype(int)
-    )
+    work["tile_min_zoom"] = assigned.fillna(float(min_zoom)).round().clip(lower=min_zoom, upper=max_zoom).astype(int)
     return work
 
 
@@ -635,4 +633,3 @@ def main() -> None:
 if __name__ == "__main__":
     configure_logging()
     main()
-

@@ -17,6 +17,7 @@ Reads svc/service_hybas<lev>.gpkg (05_service.py) or svc/service_country.gpkg (0
 writes svc/cartogram_hybas<lev>.gpkg / svc/cartogram_country.gpkg (EPSG:8857 metres, deformed) and a JSON
 accuracy report.
 """
+
 import argparse, json, time
 import numpy as np, geopandas as gpd, shapely
 from scipy import ndimage
@@ -54,7 +55,8 @@ def one_round(geoms, val):
     cell = max(x1 - x0, y1 - y0) / a.grid
     nx, ny = int(np.ceil((x1 - x0) / cell)), int(np.ceil((y1 - y0) / cell))
     # rasterise: polygon index of every cell centre
-    cx = x0 + (np.arange(nx) + 0.5) * cell; cy = y0 + (np.arange(ny) + 0.5) * cell
+    cx = x0 + (np.arange(nx) + 0.5) * cell
+    cy = y0 + (np.arange(ny) + 0.5) * cell
     XX, YY = np.meshgrid(cx, cy)
     pts = shapely.points(XX.ravel(), YY.ravel())
     # deformed rounds can self-intersect; newer GEOS raises on 'within' against invalid polygons,
@@ -70,14 +72,18 @@ def one_round(geoms, val):
         rho0 = ndimage.gaussian_filter(rho0, a.blur, mode="nearest")
     rho_bar = rho0.mean()
     # Poisson: lap(phi) = rho_bar - rho0  ->  phi_hat = (rho0 - rho_bar)_hat / k^2
-    fx = np.fft.fftfreq(nx); fy = np.fft.fftfreq(ny)
+    fx = np.fft.fftfreq(nx)
+    fy = np.fft.fftfreq(ny)
     KX, KY = np.meshgrid(2 * np.pi * fx, 2 * np.pi * fy)
-    k2 = KX ** 2 + KY ** 2; k2[0, 0] = 1.0
-    phi_hat = np.fft.fft2(rho0 - rho_bar) / k2; phi_hat[0, 0] = 0
-    gx = np.real(np.fft.ifft2(1j * KX * phi_hat)); gy = np.real(np.fft.ifft2(1j * KY * phi_hat))
+    k2 = KX**2 + KY**2
+    k2[0, 0] = 1.0
+    phi_hat = np.fft.fft2(rho0 - rho_bar) / k2
+    phi_hat[0, 0] = 0
+    gx = np.real(np.fft.ifft2(1j * KX * phi_hat))
+    gy = np.real(np.fft.ifft2(1j * KY * phi_hat))
     # integrate vertex positions (grid coordinates) from t = 0 to 1
     xy = shapely.get_coordinates(geoms)
-    P = np.c_[(xy[:, 0] - x0) / cell - 0.5, (xy[:, 1] - y0) / cell - 0.5]       # (col, row)
+    P = np.c_[(xy[:, 0] - x0) / cell - 0.5, (xy[:, 1] - y0) / cell - 0.5]  # (col, row)
 
     def vel(P, t):
         c = [P[:, 1], P[:, 0]]
@@ -94,7 +100,8 @@ def one_round(geoms, val):
         Pm = P + 0.5 * dt * v1
         v2 = vel(Pm, t + 0.5 * dt)
         P = P + dt * v2
-        t += dt; steps += 1
+        t += dt
+        steps += 1
     new = np.c_[x0 + (P[:, 0] + 0.5) * cell, y0 + (P[:, 1] + 0.5) * cell]
     return shapely.set_coordinates(geoms.copy(), new), steps, (nx, ny)
 
@@ -104,11 +111,19 @@ target = val / val.sum()
 hist = []
 for r in range(a.rounds):
     geoms, steps, shape = one_round(geoms, val)
-    ar = shapely.area(geoms); share = ar / ar.sum()
+    ar = shapely.area(geoms)
+    share = ar / ar.sum()
     ok = val > 0
     rel = np.abs(share[ok] - target[ok] * (ar[ok].sum() / ar.sum())) / (target[ok] * (ar[ok].sum() / ar.sum()))
-    hist.append(dict(round=r + 1, steps=steps, grid=shape, median_rel_err=round(float(np.median(rel)), 4),
-                     p90_rel_err=round(float(np.quantile(rel, 0.9)), 4)))
+    hist.append(
+        dict(
+            round=r + 1,
+            steps=steps,
+            grid=shape,
+            median_rel_err=round(float(np.median(rel)), 4),
+            p90_rel_err=round(float(np.quantile(rel, 0.9)), 4),
+        )
+    )
     print(hist[-1], f"{time.time() - t0:.0f} s", flush=True)
 
 out = gpd.GeoDataFrame(u.drop(columns="geometry"), geometry=gpd.GeoSeries(geoms, crs=8857), crs=8857)
@@ -118,8 +133,14 @@ okm = val > 0
 out["area_share"] = ar / ar[okm].sum()
 out["target_share"] = np.where(okm, val / val.sum(), np.nan)
 inv = int((~shapely.is_valid(geoms)).sum())
-rep = dict(level=a.level, rounds=hist, invalid_before_fix=inv, floor_fraction=a.floor, grid=a.grid,
-           land_area_share_of_non_served=round(float(ar[okm].sum() / ar.sum()), 4))
+rep = dict(
+    level=a.level,
+    rounds=hist,
+    invalid_before_fix=inv,
+    floor_fraction=a.floor,
+    grid=a.grid,
+    land_area_share_of_non_served=round(float(ar[okm].sum() / ar.sum()), 4),
+)
 out.to_file(f"svc/cartogram_{NAME}.gpkg", driver="GPKG")
 json.dump(rep, open(f"svc/cartogram_{NAME}_report.json", "w"), indent=1)
 print(json.dumps(rep, indent=1))

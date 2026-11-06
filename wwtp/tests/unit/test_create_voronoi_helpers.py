@@ -181,9 +181,7 @@ def test_estimate_utm_crs_always_returns_a_crs():
     empty = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:4326")
     assert estimate_utm_crs(empty).to_epsg() == 3857
 
-    populated = gpd.GeoDataFrame(
-        {"geometry": [Point(10, 50)]}, geometry="geometry", crs="EPSG:4326"
-    )
+    populated = gpd.GeoDataFrame({"geometry": [Point(10, 50)]}, geometry="geometry", crs="EPSG:4326")
     assert estimate_utm_crs(populated).to_epsg() == 32632
 
 
@@ -245,7 +243,9 @@ def test_weighted_voronoi_single_site_clips_to_country_boundary():
     assert point_df.crs.to_epsg() == 4326
 
     country_clip_wgs84 = country_clip.to_crs(4326)
-    assert region_df.geometry.iloc[0].difference(country_clip_wgs84.geometry.iloc[0]).area == pytest.approx(0.0, abs=1e-9)
+    assert region_df.geometry.iloc[0].difference(country_clip_wgs84.geometry.iloc[0]).area == pytest.approx(
+        0.0, abs=1e-9
+    )
 
 
 def test_geometry_contains_points_returns_expected_mask():

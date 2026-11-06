@@ -1,4 +1,5 @@
 """Tests for annotation_wastewater_join (moved from the coverage-campaign files)."""
+
 import geopandas as gpd
 import pandas as pd
 import random
@@ -23,6 +24,7 @@ class _Future:
         if self._fn is None:
             return self._value
         return self._fn(*self._args, **self._kwargs)
+
 
 class _Executor:
     def __init__(self, max_workers=None, eager_results=True):
@@ -121,12 +123,12 @@ def test_new03_main_clusters_output(monkeypatch):
     )
     captured = {}
     monkeypatch.setattr(ww_join, "load_geodata", lambda path: input_gdf.copy())
-    monkeypatch.setattr(ww_join, "write_geodata", lambda gdf, path, driver="GeoJSON": captured.setdefault("rows", len(gdf)))
+    monkeypatch.setattr(
+        ww_join, "write_geodata", lambda gdf, path, driver="GeoJSON": captured.setdefault("rows", len(gdf))
+    )
 
     ww_join.main("in.parquet", "out.geojson", distance_threshold=0.1)
     assert captured["rows"] == 2
-
-
 
 
 def test_write_geodata_ensures_parent_and_writes(monkeypatch, tmp_path):
@@ -134,7 +136,9 @@ def test_write_geodata_ensures_parent_and_writes(monkeypatch, tmp_path):
     captured = {}
 
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
-    monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, path, driver="GeoJSON": captured.setdefault("written", (path, driver)))
+    monkeypatch.setattr(
+        gpd.GeoDataFrame, "to_file", lambda self, path, driver="GeoJSON": captured.setdefault("written", (path, driver))
+    )
 
     ww3.write_geodata(gdf, str(tmp_path / "out.geojson"))
 
@@ -313,7 +317,9 @@ def test_new03_merge_bboxes_sql_branches(monkeypatch, tmp_path):
         return _Conn()
 
     monkeypatch.setattr(ww3.duckdb, "connect", _connect)
-    monkeypatch.setattr(ww3, "parallel_convert_geojsons", lambda *args, **kwargs: [str(tmp_path / "idx_1_polygons.parquet")])
+    monkeypatch.setattr(
+        ww3, "parallel_convert_geojsons", lambda *args, **kwargs: [str(tmp_path / "idx_1_polygons.parquet")]
+    )
     monkeypatch.setattr(ww3, "merge_parquets_sql", lambda *args, **kwargs: {"x": "1"})
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 

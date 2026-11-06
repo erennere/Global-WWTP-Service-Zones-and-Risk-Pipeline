@@ -59,12 +59,21 @@ def main():
     overrides = parse_config_overrides(args=parse_args())
     cfg = load_config(script_name="NEW_04_EXPORTGEOTIFF", **overrides)
     paths, export = cfg["paths"], cfg["export"]
-    grid_path = os.path.join(paths["annotations_grid_dir"], f"grids_{os.path.basename(paths['corrected_all_filepath'])}")
+    grid_path = os.path.join(
+        paths["annotations_grid_dir"], f"grids_{os.path.basename(paths['corrected_all_filepath'])}"
+    )
     grid = gpd.read_file(grid_path)
     layer = gpd.read_file(paths["export_layer_filepath"]).to_crs(grid.crs)
-    written = export_patches(grid, [layer], paths["export_patch_dir"], export["id_field"],
-                             int(export["output_width_px"]), int(export["output_height_px"]), int(export["dpi"]),
-                             export["image_format"])
+    written = export_patches(
+        grid,
+        [layer],
+        paths["export_patch_dir"],
+        export["id_field"],
+        int(export["output_width_px"]),
+        int(export["output_height_px"]),
+        int(export["dpi"]),
+        export["image_format"],
+    )
     print(f"Exported {len(written)} georeferenced patches to {paths['export_patch_dir']}")
 
 

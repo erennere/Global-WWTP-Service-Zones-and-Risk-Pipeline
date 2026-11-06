@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class UnionFind:
     """Efficient union-find data structure with path compression."""
+
     def __init__(self, n):
         self.parent = list(range(n))
         self.rank = [0] * n
@@ -110,8 +111,8 @@ def estimate_utm_epsg(lon, lat):
         raise ValueError("Invalid longitude or latitude")
 
     zone = int((lon + 180) // 6) + 1
-    hemisphere = 'north' if lat >= 0 else 'south'
-    epsg = 32600 + zone if hemisphere == 'north' else 32700 + zone
+    hemisphere = "north" if lat >= 0 else "south"
+    epsg = 32600 + zone if hemisphere == "north" else 32700 + zone
     logger.debug(f"Estimated UTM EPSG {epsg} for zone {zone} ({hemisphere}) from lon={lon:.2f}, lat={lat:.2f}")
     try:
         CRS.from_epsg(epsg)
@@ -152,11 +153,7 @@ def estimate_utm_crs(gdf):
     Notes:
         Validates both lon and lat are finite using 'and' logic.
     """
-    valid_geoms = gdf.geometry[
-        gdf.geometry.is_valid &
-        ~gdf.geometry.is_empty &
-        gdf.geometry.notna()
-    ]
+    valid_geoms = gdf.geometry[gdf.geometry.is_valid & ~gdf.geometry.is_empty & gdf.geometry.notna()]
 
     if valid_geoms.empty:
         logger.info("No valid geometries available to estimate UTM CRS. Falling back to Web Mercator (3857).")
@@ -199,7 +196,7 @@ def estimate_utm_crs(gdf):
         epgs = CRS.from_epsg(epsg)
         return epgs
     except Exception as err:
-        logger.info(f'Failed to create UTM CRS EPSG:{epsg}: {err}. Falling back to Web Mercator (3857)')
+        logger.info(f"Failed to create UTM CRS EPSG:{epsg}: {err}. Falling back to Web Mercator (3857)")
         return CRS.from_epsg(3857)
 
 
@@ -302,8 +299,7 @@ def ensure_duckdb_spatial(connection=None):
         duckdb.sql(query)
 
 
-def load_eu_reference_layer(filepath, factor, capacity_column="uwwCapacity",
-                            pop_column="POP_SERVED_EU"):
+def load_eu_reference_layer(filepath, factor, capacity_column="uwwCapacity", pop_column="POP_SERVED_EU"):
     """Load the UWWTD reference layer, project it, and derive the served-population column.
 
     All three EU-comparison entry points (``eu_comparison``,
@@ -420,6 +416,7 @@ def _geodesic_m(lon1, lat1, lon2, lat2):
     global _GEOD
     if _GEOD is None:
         from pyproj import Geod
+
         _GEOD = Geod(ellps="WGS84")
     _, _, dist = _GEOD.inv(lon1, lat1, lon2, lat2)
     return np.asarray(dist, dtype=float)
@@ -457,8 +454,9 @@ def nearest_distances_m(source_gdf, target_gdf, k=1):
     idx = np.asarray(idx).reshape(-1, kq)
     found = np.isfinite(np.asarray(chord, dtype=float).reshape(-1, kq))
     safe = np.clip(idx, 0, len(src_pos) - 1)
-    metres = _geodesic_m(np.repeat(tgt_ll[:, 0], kq), np.repeat(tgt_ll[:, 1], kq),
-                         src_ll[safe.ravel(), 0], src_ll[safe.ravel(), 1]).reshape(-1, kq)
+    metres = _geodesic_m(
+        np.repeat(tgt_ll[:, 0], kq), np.repeat(tgt_ll[:, 1], kq), src_ll[safe.ravel(), 0], src_ll[safe.ravel(), 1]
+    ).reshape(-1, kq)
     metres = np.where(found, metres, np.inf)
     order = np.argsort(metres, axis=1, kind="stable")[:, :kk]
     metres = np.take_along_axis(metres, order, axis=1)

@@ -108,13 +108,19 @@ def test_optimize_river_lookup_and_assign_main_riv():
             "HYBAS_ID": [101, 101, 202],
             "HYRIV_ID": [11, 12, 21],
             "MAIN_RIV": [1001, 1001, 2001],
-            "geometry": [LineString([(0.1, 0.1), (0.9, 0.9)]), LineString([(0.2, 0.2), (0.8, 0.8)]), LineString([(10.1, 10.1), (10.9, 10.9)])],
+            "geometry": [
+                LineString([(0.1, 0.1), (0.9, 0.9)]),
+                LineString([(0.2, 0.2), (0.8, 0.8)]),
+                LineString([(10.1, 10.1), (10.9, 10.9)]),
+            ],
         },
         geometry="geometry",
         crs="EPSG:4326",
     )
 
-    out = find_intersection_river.optimize_river_lookup(polygons.copy(), rivers.copy(), x_distance=1000.0, utm_epsg=3857)
+    out = find_intersection_river.optimize_river_lookup(
+        polygons.copy(), rivers.copy(), x_distance=1000.0, utm_epsg=3857
+    )
 
     assert len(out["river_list"].iloc[0]) >= 1
     assert len(out["river_list"].iloc[1]) >= 1
@@ -178,10 +184,12 @@ def test_assign_river_juncture_and_orchestrate_assignment(monkeypatch):
 def test_sanitize_polygon_geom_and_sharding_helpers():
     assert create_rasters._sanitize_polygon_geom(None) is None
 
-    gc = GeometryCollection([
-        Point(0, 0),
-        Polygon([(0, 0), (1, 0), (0, 1), (0, 0)]),
-    ])
+    gc = GeometryCollection(
+        [
+            Point(0, 0),
+            Polygon([(0, 0), (1, 0), (0, 1), (0, 0)]),
+        ]
+    )
     cleaned = create_rasters._sanitize_polygon_geom(gc)
     assert cleaned is not None
 
@@ -217,8 +225,6 @@ def test_sanitize_polygon_geom_handles_make_valid_fallback_and_nonpolygon_result
     gc = GeometryCollection([Polygon([(0, 0), (1, 0), (0, 1), (0, 0)])])
     assert create_rasters._sanitize_polygon_geom(gc) is None
     assert create_rasters._sanitize_polygon_geom(LineString([(0, 0), (1, 1)])) is None
-
-
 
 
 def test_geotiff_exists_valid_and_polygon_raster_sign(tmp_path):
@@ -287,7 +293,9 @@ def test_polygon_raster_sign_handles_nodata_and_windows_without_polygons(tmp_pat
 
 
 def test_polygon_raster_sign_returns_none_stats_on_error(monkeypatch):
-    monkeypatch.setattr(create_rasters.rasterio, "open", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("bad raster")))
+    monkeypatch.setattr(
+        create_rasters.rasterio, "open", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("bad raster"))
+    )
 
     filepath, pos, neg = create_rasters.polygon_raster_sign_from_gdf(
         "broken.tif",
@@ -351,11 +359,17 @@ def test_create_rasters_main_requires_watershed_crs(monkeypatch, tmp_path):
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(create_rasters, "parse_args", lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1, "merge_shards": None})())
+    monkeypatch.setattr(
+        create_rasters,
+        "parse_args",
+        lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1, "merge_shards": None})(),
+    )
     monkeypatch.setattr(create_rasters.os, "chdir", lambda path: None)
     monkeypatch.setattr(create_rasters, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(create_rasters, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(create_rasters, "create_pop_output_paths", lambda _cfg: {"voronoi": {"1": str(tmp_path / "voronoi.gpkg")}})
+    monkeypatch.setattr(
+        create_rasters, "create_pop_output_paths", lambda _cfg: {"voronoi": {"1": str(tmp_path / "voronoi.gpkg")}}
+    )
     monkeypatch.setattr(
         create_rasters.gpd,
         "read_file",
@@ -407,30 +421,46 @@ def test_create_rasters_main_enriches_watershed_when_country_column_missing(monk
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(create_rasters, "parse_args", lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1, "merge_shards": None})())
+    monkeypatch.setattr(
+        create_rasters,
+        "parse_args",
+        lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1, "merge_shards": None})(),
+    )
     monkeypatch.setattr(create_rasters.os, "chdir", lambda path: None)
     monkeypatch.setattr(create_rasters, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(create_rasters, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(create_rasters, "create_pop_output_paths", lambda _cfg: {"voronoi": {"1": str(tmp_path / "voronoi.gpkg")}})
+    monkeypatch.setattr(
+        create_rasters, "create_pop_output_paths", lambda _cfg: {"voronoi": {"1": str(tmp_path / "voronoi.gpkg")}}
+    )
     monkeypatch.setattr(
         create_rasters.gpd,
         "read_file",
         lambda path: watershed.copy() if path == cfg["paths"]["watershed"] else voronoi.copy(),
     )
     monkeypatch.setattr(create_rasters, "find_newest_country_tif_files", lambda countries, tif_dir: {"DE": "de.tif"})
-    monkeypatch.setattr(create_rasters.os.path, "exists", lambda path: False if path == cfg["paths"]["overture"] else True)
-    monkeypatch.setattr(create_rasters, "download_overture_maps", lambda s3, out: captured.setdefault("download", (s3, out)))
+    monkeypatch.setattr(
+        create_rasters.os.path, "exists", lambda path: False if path == cfg["paths"]["overture"] else True
+    )
+    monkeypatch.setattr(
+        create_rasters, "download_overture_maps", lambda s3, out: captured.setdefault("download", (s3, out))
+    )
     monkeypatch.setattr(create_rasters, "intersects_with_country_db", lambda *args, **kwargs: enriched.copy())
     monkeypatch.setattr(create_rasters, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
     monkeypatch.setattr(
         create_rasters,
         "orchestrate_intersections",
-        lambda *args, **kwargs: captured.setdefault("orchestrated", {"countries": list(args[0].keys()), "workers": args[6]}),
+        lambda *args, **kwargs: captured.setdefault(
+            "orchestrated", {"countries": list(args[0].keys()), "workers": args[6]}
+        ),
     )
 
     original_to_file = gpd.GeoDataFrame.to_file
     try:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, path, driver=None, index=None, **kwargs: captured.setdefault("write", (path, driver, index)))
+        monkeypatch.setattr(
+            gpd.GeoDataFrame,
+            "to_file",
+            lambda self, path, driver=None, index=None, **kwargs: captured.setdefault("write", (path, driver, index)),
+        )
         create_rasters.main()
     finally:
         monkeypatch.setattr(gpd.GeoDataFrame, "to_file", original_to_file)
@@ -472,7 +502,9 @@ def test_extract_worldpop_universal_handles_skip_merge_and_invalid_chunk_paths(m
     monkeypatch.setattr(create_rasters, "finding_tiles", lambda island, zoom_level=8: ["1/1/1", "1/1/2"])
     monkeypatch.setattr(create_rasters, "find_bbox", lambda tile: box(0, 0, 1, 1))
     monkeypatch.setattr(create_rasters, "_sanitize_polygon_geom", lambda geom: sanitize_values.pop(0))
-    monkeypatch.setattr(create_rasters, "exact_extract", lambda *args, **kwargs: pytest.fail("exact_extract should not run"))
+    monkeypatch.setattr(
+        create_rasters, "exact_extract", lambda *args, **kwargs: pytest.fail("exact_extract should not run")
+    )
     monkeypatch.setattr(create_rasters.gc, "collect", lambda: None)
 
     result = create_rasters.extract_worldpop_universal(
@@ -531,6 +563,8 @@ def test_extract_worldpop_universal_handles_empty_exact_extract_results(monkeypa
 
 
 def test_extract_worldpop_universal_returns_none_on_critical_failure(monkeypatch):
-    monkeypatch.setattr(create_rasters.rasterio, "open", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        create_rasters.rasterio, "open", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
 
     assert create_rasters.extract_worldpop_universal("country.tif", None, None) is None

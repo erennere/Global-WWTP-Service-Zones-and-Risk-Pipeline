@@ -216,7 +216,9 @@ def test_main_writes_output_when_final_merge_has_cross_radius_nan(monkeypatch, m
     )
     monkeypatch.setattr(find_pop_in_danger_pop.gpd, "read_file", lambda path: input_gdf.copy())
     monkeypatch.setattr(find_pop_in_danger_pop, "assign_tile_to_df", lambda gdf, zoom_level, max_workers: gdf.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda gdf, *args, **kwargs: gdf.assign(ISO_2="DE"))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "intersects_with_country_db", lambda gdf, *args, **kwargs: gdf.assign(ISO_2="DE")
+    )
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda gdf, *args, **kwargs: gdf.copy())
     monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda gdf: next(grouped_results))
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
@@ -295,10 +297,22 @@ def test_main_rejects_missing_annotations_max_workers(monkeypatch, mock_cfg, tmp
     monkeypatch.setattr(find_pop_in_danger_pop, "glob", lambda pattern: [str(tmp_path / "impact_polygons_1000.gpkg")])
     monkeypatch.setattr(find_pop_in_danger_pop.gpd, "read_file", lambda path: gdf.copy())
 
-    monkeypatch.setattr(find_pop_in_danger_pop, "assign_tile_to_df", lambda frame, zoom_level, max_workers: frame.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE"))
-    monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda frame, tif_dir, max_workers, all_years=False, country_col=None: frame.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "assign_tile_to_df", lambda frame, zoom_level, max_workers: frame.copy()
+    )
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE")
+    )
+    monkeypatch.setattr(
+        find_pop_in_danger_pop,
+        "intersect_all_files",
+        lambda frame, tif_dir, max_workers, all_years=False, country_col=None: frame.copy(),
+    )
+    monkeypatch.setattr(
+        find_pop_in_danger_pop,
+        "group_tile_population_sums",
+        lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}),
+    )
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
@@ -332,14 +346,21 @@ def test_main_uses_configured_annotations_max_workers(monkeypatch, mock_cfg, tmp
     monkeypatch.setattr(find_pop_in_danger_pop, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(find_pop_in_danger_pop, "glob", lambda pattern: [str(tmp_path / "impact_polygons_1000.gpkg")])
     monkeypatch.setattr(find_pop_in_danger_pop.gpd, "read_file", lambda path: gdf.copy())
+
     def _assign_tile(frame, zoom_level, max_workers):
         seen["max_workers"] = max_workers
         return frame.copy()
 
     monkeypatch.setattr(find_pop_in_danger_pop, "assign_tile_to_df", _assign_tile)
-    monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE"))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE")
+    )
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda frame, *args, **kwargs: frame.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop,
+        "group_tile_population_sums",
+        lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}),
+    )
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
@@ -374,15 +395,23 @@ def test_main_uses_at_least_one_worker_for_intersections(monkeypatch, mock_cfg, 
     monkeypatch.setattr(find_pop_in_danger_pop, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(find_pop_in_danger_pop, "glob", lambda pattern: [str(tmp_path / "impact_polygons_1000.gpkg")])
     monkeypatch.setattr(find_pop_in_danger_pop.gpd, "read_file", lambda path: gdf.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "assign_tile_to_df", lambda frame, zoom_level, max_workers: frame.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE"))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "assign_tile_to_df", lambda frame, zoom_level, max_workers: frame.copy()
+    )
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE")
+    )
 
     def _intersect(frame, tif_dir, max_workers, all_years=False, country_col=None):
         seen["intersect_workers"] = max_workers
         return frame.copy()
 
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", _intersect)
-    monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop,
+        "group_tile_population_sums",
+        lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}),
+    )
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
@@ -420,7 +449,9 @@ def test_find_tiles_in_countries_returns_empty_dataframe_for_empty_input():
         crs=4326,
     )
 
-    result = find_pop_in_danger_pop.find_tiles_in_countries(countries, zoom_level=4, country_id_col="ISO_2", max_workers=1)
+    result = find_pop_in_danger_pop.find_tiles_in_countries(
+        countries, zoom_level=4, country_id_col="ISO_2", max_workers=1
+    )
 
     assert result.empty
     assert result.columns.tolist() == ["tile", "geometry", "ISO_2"]
@@ -453,11 +484,19 @@ def test_main_writes_empty_tile_groups_when_grouping_drops_tile_column(monkeypat
     monkeypatch.setattr(find_pop_in_danger_pop, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(find_pop_in_danger_pop, "glob", lambda pattern: [str(tmp_path / "impact_polygons_1000.gpkg")])
     monkeypatch.setattr(find_pop_in_danger_pop.gpd, "read_file", lambda path: gdf.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "assign_tile_to_df", lambda frame, zoom_level, max_workers: frame.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE"))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "assign_tile_to_df", lambda frame, zoom_level, max_workers: frame.copy()
+    )
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE")
+    )
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda frame, *args, **kwargs: frame.copy())
-    monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"2020_zonal_sum": [1.0]}))
-    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: saved.setdefault("ensured", []).append(path))
+    monkeypatch.setattr(
+        find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"2020_zonal_sum": [1.0]})
+    )
+    monkeypatch.setattr(
+        "wwtp.utils.ensure_output_dir_for_file", lambda path: saved.setdefault("ensured", []).append(path)
+    )
 
     original_to_file = gpd.GeoDataFrame.to_file
     original_to_parquet = gpd.GeoDataFrame.to_parquet
@@ -478,8 +517,6 @@ def test_main_writes_empty_tile_groups_when_grouping_drops_tile_column(monkeypat
     assert saved["final"]["frame"].columns.tolist() == ["tile", "geometry"]
 
 
-
-
 def test_find_pop_in_danger_script_entrypoint_runs_main_guard(monkeypatch):
     import runpy
 
@@ -488,7 +525,11 @@ def test_find_pop_in_danger_script_entrypoint_runs_main_guard(monkeypatch):
     module_name = "wwtp.pop_at_risk_river_calculations.find_pop_in_danger_pop"
 
     monkeypatch.setattr(starter_mod, "parse_config_overrides", lambda *a, **k: {})
-    monkeypatch.setattr(starter_mod, "load_config", lambda **overrides: {"zoom_level": 8, "annotations": {"max_workers": 1}, "paths": {}})
+    monkeypatch.setattr(
+        starter_mod,
+        "load_config",
+        lambda **overrides: {"zoom_level": 8, "annotations": {"max_workers": 1}, "paths": {}},
+    )
 
     with pytest.raises(KeyError, match="pop_tif_dir"):
         runpy.run_module(module_name, run_name="__main__")

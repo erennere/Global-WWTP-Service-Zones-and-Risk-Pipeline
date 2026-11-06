@@ -212,6 +212,7 @@ def write_test_config(tmp_path, base_config):
 
     return _write
 
+
 @pytest.fixture(autouse=True)
 def _no_run_manifests(request, monkeypatch):
     """Stage mains called inside tests must not write manifests into ../data.

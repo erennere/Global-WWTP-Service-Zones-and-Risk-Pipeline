@@ -18,8 +18,7 @@ FULL_STATS = ("sum", "mean", "median", "std")
 SUM_ONLY = ("sum",)
 
 
-def aggregate_by_country(gdf, country_column, agg_column, industrial_column=None,
-                         is_pop=False, stats=FULL_STATS):
+def aggregate_by_country(gdf, country_column, agg_column, industrial_column=None, is_pop=False, stats=FULL_STATS):
     """Aggregate facility-level attributes to country-level summary statistics.
 
     With ``is_pop=True`` the frame is grouped by country alone. Otherwise it is
@@ -49,8 +48,9 @@ def aggregate_by_country(gdf, country_column, agg_column, industrial_column=None
     return res.merge(ind, on=country_column, how="left")
 
 
-def calculate_size(value, min_value, max_value, min_size, max_size, scale='log',
-                   degenerate='mid', floor_nonpositive=False):
+def calculate_size(
+    value, min_value, max_value, min_size, max_size, scale="log", degenerate="mid", floor_nonpositive=False
+):
     """Map a value onto a marker size in ``[min_size, max_size]``.
 
     Parameters carrying the two callers' deliberate differences:
@@ -75,39 +75,40 @@ def calculate_size(value, min_value, max_value, min_size, max_size, scale='log',
         return min_size
 
     if max_value <= min_value:
-        if degenerate == 'mid':
+        if degenerate == "mid":
             return (min_size + max_size) / 2.0
-        if degenerate == 'min':
+        if degenerate == "min":
             return min_size
         raise ValueError("Invalid degenerate")
 
-    if scale == 'log':
+    if scale == "log":
         if value <= 0 or min_value <= 0 or max_value <= 0:
             return min_size
-        return (np.log(value) - np.log(min_value)) / (np.log(max_value) - np.log(min_value)) * (max_size - min_size) + min_size
-    if scale == 'linear':
+        return (np.log(value) - np.log(min_value)) / (np.log(max_value) - np.log(min_value)) * (
+            max_size - min_size
+        ) + min_size
+    if scale == "linear":
         return (value - min_value) / (max_value - min_value) * (max_size - min_size) + min_size
     raise ValueError("Invalid scale")
 
 
-def ensure_population_percentage_column(df, preferred_col="population_served_index",
-                                        zonal_sum_col="2024_zonal_sum"):
+def ensure_population_percentage_column(df, preferred_col="population_served_index", zonal_sum_col="2024_zonal_sum"):
     """Ensure a population-served percentage column exists and return its name."""
     if preferred_col in df.columns:
         return preferred_col
 
     # Common fallback: derive from absolute served/total population columns.
-    if {'population_served', 'population_total'}.issubset(df.columns):
-        denom = pd.to_numeric(df['population_total'], errors='coerce').replace(0, np.nan)
-        num = pd.to_numeric(df['population_served'], errors='coerce')
+    if {"population_served", "population_total"}.issubset(df.columns):
+        denom = pd.to_numeric(df["population_total"], errors="coerce").replace(0, np.nan)
+        num = pd.to_numeric(df["population_served"], errors="coerce")
         df[preferred_col] = (num / denom).fillna(0)
         return preferred_col
 
     # Secondary fallback: use the aggregated latest zonal sum as the served estimate.
     zonal_sum_sum_col = f"{zonal_sum_col}_sum"
-    if {zonal_sum_sum_col, 'population_total'}.issubset(df.columns):
-        denom = pd.to_numeric(df['population_total'], errors='coerce').replace(0, np.nan)
-        num = pd.to_numeric(df[zonal_sum_sum_col], errors='coerce')
+    if {zonal_sum_sum_col, "population_total"}.issubset(df.columns):
+        denom = pd.to_numeric(df["population_total"], errors="coerce").replace(0, np.nan)
+        num = pd.to_numeric(df[zonal_sum_sum_col], errors="coerce")
         df[preferred_col] = (num / denom).fillna(0)
         return preferred_col
 

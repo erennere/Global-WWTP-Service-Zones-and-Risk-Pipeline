@@ -1,4 +1,5 @@
 """Tests for download_bing_annotate (moved from the coverage-campaign files)."""
+
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -82,7 +83,9 @@ def test_download_bing_log_preview_and_bbox_error_branches(monkeypatch, tmp_path
 
     bbox = box(0, 0, 10, 10)
     poly = gpd.GeoDataFrame({"grid": [1], "geometry": [box(1, 1, 2, 2)]}, geometry="geometry", crs="EPSG:3857")
-    line = gpd.GeoDataFrame({"grid": [1], "geometry": [LineString([(1, 1), (2, 2)])]}, geometry="geometry", crs="EPSG:3857")
+    line = gpd.GeoDataFrame(
+        {"grid": [1], "geometry": [LineString([(1, 1), (2, 2)])]}, geometry="geometry", crs="EPSG:3857"
+    )
 
     monkeypatch.setattr(dba, "get_image", lambda img_idx, images_dir: None)
     idx, n, err = dba.process_bbox(1, bbox, 77, poly, ["man_made"], line, ["waterway"], str(tmp_path), str(tmp_path))
@@ -94,9 +97,13 @@ def test_download_bing_log_preview_and_bbox_error_branches(monkeypatch, tmp_path
 
 
 def test_download_bing_annotate_parallel_error_logging_branch(monkeypatch, tmp_path):
-    bbox = gpd.GeoDataFrame({"idx": [1], "img_idx": [1], "geometry": [box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:3857")
+    bbox = gpd.GeoDataFrame(
+        {"idx": [1], "img_idx": [1], "geometry": [box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:3857"
+    )
     poly = gpd.GeoDataFrame({"grid": [1], "geometry": [box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:3857")
-    line = gpd.GeoDataFrame({"grid": [1], "geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:3857")
+    line = gpd.GeoDataFrame(
+        {"grid": [1], "geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:3857"
+    )
 
     class _Future:
         def __init__(self, payload):
@@ -169,7 +176,7 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
             "annotations_by_osm_dir": str(osm_dir),
             "corrected_all_filepath": str(tmp_path / "all.csv"),
             "annotated_images_output_dir": str(out_dir),
-        }
+        },
     }
 
     monkeypatch.setattr(starter, "parse_config_overrides", lambda args=None: {})
@@ -187,7 +194,9 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(gpd, "read_file", _read_file)
 
     # Pretend one polygon and one line geojson exist for grid 1.
-    monkeypatch.setattr(dba.os, "listdir", lambda p: ["idx_1_polygons.geojson", "idx_1_lines.geojson"] if str(p) == str(osm_dir) else [])
+    monkeypatch.setattr(
+        dba.os, "listdir", lambda p: ["idx_1_polygons.geojson", "idx_1_lines.geojson"] if str(p) == str(osm_dir) else []
+    )
 
     # Seed a source image so process_bbox can load it.
     dba.Image.new("RGB", (64, 64), "black").save(images_dir / "0.png")
@@ -207,7 +216,9 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
             if "_polygons.geojson" in q and "ST_AsText(geom) AS geometry" in q:
                 return _QRes(pd.DataFrame({"man_made": ["wwtp"], "geometry": [box(0, 0, 1, 1).wkt], "grid": ["1"]}))
             if "_lines.geojson" in q and "ST_AsText(geom) AS geometry" in q:
-                return _QRes(pd.DataFrame({"waterway": ["river"], "geometry": [LineString([(0, 0), (1, 1)]).wkt], "grid": ["1"]}))
+                return _QRes(
+                    pd.DataFrame({"waterway": ["river"], "geometry": [LineString([(0, 0), (1, 1)]).wkt], "grid": ["1"]})
+                )
             return _QRes(pd.DataFrame())
 
         def close(self):

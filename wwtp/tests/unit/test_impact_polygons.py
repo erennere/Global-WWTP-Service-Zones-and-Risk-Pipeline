@@ -219,12 +219,24 @@ def test_orchestrate_logic_merges_radius_outputs(monkeypatch):
 
         return {
             500.0: gpd.GeoDataFrame(
-                {"geometry": [poly_a], "utm": [3857], "country": ["DE"], "MAIN_RIV": [main_riv], nxt_dis_col: [main_riv * 10]},
+                {
+                    "geometry": [poly_a],
+                    "utm": [3857],
+                    "country": ["DE"],
+                    "MAIN_RIV": [main_riv],
+                    nxt_dis_col: [main_riv * 10],
+                },
                 geometry="geometry",
                 crs=4326,
             ),
             1000.0: gpd.GeoDataFrame(
-                {"geometry": [poly_b], "utm": [3857], "country": ["DE"], "MAIN_RIV": [main_riv], nxt_dis_col: [main_riv * 10]},
+                {
+                    "geometry": [poly_b],
+                    "utm": [3857],
+                    "country": ["DE"],
+                    "MAIN_RIV": [main_riv],
+                    nxt_dis_col: [main_riv * 10],
+                },
                 geometry="geometry",
                 crs=4326,
             ),

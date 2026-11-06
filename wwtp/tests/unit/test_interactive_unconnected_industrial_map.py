@@ -1,4 +1,5 @@
 """Unconnected industrial map: clean input, zoom by area, tiles that decode back, an HTML that points at them."""
+
 import sys
 import zipfile
 
@@ -18,21 +19,33 @@ def _cfg(tmp_path, input_path):
     out = tmp_path / "out"
     return {
         "initial_zoom": 2,
-        "vector_tiles": {"enabled": True, "min_zoom": 12, "max_zoom": 13, "min_render_zoom": 12, "extent": 4096,
-                         "layer_name": "unconnected_industrial", "simplify_tolerance_deg": 0.0, "zip_tiles": True},
-        "paths": {"industrial_unconnected_input": str(input_path),
-                  "industrial_unconnected_output": str(out / "prepared.gpkg"),
-                  "industrial_unconnected_tiles_dir": str(out / "tiles"),
-                  "industrial_unconnected_tiles_zip_filepath": str(out / "tiles.zip"),
-                  "industrial_unconnected_html_filepath": str(out / "map" / "map.html")},
+        "vector_tiles": {
+            "enabled": True,
+            "min_zoom": 12,
+            "max_zoom": 13,
+            "min_render_zoom": 12,
+            "extent": 4096,
+            "layer_name": "unconnected_industrial",
+            "simplify_tolerance_deg": 0.0,
+            "zip_tiles": True,
+        },
+        "paths": {
+            "industrial_unconnected_input": str(input_path),
+            "industrial_unconnected_output": str(out / "prepared.gpkg"),
+            "industrial_unconnected_tiles_dir": str(out / "tiles"),
+            "industrial_unconnected_tiles_zip_filepath": str(out / "tiles.zip"),
+            "industrial_unconnected_html_filepath": str(out / "map" / "map.html"),
+        },
     }
 
 
 def _input(tmp_path):
     path = tmp_path / "industrial.gpkg"
-    gpd.GeoDataFrame({"name": ["big", "small", "bowtie"]},
-                     geometry=[box(8.1, 50.1, 8.15, 50.13), box(8.3, 50.1, 8.301, 50.101), BOWTIE],
-                     crs=4326).to_crs(3035).to_file(path)
+    gpd.GeoDataFrame(
+        {"name": ["big", "small", "bowtie"]},
+        geometry=[box(8.1, 50.1, 8.15, 50.13), box(8.3, 50.1, 8.301, 50.101), BOWTIE],
+        crs=4326,
+    ).to_crs(3035).to_file(path)
     return path
 
 
@@ -61,6 +74,7 @@ def test_larger_polygons_appear_at_lower_zoom():
 
 def test_polygon_parts_drop_lines_and_flatten_collections():
     from shapely.geometry import GeometryCollection, LineString
+
     poly = box(0, 0, 1, 1)
     assert im._polygon_parts(GeometryCollection([poly, LineString([(0, 0), (1, 1)])])) == [poly]
     assert im._polygon_parts(LineString([(0, 0), (1, 1)])) == [] and im._polygon_parts(None) == []

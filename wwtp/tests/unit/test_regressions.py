@@ -5,6 +5,7 @@ answer against something computed independently (exact Euclidean Voronoi,
 a known raster total, a known distance), so it fails on the old code and
 passes on the fix.
 """
+
 from __future__ import annotations
 
 import os
@@ -156,8 +157,16 @@ def test_B6_final_merge_cluster_points_never_sums_population():
 def test_B7_signed_raster_keeps_fractional_population(tmp_path):
     raster = tmp_path / "pop.tif"
     with rasterio.open(
-        raster, "w", driver="GTiff", height=100, width=100, count=1, dtype="float32",
-        crs="EPSG:4326", transform=from_origin(0, 1, 0.01, 0.01), nodata=-99999,
+        raster,
+        "w",
+        driver="GTiff",
+        height=100,
+        width=100,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(0, 1, 0.01, 0.01),
+        nodata=-99999,
     ) as dst:
         dst.write(np.full((100, 100), 0.6, dtype="float32"), 1)  # 6,000 people
     served = gpd.GeoDataFrame(geometry=[box(0, 0, 0.5, 1)], crs=4326)
@@ -187,10 +196,17 @@ def test_B8_straddling_industrial_area_is_connected():
 # area ceiling and the footprint-only radius)                                 #
 # --------------------------------------------------------------------------- #
 FOOTPRINT_TO_PEOPLE = {"intercept": 1.369, "slope": 0.738, "unsized_people": 2014.0}
-RADIUS_KW = dict(buffer=9000, dynamic_buffering=True, max_buffer=50000, size_measure="reported",
-                 footprint_to_people=FOOTPRINT_TO_PEOPLE, reported_size_columns=["POP_SERVED", "EPA POP 2022"],
-                 reported_size_skip={"POP_SERVED": {"QUAL_POP": [4]}},
-                 radius_exponent=0.35, radius_at_10k_people_km=3.75)
+RADIUS_KW = dict(
+    buffer=9000,
+    dynamic_buffering=True,
+    max_buffer=50000,
+    size_measure="reported",
+    footprint_to_people=FOOTPRINT_TO_PEOPLE,
+    reported_size_columns=["POP_SERVED", "EPA POP 2022"],
+    reported_size_skip={"POP_SERVED": {"QUAL_POP": [4]}},
+    radius_exponent=0.35,
+    radius_at_10k_people_km=3.75,
+)
 
 
 def _plants(xs, footprint, lagoon=False, **columns):
@@ -203,12 +219,13 @@ def test_radius_grows_with_people_as_calibrated():
     small = sa.calculate_buffer(_plants([0], 1_000, POP_SERVED=10_000), None, **RADIUS_KW)[0]
     large = sa.calculate_buffer(_plants([0], 1_000, POP_SERVED=1_000_000), None, **RADIUS_KW)[0]
     assert small == pytest.approx(3750)
-    assert large / small == pytest.approx(100 ** 0.35)  # 100x people -> 5x radius
+    assert large / small == pytest.approx(100**0.35)  # 100x people -> 5x radius
 
 
 def test_reported_size_wins_and_footprint_fills_the_gaps():
-    plants = _plants([0, 1, 2, 3], 10_000, POP_SERVED=[50_000, None, 7_000, None],
-                     **{"EPA POP 2022": [None, 20_000, 1, None]})
+    plants = _plants(
+        [0, 1, 2, 3], 10_000, POP_SERVED=[50_000, None, 7_000, None], **{"EPA POP 2022": [None, 20_000, 1, None]}
+    )
     people = sa.plant_size_people(plants, **RADIUS_KW)
     from_footprint = 10 ** (1.369 + 0.738 * 4)
     assert people == pytest.approx([50_000, 20_000, 7_000, from_footprint])
@@ -250,13 +267,22 @@ def test_size_weights_give_large_plants_proportionally_more_area():
     plants["WASTE_ID"] = [1, 2]
     plants["weights"] = 0.5
     kw = {**RADIUS_KW, "max_buffer": 40_000, "radius_at_10k_people_km": 40.0}  # both circles reach past the other plant
-    regions, _ = sa.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, n_points=200, buffering=True,
-                                     buffer_fn_kwargs=kw, size_weights=True)
+    regions, _ = sa.weighted_voronoi(
+        plants,
+        "WASTE_ID",
+        None,
+        scale_weights=True,
+        n_points=200,
+        buffering=True,
+        buffer_fn_kwargs=kw,
+        size_weights=True,
+    )
     regions = regions.to_crs(32632).set_index("WASTE_ID")
     # on the axis between the plants: the point at d/1000 = (20000-d)/100 -> d = 18182 m
     assert regions.geometry[1].contains(Point(17_500, 0)) and regions.geometry[2].contains(Point(19_000, 0))
-    unweighted, _ = sa.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=False, n_points=200,
-                                        buffering=True, buffer_fn_kwargs=kw)
+    unweighted, _ = sa.weighted_voronoi(
+        plants, "WASTE_ID", None, scale_weights=False, n_points=200, buffering=True, buffer_fn_kwargs=kw
+    )
     assert unweighted.to_crs(32632).set_index("WASTE_ID").geometry[2].contains(Point(11_000, 0))
 
 
@@ -265,8 +291,15 @@ def test_size_weights_need_the_multiplicative_distance():
     plants["WASTE_ID"] = [1, 2]
     plants["weights"] = 0.5
     with pytest.raises(ValueError, match="multiplicative"):
-        sa.weighted_voronoi(plants, "WASTE_ID", None, scale_weights=True, distance_fn=sa.default_distance_additive,
-                            buffer_fn_kwargs=RADIUS_KW, size_weights=True)
+        sa.weighted_voronoi(
+            plants,
+            "WASTE_ID",
+            None,
+            scale_weights=True,
+            distance_fn=sa.default_distance_additive,
+            buffer_fn_kwargs=RADIUS_KW,
+            size_weights=True,
+        )
 
 
 def test_starter_reads_the_radius_for_the_configured_size_measure():
@@ -303,8 +336,15 @@ def test_R1_unserved_polygons_keep_their_geometry_and_population(tmp_path):
     plants = tmp_path / "plants.gpkg"
     _write_plants(plants, [20, -20], ["DE", "FR"])  # two countries' plants, 20 km away
 
-    out = add_buffers_to_WWTP(unserved, str(plants), wwtp_buffer=50_000, zoom_level=8,
-                              max_workers=1, is_parallel=False, wwtp_country_col="ISO_2")
+    out = add_buffers_to_WWTP(
+        unserved,
+        str(plants),
+        wwtp_buffer=50_000,
+        zoom_level=8,
+        max_workers=1,
+        is_parallel=False,
+        wwtp_country_col="ISO_2",
+    )
 
     assert len(out) == 1
     assert out.geometry.iloc[0].equals(island)
@@ -316,7 +356,7 @@ def test_R1_distance_test_is_one_buffer_in_metres(tmp_path):
     unserved = gpd.GeoDataFrame({"pop_sum": [10]}, geometry=[island], crs=4326)
     near, far = tmp_path / "near.gpkg", tmp_path / "far.gpkg"
     _write_plants(near, [45], ["DE"])  # inside 50 km
-    _write_plants(far, [60], ["DE"])   # outside 50 km, inside the old 2 x 50 km
+    _write_plants(far, [60], ["DE"])  # outside 50 km, inside the old 2 x 50 km
 
     kwargs = dict(wwtp_buffer=50_000, zoom_level=8, max_workers=1, is_parallel=False, wwtp_country_col="ISO_2")
     assert len(add_buffers_to_WWTP(unserved, str(near), **kwargs)) == 1
@@ -331,7 +371,7 @@ def test_R2_buffer_meters_is_metres_at_every_latitude(lat):
     gdf = gpd.GeoDataFrame(geometry=[Point(10.0, lat)], crs=4326)
     buf = gpd.GeoSeries(geo_utils.buffer_meters(gdf, 1000.0), crs=4326)
     area = buf.to_crs(f"+proj=laea +lat_0={lat} +lon_0=10").area.iloc[0]
-    assert area == pytest.approx(np.pi * 1000.0 ** 2, rel=0.01)
+    assert area == pytest.approx(np.pi * 1000.0**2, rel=0.01)
 
 
 # --------------------------------------------------------------------------- #
@@ -339,11 +379,13 @@ def test_R2_buffer_meters_is_metres_at_every_latitude(lat):
 # --------------------------------------------------------------------------- #
 @needs_spatial
 def test_R4_country_join_returns_one_row_per_feature(tmp_path):
-    countries = pd.DataFrame({
-        "country": ["DE", "DE", "FR"],
-        "class": ["land", "maritime", "land"],
-        "geometry": [to_wkb(box(5, 47, 15, 55)), to_wkb(box(4.9, 46.9, 15.1, 55.1)), to_wkb(box(-5, 42, 5, 51))],
-    })
+    countries = pd.DataFrame(
+        {
+            "country": ["DE", "DE", "FR"],
+            "class": ["land", "maritime", "land"],
+            "geometry": [to_wkb(box(5, 47, 15, 55)), to_wkb(box(4.9, 46.9, 15.1, 55.1)), to_wkb(box(-5, 42, 5, 51))],
+        }
+    )
     path = tmp_path / "countries.parquet"
     countries.to_parquet(path)
 
@@ -352,7 +394,9 @@ def test_R4_country_join_returns_one_row_per_feature(tmp_path):
         geometry=[Point(10, 50), box(4, 48, 9, 49), Point(-30, 0)],  # inside DE; mostly DE; in the sea
         crs=4326,
     )
-    out = sa.intersects_with_country_db(features.copy(), str(path), polygon_country_col="country", output_country_col="ISO_2")
+    out = sa.intersects_with_country_db(
+        features.copy(), str(path), polygon_country_col="country", output_country_col="ISO_2"
+    )
 
     assert out["WASTE_ID"].tolist() == [1, 2, 3]
     assert out["ISO_2"].tolist()[:2] == ["DE", "DE"]
@@ -522,8 +566,16 @@ def test_R6_velocity_and_temperature_are_parameters():
 # --------------------------------------------------------------------------- #
 def _write_pop_tile(path, data, left, top, res=1.0, nodata=-99999.0):
     with rasterio.open(
-        path, "w", driver="GTiff", height=data.shape[0], width=data.shape[1], count=1,
-        dtype="float32", crs="EPSG:4326", transform=from_origin(left, top, res, res), nodata=nodata,
+        path,
+        "w",
+        driver="GTiff",
+        height=data.shape[0],
+        width=data.shape[1],
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(left, top, res, res),
+        nodata=nodata,
     ) as dst:
         dst.write(data.astype("float32"), 1)
 
@@ -558,8 +610,9 @@ def test_R9_mosaic_refuses_mixed_resolutions(tmp_path):
 def test_R9_years_are_mosaicked_separately_and_2014_is_opt_in():
     from wwtp.download_pop import get_urls, group_rasters_by_year
 
-    groups = group_rasters_by_year(["x/deu_pop_2020_CN_100m.tif", "x/deu_pop_2021_CN_100m.tif", "x/deu_ppp_2014_1km.tif",
-                                    "x/notes.tif"])
+    groups = group_rasters_by_year(
+        ["x/deu_pop_2020_CN_100m.tif", "x/deu_pop_2021_CN_100m.tif", "x/deu_ppp_2014_1km.tif", "x/notes.tif"]
+    )
     assert sorted(groups, key=lambda k: (k is None, k or 0)) == [2014, 2020, 2021, None]
     urls = get_urls(start_year=2015, end_year=2016)
     assert not any("2014" in url for country_urls in urls.values() for url in country_urls)
@@ -632,8 +685,16 @@ def test_industrial_section_has_every_key_run_voronoi_approach_reads():
     from wwtp.starter import load_config
 
     cfg = load_config(script_name="find_unconnected_industrial_areas")
-    for key in ("temp_voronoi_overwrite", "overwrite_existing", "n_points", "threshold", "max_workers",
-                "calculate_buffer_fn", "calculate_area_fn", "flush_size"):
+    for key in (
+        "temp_voronoi_overwrite",
+        "overwrite_existing",
+        "n_points",
+        "threshold",
+        "max_workers",
+        "calculate_buffer_fn",
+        "calculate_area_fn",
+        "flush_size",
+    ):
         assert key in cfg and cfg[key] is not None, key
 
 
@@ -643,5 +704,3 @@ def test_find_diff_pop_can_resolve_its_country_layer():
 
     cfg = load_config(script_name="find_diff_pop")
     assert cfg["paths"]["overture"] and cfg["country_boundary_column"]
-
-

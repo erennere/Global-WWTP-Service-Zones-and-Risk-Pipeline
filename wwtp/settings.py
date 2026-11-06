@@ -14,12 +14,23 @@ Adding a key to config.yaml means adding it to its model here;
 ``wwtp/tests/unit/test_settings.py`` checks every section of config.yaml
 validates and every model has a section.
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import (BaseModel, BeforeValidator, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat,
-                      PositiveInt, ValidationError, model_validator)
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    ValidationError,
+    model_validator,
+)
 
 
 def _digits(value):
@@ -48,6 +59,7 @@ class Section(Strict):
 
 class RunParams(Section):
     """The seven run parameters that pick a service-area variant (and its output paths)."""
+
     level: Level
     version: Version
     buffer: NonNegativeInt
@@ -75,6 +87,7 @@ class Workers(Strict):
 
 class FootprintToPeople(Strict):
     """people = 10 ** (intercept + slope * log10(footprint m2)); unsized plants get unsized_people."""
+
     intercept: float
     slope: PositiveFloat
     unsized_people: PositiveFloat
@@ -82,12 +95,14 @@ class FootprintToPeople(Strict):
 
 class RadiusCalibration(Strict):
     """Circle radius = radius_at_10k_people_km * (people / 10,000) ** radius_exponent."""
+
     radius_exponent: PositiveFloat
     radius_at_10k_people_km: PositiveFloat
 
 
 class ServiceAreaParams(RunParams):
     """Keys create_voronoi and find_unconnected_industrial_areas share (both build service areas)."""
+
     max_workers: PositiveInt
     n_points: PositiveInt
     threshold: NonNegativeInt
@@ -124,8 +139,10 @@ class ServiceAreaParams(RunParams):
     @model_validator(mode="after")
     def _calibrated(self):
         if self.dynamic_buffering and self.size_measure not in self.radius_calibration:
-            raise ValueError(f"size_measure {self.size_measure!r} has no radius_calibration entry; choose one of "
-                             f"{sorted(self.radius_calibration)} or add it with wwtp.calibration.service_radius")
+            raise ValueError(
+                f"size_measure {self.size_measure!r} has no radius_calibration entry; choose one of "
+                f"{sorted(self.radius_calibration)} or add it with wwtp.calibration.service_radius"
+            )
         return self
 
 
@@ -354,6 +371,7 @@ class FindIntersectionRiver(RunParams):
 
 class ImpactParams(Strict):
     """Plume model: organic load per person, decay, reach and the radii reported."""
+
     org_per_pop: PositiveFloat
     c_limit: PositiveFloat
     base_k: PositiveFloat
@@ -590,9 +608,11 @@ def parse(section, values):
     try:
         return SECTIONS[section].model_validate(values)
     except ValidationError as err:
-        problems = "\n".join(f"  {'.'.join(str(p) for p in (section, *e['loc']))}: {e['msg']}"
-                             + ("" if e["type"] == "missing" or isinstance(e["input"], dict) else f" (got {e['input']!r})")
-                             for e in err.errors())
+        problems = "\n".join(
+            f"  {'.'.join(str(p) for p in (section, *e['loc']))}: {e['msg']}"
+            + ("" if e["type"] == "missing" or isinstance(e["input"], dict) else f" (got {e['input']!r})")
+            for e in err.errors()
+        )
         raise SettingsError(f"config section {section!r} is not valid:\n{problems}") from None
 
 

@@ -15,6 +15,7 @@ from wwtp.industrial_analysis import download_and_vectorize as dv
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
@@ -164,8 +165,16 @@ def test_add_boundary_info_empty_input_short_circuits(monkeypatch):
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(download_and_vectorize, "intersects_with_country_db", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("country helper should not run")))
-    monkeypatch.setattr(download_and_vectorize, "intersect_with_polygon_sindex", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("basin helper should not run")))
+    monkeypatch.setattr(
+        download_and_vectorize,
+        "intersects_with_country_db",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("country helper should not run")),
+    )
+    monkeypatch.setattr(
+        download_and_vectorize,
+        "intersect_with_polygon_sindex",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("basin helper should not run")),
+    )
 
     out = download_and_vectorize.add_boundary_info(
         industrial,
@@ -305,16 +314,26 @@ def test_main_persist_rasters_reuses_existing_rasters_without_download(monkeypat
     monkeypatch.setattr(download_and_vectorize, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(download_and_vectorize.os.path, "exists", lambda path: False)
     monkeypatch.setattr(download_and_vectorize.Path, "rglob", lambda self, pattern: [tmp_path / "tile_1.tif"])
-    monkeypatch.setattr(download_and_vectorize, "download_file", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download should not be called")))
+    monkeypatch.setattr(
+        download_and_vectorize,
+        "download_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download should not be called")),
+    )
     monkeypatch.setattr(download_and_vectorize, "_find_raster_dirs", lambda base_dir: [base_dir])
     monkeypatch.setattr(download_and_vectorize, "_vectorize_and_merge", lambda *args, **kwargs: merged_gdf.copy())
     monkeypatch.setattr(download_and_vectorize.gpd, "read_file", lambda path, driver=None: watershed_gdf.copy())
     monkeypatch.setattr(download_and_vectorize, "add_boundary_info", lambda *args, **kwargs: enriched_gdf.copy())
-    monkeypatch.setattr(download_and_vectorize.os, "replace", lambda src, dst: captured.setdefault("replace", []).append((src, dst)))
+    monkeypatch.setattr(
+        download_and_vectorize.os, "replace", lambda src, dst: captured.setdefault("replace", []).append((src, dst))
+    )
 
     original_to_parquet = gpd.GeoDataFrame.to_parquet
     try:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_parquet", lambda self, path, index=False, **kwargs: captured.setdefault("writes", []).append(path))
+        monkeypatch.setattr(
+            gpd.GeoDataFrame,
+            "to_parquet",
+            lambda self, path, index=False, **kwargs: captured.setdefault("writes", []).append(path),
+        )
         result = download_and_vectorize.main()
     finally:
         monkeypatch.setattr(gpd.GeoDataFrame, "to_parquet", original_to_parquet)
@@ -347,7 +366,9 @@ def test_dissolve_by_overlap_groups_handles_empty_and_missing_group_assignments(
         geometry="geometry",
         crs="EPSG:4326",
     )
-    monkeypatch.setattr(download_and_vectorize, "dissolve_overlapping_geometries_fast", lambda frame, radius=0, convex=True: ([], None))
+    monkeypatch.setattr(
+        download_and_vectorize, "dissolve_overlapping_geometries_fast", lambda frame, radius=0, convex=True: ([], None)
+    )
     out = download_and_vectorize._dissolve_by_overlap_groups(gdf)
     assert len(out) == 2
 
@@ -358,7 +379,9 @@ def test_add_boundary_info_raises_when_basin_column_missing():
         geometry="geometry",
         crs="EPSG:4326",
     )
-    watershed = gpd.GeoDataFrame({"wrong_col": [1], "geometry": [Point(0, 0).buffer(1)]}, geometry="geometry", crs="EPSG:4326")
+    watershed = gpd.GeoDataFrame(
+        {"wrong_col": [1], "geometry": [Point(0, 0).buffer(1)]}, geometry="geometry", crs="EPSG:4326"
+    )
 
     with pytest.raises(KeyError, match="Watershed column"):
         download_and_vectorize.add_boundary_info(
@@ -399,8 +422,12 @@ def test_main_non_persistent_branch_downloads_extracts_and_vectorizes(monkeypatc
     captured = {}
 
     merged_gdf = gpd.GeoDataFrame({"geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
-    watershed_gdf = gpd.GeoDataFrame({"HYBAS_ID": [1], "geometry": [Point(0, 0).buffer(1)]}, geometry="geometry", crs="EPSG:4326")
-    enriched_gdf = gpd.GeoDataFrame({"HYBAS_ID": [1], "ISO_2": ["DE"], "geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
+    watershed_gdf = gpd.GeoDataFrame(
+        {"HYBAS_ID": [1], "geometry": [Point(0, 0).buffer(1)]}, geometry="geometry", crs="EPSG:4326"
+    )
+    enriched_gdf = gpd.GeoDataFrame(
+        {"HYBAS_ID": [1], "ISO_2": ["DE"], "geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326"
+    )
 
     class _ZipStub:
         def __enter__(self):
@@ -422,19 +449,33 @@ def test_main_non_persistent_branch_downloads_extracts_and_vectorizes(monkeypatc
     monkeypatch.setattr(download_and_vectorize, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(download_and_vectorize, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(download_and_vectorize.os.path, "exists", lambda path: False)
-    monkeypatch.setattr(download_and_vectorize.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", []).append((path, exist_ok)))
-    monkeypatch.setattr(download_and_vectorize, "download_file", lambda url, dest, chunk_size=8192: captured.setdefault("download", (url, dest)))
+    monkeypatch.setattr(
+        download_and_vectorize.os,
+        "makedirs",
+        lambda path, exist_ok=False: captured.setdefault("makedirs", []).append((path, exist_ok)),
+    )
+    monkeypatch.setattr(
+        download_and_vectorize,
+        "download_file",
+        lambda url, dest, chunk_size=8192: captured.setdefault("download", (url, dest)),
+    )
     monkeypatch.setattr(download_and_vectorize.zipfile, "ZipFile", lambda path, mode: _ZipStub())
     monkeypatch.setattr(download_and_vectorize.tempfile, "TemporaryDirectory", lambda: _TempDirStub())
     monkeypatch.setattr(download_and_vectorize, "_find_raster_dirs", lambda base_dir: [base_dir])
     monkeypatch.setattr(download_and_vectorize, "_vectorize_and_merge", lambda *args, **kwargs: merged_gdf.copy())
     monkeypatch.setattr(download_and_vectorize.gpd, "read_file", lambda path, driver=None: watershed_gdf.copy())
     monkeypatch.setattr(download_and_vectorize, "add_boundary_info", lambda *args, **kwargs: enriched_gdf.copy())
-    monkeypatch.setattr(download_and_vectorize.os, "replace", lambda src, dst: captured.setdefault("replace", []).append((src, dst)))
+    monkeypatch.setattr(
+        download_and_vectorize.os, "replace", lambda src, dst: captured.setdefault("replace", []).append((src, dst))
+    )
 
     original_to_parquet = gpd.GeoDataFrame.to_parquet
     try:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_parquet", lambda self, path, index=False, **kwargs: captured.setdefault("writes", []).append(path))
+        monkeypatch.setattr(
+            gpd.GeoDataFrame,
+            "to_parquet",
+            lambda self, path, index=False, **kwargs: captured.setdefault("writes", []).append(path),
+        )
         result = download_and_vectorize.main()
     finally:
         monkeypatch.setattr(gpd.GeoDataFrame, "to_parquet", original_to_parquet)
@@ -447,6 +488,7 @@ def test_main_non_persistent_branch_downloads_extracts_and_vectorizes(monkeypatc
 
 
 # --- moved from the coverage-campaign files ---
+
 
 def test_download_file_stream_and_vectorize_raster(tmp_path, monkeypatch):
     class _Resp:
@@ -661,8 +703,12 @@ def test_download_and_vectorize_main_persist_rasters_path(monkeypatch, tmp_path)
     }
 
     merged = gpd.GeoDataFrame({"geometry": [Point(0, 0).buffer(1)]}, geometry="geometry", crs="EPSG:4326")
-    watershed = gpd.GeoDataFrame({"HYBAS_ID": [1], "geometry": [Point(0, 0).buffer(2)]}, geometry="geometry", crs="EPSG:4326")
-    enriched = gpd.GeoDataFrame({"ISO_2": ["DE"], "HYBAS_ID": [1], "geometry": [Point(0, 0).buffer(1)]}, geometry="geometry", crs="EPSG:4326")
+    watershed = gpd.GeoDataFrame(
+        {"HYBAS_ID": [1], "geometry": [Point(0, 0).buffer(2)]}, geometry="geometry", crs="EPSG:4326"
+    )
+    enriched = gpd.GeoDataFrame(
+        {"ISO_2": ["DE"], "HYBAS_ID": [1], "geometry": [Point(0, 0).buffer(1)]}, geometry="geometry", crs="EPSG:4326"
+    )
 
     state = {"vectorized_exists": False}
     original_exists = dv.os.path.exists
@@ -699,7 +745,11 @@ def test_download_and_vectorize_main_persist_rasters_path(monkeypatch, tmp_path)
     removed = []
     replaced = []
     monkeypatch.setattr(dv.os, "remove", lambda path: removed.append(str(path)))
-    monkeypatch.setattr(dv.os, "replace", lambda src, dst: replaced.append((str(src), str(dst))) or state.update({"vectorized_exists": True}))
+    monkeypatch.setattr(
+        dv.os,
+        "replace",
+        lambda src, dst: replaced.append((str(src), str(dst))) or state.update({"vectorized_exists": True}),
+    )
 
     original_to_parquet = gpd.GeoDataFrame.to_parquet
 
@@ -725,29 +775,29 @@ class TestDownloadAndVectorizeLogic:
     def test_download_file_url_structure(self):
         """Test URL validation."""
         url = "https://zenodo.org/record/12345/files/data.zip"
-        
+
         assert url.startswith("http")
         assert ".zip" in url
 
     def test_download_file_destination_path(self):
         """Test output destination path."""
         dest_path = "/tmp/data.zip"
-        
+
         assert os.path.dirname(dest_path) in ["/tmp", ""]
         assert dest_path.endswith(".zip")
 
-    @patch('wwtp.industrial_analysis.download_and_vectorize.Path')
+    @patch("wwtp.industrial_analysis.download_and_vectorize.Path")
     def test_vectorize_raster_file_list_tifs(self, mock_path):
         """Test raster file discovery."""
         raster_dir = "/data/rasters"
-        
+
         # Would glob for tif files
         assert isinstance(raster_dir, str)
 
     def test_vectorize_rasters_parallel_task_count(self):
         """Test parallel worker count."""
         max_workers = 8
-        
+
         # Verify worker count is reasonable
         assert max_workers > 0
         assert max_workers >= 1
@@ -755,22 +805,24 @@ class TestDownloadAndVectorizeLogic:
     def test_add_boundary_info_gdf_structure(self):
         """Test enriched GeoDataFrame structure."""
         # Simulate input/output structure
-        input_gdf = gpd.GeoDataFrame({
-            "geometry": [box(0, 0, 1, 1), box(1, 1, 2, 2)],
-        })
-        
+        input_gdf = gpd.GeoDataFrame(
+            {
+                "geometry": [box(0, 0, 1, 1), box(1, 1, 2, 2)],
+            }
+        )
+
         # After enrichment, should have additional columns
         output_gdf = input_gdf.copy()
         output_gdf["country"] = ["US", "CA"]
         output_gdf["basin"] = ["Basin1", "Basin1"]
-        
+
         assert "country" in output_gdf.columns
         assert "basin" in output_gdf.columns
 
 
 class TestDownloadAndVectorizeUtilities:
     """Test utility functions in download_and_vectorize."""
-    
+
     def test_download_file_propagates_http_errors(self):
         """download_file must not swallow a failed HTTP response."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -790,7 +842,7 @@ class TestDownloadAndVectorizeUtilities:
                     )
 
             assert not dest.exists()
-    
+
     def test_vectorize_raster_file_missing(self):
         """Test vectorize_raster_file with missing input."""
         with pytest.raises(OSError):  # rasterio's RasterioIOError

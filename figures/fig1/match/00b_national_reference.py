@@ -62,27 +62,30 @@ from scipy.spatial import cKDTree
 
 # --------------------------------------------------------------------------- sources
 
-GA_REST = ("https://services.ga.gov.au/gis/rest/services/"
-           "Wastewater_Treatment_Facilities/MapServer/0/query")
+GA_REST = "https://services.ga.gov.au/gis/rest/services/Wastewater_Treatment_Facilities/MapServer/0/query"
 GA_ZIP = "https://d28rz98at9flks.cloudfront.net/151185/151185_01_2.zip"
-GA_CITATION = ("Talento, M. (2026): Wastewater Treatment Facilities. Commonwealth of "
-               "Australia (Geoscience Australia). https://doi.org/10.26186/151185")
+GA_CITATION = (
+    "Talento, M. (2026): Wastewater Treatment Facilities. Commonwealth of "
+    "Australia (Geoscience Australia). https://doi.org/10.26186/151185"
+)
 GA_LICENCE = "CC BY 4.0"
 
 # The landing page lists the zips by name; this is the KSJ download-path pattern.
 KSJ_URL = "https://nlftp.mlit.go.jp/ksj/gml/data/P22/P22-12/P22-12_{pref:02d}_GML.zip"
-KSJ_CITATION = ("MLIT, National Land Numerical Information: Sewerage facilities (P22), "
-                "FY2012 edition, from the FY2010 Sewerage Statistics (JSWA). "
-                "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P22.html")
+KSJ_CITATION = (
+    "MLIT, National Land Numerical Information: Sewerage facilities (P22), "
+    "FY2012 edition, from the FY2010 Sewerage Statistics (JSWA). "
+    "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P22.html"
+)
 KSJ_LICENCE = "non-commercial (KSJ terms, https://nlftp.mlit.go.jp/ksj/other/agreement_02.html)"
 
 # P22b attribute codes (KSJ product page), renamed to English.
 KSJ_P22B_COLS = {
-    "P22b_001": "admin_code",          # prefecture + municipality code
+    "P22b_001": "admin_code",  # prefecture + municipality code
     "P22b_002": "name",
     "P22b_003": "address",
-    "P22b_004": "operator",            # municipality or body running the plant
-    "P22b_005": "business_type",       # public / regional / special-environment sewerage
+    "P22b_004": "operator",  # municipality or body running the plant
+    "P22b_005": "business_type",  # public / regional / special-environment sewerage
     "P22b_006": "business_name",
     "P22b_007": "plan_area_total_ha",
     "P22b_008": "plan_area_sewage_sep_ha",
@@ -113,7 +116,7 @@ KSJ_P22B_COLS = {
     "P22b_033": "wet_max_m3d_now",
     "P22b_034": "wet_max_m3d_plan",
 }
-KSJ_SENTINELS = (-999, -998, -997)   # "-", unknown, lost in the 2011 earthquake
+KSJ_SENTINELS = (-999, -998, -997)  # "-", unknown, lost in the 2011 earthquake
 
 # New integer WASTE_IDs for the national plants (HydroWASTE v1.0 ends near 58,502).
 ID_OFFSET = {"AUS": 1_000_000, "JPN": 2_000_000}
@@ -129,6 +132,7 @@ def log(*a):
 
 
 # --------------------------------------------------------------------------- download
+
 
 def download(url: str, dest: Path, session: requests.Session, tries: int = 3) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -152,24 +156,32 @@ def download(url: str, dest: Path, session: requests.Session, tries: int = 3) ->
 
 def fetch_ga_rest(url: str, dest: Path, session: requests.Session, page: int = 1000) -> int:
     """Page through the ArcGIS layer and save one GeoJSON FeatureCollection (WGS84)."""
-    r = session.get(url, params={"where": "1=1", "returnCountOnly": "true", "f": "json"},
-                    timeout=60)
+    r = session.get(url, params={"where": "1=1", "returnCountOnly": "true", "f": "json"}, timeout=60)
     r.raise_for_status()
     total = int(r.json()["count"])
     feats, offset = [], 0
     while True:
-        r = session.get(url, timeout=120, params={
-            "where": "1=1", "outFields": "*", "returnGeometry": "true", "outSR": "4326",
-            "orderByFields": "objectid", "resultOffset": offset,
-            "resultRecordCount": page, "f": "geojson"})
+        r = session.get(
+            url,
+            timeout=120,
+            params={
+                "where": "1=1",
+                "outFields": "*",
+                "returnGeometry": "true",
+                "outSR": "4326",
+                "orderByFields": "objectid",
+                "resultOffset": offset,
+                "resultRecordCount": page,
+                "f": "geojson",
+            },
+        )
         r.raise_for_status()
         js = r.json()
         if "error" in js:
             raise RuntimeError(f"GA REST error: {js['error']}")
         fs = js.get("features", [])
         feats.extend(fs)
-        exceeded = js.get("exceededTransferLimit") or \
-            (js.get("properties") or {}).get("exceededTransferLimit")
+        exceeded = js.get("exceededTransferLimit") or (js.get("properties") or {}).get("exceededTransferLimit")
         offset += len(fs)
         if not fs or (len(fs) < page and not exceeded):
             break
@@ -179,12 +191,12 @@ def fetch_ga_rest(url: str, dest: Path, session: requests.Session, page: int = 1
     if len(feats) != total:
         raise RuntimeError(f"GA REST returned {len(feats)} features, the layer reports {total}")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps({"type": "FeatureCollection", "features": feats}),
-                    encoding="utf-8")
+    dest.write_text(json.dumps({"type": "FeatureCollection", "features": feats}), encoding="utf-8")
     return total
 
 
 # --------------------------------------------------------------------------- readers
+
 
 def read_ga(path: Path) -> gpd.GeoDataFrame:
     if path.suffix.lower() == ".zip":
@@ -193,7 +205,7 @@ def read_ga(path: Path) -> gpd.GeoDataFrame:
     if g.crs is None:
         g = g.set_crs(4326)
     for c in [c for c in g.columns if c.endswith("_date")]:
-        if pd.api.types.is_numeric_dtype(g[c]):          # ArcGIS dates are epoch ms
+        if pd.api.types.is_numeric_dtype(g[c]):  # ArcGIS dates are epoch ms
             g[c] = pd.to_datetime(g[c], unit="ms", errors="coerce").dt.strftime("%Y-%m-%d")
     return g.to_crs(4326)
 
@@ -238,7 +250,7 @@ def read_ksj_zip(path: Path) -> gpd.GeoDataFrame:
     # Old KSJ shapefiles are Shift-JIS without a .cpg and often without a .prj.
     g = pyogrio.read_dataframe(src, encoding=None if has_cpg else "cp932")
     if g.crs is None:
-        g = g.set_crs(4612)                                  # JGD2000
+        g = g.set_crs(4612)  # JGD2000
     g = g.to_crs(4326)
     g.insert(0, "pref_code", pref)
     g.insert(1, "row_in_file", np.arange(len(g)))
@@ -257,11 +269,11 @@ def read_hydrowaste(path: Path, lon_col: str, lat_col: str) -> gpd.GeoDataFrame:
     for c in (lon_col, lat_col):
         if c not in df.columns:
             raise SystemExit(f"HydroWASTE has no column {c!r}; set --hw-lon/--hw-lat")
-    return gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon_col], df[lat_col]),
-                            crs=4326)
+    return gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon_col], df[lat_col]), crs=4326)
 
 
 # --------------------------------------------------------------------------- harmonise
+
 
 def _col(g: pd.DataFrame, name: str, default=None) -> pd.Series:
     """Column by name, also matching shapefile-truncated (10-character) names."""
@@ -279,28 +291,30 @@ def harmonise_ga(g: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     addr = _col(g, "address", "").fillna("").astype(str)
     loc = _col(g, "locality", "").fillna("").astype(str)
     op = _col(g, "operator").fillna(_col(g, "owner"))
-    out = pd.DataFrame({
-        "nat_id": "GA2026:" + sid,
-        "source": "GA Wastewater Treatment Facilities 2026",
-        "source_id": sid,
-        "name": _col(g, "feature_name"),
-        "country_iso3": "AUS",
-        "admin": _col(g, "state"),
-        "address": (addr + ", " + loc).str.strip(", "),
-        "operator": op,
-        "status": _col(g, "status"),
-        "pop_served": np.nan,
-        "capacity_m3d": np.nan,
-        "loc_quality": "GA spatial_confidence=" + _col(g, "spatial_confidence").astype(str),
-    }, index=g.index)
+    out = pd.DataFrame(
+        {
+            "nat_id": "GA2026:" + sid,
+            "source": "GA Wastewater Treatment Facilities 2026",
+            "source_id": sid,
+            "name": _col(g, "feature_name"),
+            "country_iso3": "AUS",
+            "admin": _col(g, "state"),
+            "address": (addr + ", " + loc).str.strip(", "),
+            "operator": op,
+            "status": _col(g, "status"),
+            "pop_served": np.nan,
+            "capacity_m3d": np.nan,
+            "loc_quality": "GA spatial_confidence=" + _col(g, "spatial_confidence").astype(str),
+        },
+        index=g.index,
+    )
     return gpd.GeoDataFrame(out, geometry=g.geometry.values, crs=4326)
 
 
 def clean_ksj(g: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     g = g.rename(columns={k: v for k, v in KSJ_P22B_COLS.items() if k in g.columns})
     for c in g.columns:
-        if c != "geometry" and pd.api.types.is_numeric_dtype(g[c]) and c not in (
-                "pref_code", "row_in_file"):
+        if c != "geometry" and pd.api.types.is_numeric_dtype(g[c]) and c not in ("pref_code", "row_in_file"):
             g[c] = g[c].where(~g[c].isin(KSJ_SENTINELS))
     return g
 
@@ -308,24 +322,28 @@ def clean_ksj(g: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 def harmonise_ksj(g: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     sid = g["pref_code"].map("{:02d}".format) + "-" + g["row_in_file"].map("{:04d}".format)
     pos = g["PosStat"].astype(str) if "PosStat" in g else pd.Series("", index=g.index)
-    out = pd.DataFrame({
-        "nat_id": "KSJP22b:" + sid,
-        "source": "KSJ P22 sewerage facilities FY2012",
-        "source_id": sid,
-        "name": g.get("name"),
-        "country_iso3": "JPN",
-        "admin": g.get("admin_code"),
-        "address": g.get("address"),
-        "operator": g.get("operator"),
-        "status": None,
-        "pop_served": g.get("pop_treated_now", np.nan),
-        "capacity_m3d": g.get("dry_max_m3d_now", np.nan),
-        "loc_quality": "address geocode" + np.where(pos != "", " PosStat=" + pos, ""),
-    }, index=g.index)
+    out = pd.DataFrame(
+        {
+            "nat_id": "KSJP22b:" + sid,
+            "source": "KSJ P22 sewerage facilities FY2012",
+            "source_id": sid,
+            "name": g.get("name"),
+            "country_iso3": "JPN",
+            "admin": g.get("admin_code"),
+            "address": g.get("address"),
+            "operator": g.get("operator"),
+            "status": None,
+            "pop_served": g.get("pop_treated_now", np.nan),
+            "capacity_m3d": g.get("dry_max_m3d_now", np.nan),
+            "loc_quality": "address geocode" + np.where(pos != "", " PosStat=" + pos, ""),
+        },
+        index=g.index,
+    )
     return gpd.GeoDataFrame(out, geometry=g.geometry.values, crs=4326)
 
 
 # --------------------------------------------------------------------------- pairing
+
 
 def _xyz(lon, lat):
     lon, lat = np.radians(lon), np.radians(lat)
@@ -338,7 +356,7 @@ def pair_one_to_one(lon_a, lat_a, lon_b, lat_b, radius_m):
     lon_a, lat_a, lon_b, lat_b = map(np.asarray, (lon_a, lat_a, lon_b, lat_b))
     if len(lon_a) == 0 or len(lon_b) == 0:
         return (np.empty(0, int),) * 2 + (np.empty(0),)
-    chord = 2 * np.sin(radius_m * 1.01 / (2 * R_EARTH))      # sphere vs ellipsoid margin
+    chord = 2 * np.sin(radius_m * 1.01 / (2 * R_EARTH))  # sphere vs ellipsoid margin
     cand = cKDTree(_xyz(lon_b, lat_b)).query_ball_point(_xyz(lon_a, lat_a), r=chord)
     ia = np.repeat(np.arange(len(cand)), [len(c) for c in cand])
     ib = np.fromiter((j for c in cand for j in c), int, count=len(ia))
@@ -347,7 +365,7 @@ def pair_one_to_one(lon_a, lat_a, lon_b, lat_b, radius_m):
     _, _, d = GEOD.inv(lon_a[ia], lat_a[ia], lon_b[ib], lat_b[ib])
     keep = d <= radius_m
     ia, ib, d = ia[keep], ib[keep], d[keep]
-    order = np.lexsort((ib, ia, d))                          # shortest first, stable ties
+    order = np.lexsort((ib, ia, d))  # shortest first, stable ties
     used_a = np.zeros(len(lon_a), bool)
     used_b = np.zeros(len(lon_b), bool)
     acc = []
@@ -366,8 +384,7 @@ def nearest_within(lon_a, lat_a, lon_b, lat_b, radius_m):
     if len(lon_a) == 0 or len(lon_b) == 0:
         return idx, dist
     _, j = cKDTree(_xyz(lon_b, lat_b)).query(_xyz(lon_a, lat_a), k=1)
-    _, _, d = GEOD.inv(np.asarray(lon_a), np.asarray(lat_a),
-                       np.asarray(lon_b)[j], np.asarray(lat_b)[j])
+    _, _, d = GEOD.inv(np.asarray(lon_a), np.asarray(lat_a), np.asarray(lon_b)[j], np.asarray(lat_b)[j])
     ok = d <= radius_m
     idx[ok], dist[ok] = j[ok], d[ok]
     return idx, dist
@@ -375,23 +392,27 @@ def nearest_within(lon_a, lat_a, lon_b, lat_b, radius_m):
 
 # --------------------------------------------------------------------------- main
 
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--hydrowaste", required=True, type=Path,
-                    help="HydroWASTE v1.0 (.csv, .shp, .gpkg or zipped shapefile)")
+    ap.add_argument(
+        "--hydrowaste", required=True, type=Path, help="HydroWASTE v1.0 (.csv, .shp, .gpkg or zipped shapefile)"
+    )
     ap.add_argument("--outdir", required=True, type=Path)
     ap.add_argument("--radius-km", type=float, default=10.0)
-    ap.add_argument("--attention", type=Path,
-                    help="reference_plants_without_heigit_coverage.geojson to annotate")
+    ap.add_argument("--attention", type=Path, help="reference_plants_without_heigit_coverage.geojson to annotate")
     ap.add_argument("--offline", action="store_true", help="download nothing")
     ap.add_argument("--ksj-dir", type=Path, help="folder with P22-12_XX_GML.zip files")
     ap.add_argument("--ga-file", type=Path, help="GA GeoJSON or data zip to use as is")
     ap.add_argument("--ga-rest-url", default=GA_REST)
     ap.add_argument("--ga-zip-url", default=GA_ZIP)
     ap.add_argument("--ksj-url", default=KSJ_URL, help="pattern with {pref:02d}")
-    ap.add_argument("--keep-hw-unpaired", action="store_true",
-                    help="also keep AUS/JPN HydroWASTE plants without a national partner "
-                         "in hydrowaste_merged (default: national data replace them)")
+    ap.add_argument(
+        "--keep-hw-unpaired",
+        action="store_true",
+        help="also keep AUS/JPN HydroWASTE plants without a national partner "
+        "in hydrowaste_merged (default: national data replace them)",
+    )
     ap.add_argument("--hw-id", default="WASTE_ID")
     ap.add_argument("--hw-iso", default="CNTRY_ISO")
     ap.add_argument("--hw-lon", default="LON_WWTP")
@@ -404,8 +425,13 @@ def main(argv=None):
     if gpkg.exists():
         gpkg.unlink()
     radius_m = a.radius_km * 1000
-    report = {"run_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-              "radius_km": a.radius_km, "sources": {}, "counts": {}, "checks": {}}
+    report = {
+        "run_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "radius_km": a.radius_km,
+        "sources": {},
+        "counts": {},
+        "checks": {},
+    }
     s = requests.Session()
     s.headers["User-Agent"] = "HeiGIT-WWTP-reference/1.0 (research)"
 
@@ -428,10 +454,13 @@ def main(argv=None):
     for c in ("feature_type", "feature_subtype", "status", "spatial_confidence"):
         v = _col(ga, c)
         if v.notna().any():
-            log(f"  GA {c}: " + ", ".join(f"{k}={n}" for k, n in
-                                         v.value_counts(dropna=False).items()))
-    report["sources"]["AUS"] = {"citation": GA_CITATION, "licence": GA_LICENCE,
-                                "retrieved_via": ga_via, "file": str(ga_path)}
+            log(f"  GA {c}: " + ", ".join(f"{k}={n}" for k, n in v.value_counts(dropna=False).items()))
+    report["sources"]["AUS"] = {
+        "citation": GA_CITATION,
+        "licence": GA_LICENCE,
+        "retrieved_via": ga_via,
+        "file": str(ga_path),
+    }
 
     # ---- Japan
     kdir = a.ksj_dir or raw / "ksj_p22"
@@ -449,19 +478,26 @@ def main(argv=None):
     ksj = clean_ksj(pd.concat([read_ksj_zip(z) for z in zips], ignore_index=True))
     ksj = gpd.GeoDataFrame(ksj, geometry="geometry", crs=4326)
     log(f"  KSJ P22b: {len(ksj)} treatment plants from {len(zips)} prefectures")
-    report["sources"]["JPN"] = {"citation": KSJ_CITATION, "licence": KSJ_LICENCE,
-                                "files": len(zips), "dir": str(kdir)}
+    report["sources"]["JPN"] = {"citation": KSJ_CITATION, "licence": KSJ_LICENCE, "files": len(zips), "dir": str(kdir)}
 
     # ---- harmonise; drop exact duplicates (same name and position)
     nat = pd.concat([harmonise_ga(ga), harmonise_ksj(ksj)], ignore_index=True)
     nat = gpd.GeoDataFrame(nat, geometry="geometry", crs=4326)
     nat = nat[~nat.geometry.is_empty & nat.geometry.notna()].copy()
     nat["lon"], nat["lat"] = nat.geometry.x, nat.geometry.y
-    key = nat["country_iso3"] + "|" + nat["name"].fillna("").astype(str) + "|" + \
-        nat["lon"].round(6).astype(str) + "|" + nat["lat"].round(6).astype(str)
+    key = (
+        nat["country_iso3"]
+        + "|"
+        + nat["name"].fillna("").astype(str)
+        + "|"
+        + nat["lon"].round(6).astype(str)
+        + "|"
+        + nat["lat"].round(6).astype(str)
+    )
     dup = key.duplicated()
     report["counts"]["exact_duplicates_dropped"] = {
-        k: int(v) for k, v in nat.loc[dup, "country_iso3"].value_counts().items()}
+        k: int(v) for k, v in nat.loc[dup, "country_iso3"].value_counts().items()
+    }
     nat = nat[~dup].reset_index(drop=True)
     assert nat["nat_id"].is_unique, "national IDs are not unique"
 
@@ -481,15 +517,26 @@ def main(argv=None):
         n_i = nat.index[nat["country_iso3"] == iso]
         h_i = hw_sub.index[hw_sub[a.hw_iso] == iso]
         for r_km in sorted(set(SENSITIVITY_KM) | {a.radius_km}):
-            ia, ib, d = pair_one_to_one(nat.loc[n_i, "lon"], nat.loc[n_i, "lat"],
-                                        hw_sub.loc[h_i].geometry.x, hw_sub.loc[h_i].geometry.y,
-                                        r_km * 1000)
-            rows.append({"country": iso, "radius_km": r_km, "n_national": len(n_i),
-                         "n_hydrowaste": len(h_i), "paired": len(ia),
-                         "national_only": len(n_i) - len(ia),
-                         "hydrowaste_only": len(h_i) - len(ia),
-                         "median_dist_m": float(np.median(d)) if len(d) else np.nan,
-                         "p90_dist_m": float(np.percentile(d, 90)) if len(d) else np.nan})
+            ia, ib, d = pair_one_to_one(
+                nat.loc[n_i, "lon"],
+                nat.loc[n_i, "lat"],
+                hw_sub.loc[h_i].geometry.x,
+                hw_sub.loc[h_i].geometry.y,
+                r_km * 1000,
+            )
+            rows.append(
+                {
+                    "country": iso,
+                    "radius_km": r_km,
+                    "n_national": len(n_i),
+                    "n_hydrowaste": len(h_i),
+                    "paired": len(ia),
+                    "national_only": len(n_i) - len(ia),
+                    "hydrowaste_only": len(h_i) - len(ia),
+                    "median_dist_m": float(np.median(d)) if len(d) else np.nan,
+                    "p90_dist_m": float(np.percentile(d, 90)) if len(d) else np.nan,
+                }
+            )
             if r_km == a.radius_km:
                 nat.loc[n_i[ia], "hw_id"] = hw_sub.loc[h_i[ib], a.hw_id].values
                 nat.loc[n_i[ia], "hw_dist_m"] = d
@@ -509,8 +556,7 @@ def main(argv=None):
         m = nat["country_iso3"] == iso
         new_ids[m] = off + np.arange(1, m.sum() + 1)
     nat["new_" + a.hw_id] = new_ids
-    nat_hw = pd.DataFrame({a.hw_id: new_ids, a.hw_iso: nat["country_iso3"],
-                           a.hw_lat: nat["lat"], a.hw_lon: nat["lon"]})
+    nat_hw = pd.DataFrame({a.hw_id: new_ids, a.hw_iso: nat["country_iso3"], a.hw_lat: nat["lat"], a.hw_lon: nat["lon"]})
     if "WWTP_NAME" in hw.columns:
         nat_hw["WWTP_NAME"] = nat["name"]
     if "COUNTRY" in hw.columns:
@@ -522,14 +568,15 @@ def main(argv=None):
     nat_hw["HW_PAIRED_ID"] = nat["hw_id"]
     nat_hw["HW_DIST_M"] = nat["hw_dist_m"]
     keep = hw[~hw[a.hw_iso].isin(["AUS", "JPN"])]
-    parts = [pd.DataFrame(keep.drop(columns="geometry")).assign(REF_SOURCE="HydroWASTE v1.0"),
-             nat_hw]
+    parts = [pd.DataFrame(keep.drop(columns="geometry")).assign(REF_SOURCE="HydroWASTE v1.0"), nat_hw]
     if a.keep_hw_unpaired:
-        parts.append(pd.DataFrame(hw_unpaired.drop(columns="geometry"))
-                     .assign(REF_SOURCE="HydroWASTE v1.0 (no national partner)"))
+        parts.append(
+            pd.DataFrame(hw_unpaired.drop(columns="geometry")).assign(
+                REF_SOURCE="HydroWASTE v1.0 (no national partner)"
+            )
+        )
     merged = pd.concat(parts, ignore_index=True)
-    merged = gpd.GeoDataFrame(merged, geometry=gpd.points_from_xy(merged[a.hw_lon],
-                                                                  merged[a.hw_lat]), crs=4326)
+    merged = gpd.GeoDataFrame(merged, geometry=gpd.points_from_xy(merged[a.hw_lon], merged[a.hw_lat]), crs=4326)
     assert merged[a.hw_id].is_unique, "WASTE_IDs collide after the merge"
 
     # ---- checks
@@ -538,20 +585,27 @@ def main(argv=None):
         "merged_rows_add_up": len(merged) == exp,
         "pairs_one_to_one": bool(nat["hw_id"].dropna().is_unique),
         "pairs_within_radius": bool((nat["hw_dist_m"].dropna() <= radius_m).all()),
-        "hydrowaste_classes_add_up": int(nat["hw_dist_m"].notna().sum()) + len(hw_unpaired)
-        == len(hw_sub),
+        "hydrowaste_classes_add_up": int(nat["hw_dist_m"].notna().sum()) + len(hw_unpaired) == len(hw_sub),
         "national_coords_in_bbox": {
-            "AUS": bool(nat.query("country_iso3=='AUS'")["lon"].between(112, 155).all() and
-                        nat.query("country_iso3=='AUS'")["lat"].between(-45, -9).all()),
-            "JPN": bool(nat.query("country_iso3=='JPN'")["lon"].between(122, 154).all() and
-                        nat.query("country_iso3=='JPN'")["lat"].between(20, 46).all())},
+            "AUS": bool(
+                nat.query("country_iso3=='AUS'")["lon"].between(112, 155).all()
+                and nat.query("country_iso3=='AUS'")["lat"].between(-45, -9).all()
+            ),
+            "JPN": bool(
+                nat.query("country_iso3=='JPN'")["lon"].between(122, 154).all()
+                and nat.query("country_iso3=='JPN'")["lat"].between(20, 46).all()
+            ),
+        },
     }
-    report["counts"].update({
-        "national": nat["country_iso3"].value_counts().to_dict(),
-        "hydrowaste_in_AUS_JPN": hw_sub[a.hw_iso].value_counts().to_dict(),
-        "paired_at_radius": nat.loc[nat["hw_dist_m"].notna(), "country_iso3"]
-        .value_counts().to_dict(),
-        "merged_rows": len(merged), "hydrowaste_rows": len(hw)})
+    report["counts"].update(
+        {
+            "national": nat["country_iso3"].value_counts().to_dict(),
+            "hydrowaste_in_AUS_JPN": hw_sub[a.hw_iso].value_counts().to_dict(),
+            "paired_at_radius": nat.loc[nat["hw_dist_m"].notna(), "country_iso3"].value_counts().to_dict(),
+            "merged_rows": len(merged),
+            "hydrowaste_rows": len(hw),
+        }
+    )
 
     # ---- write
     ga.to_file(gpkg, layer="ga_wwtf_2026", driver="GPKG")
@@ -570,13 +624,15 @@ def main(argv=None):
         att.to_file(dest, driver="GeoJSON")
         report["counts"]["attention_features"] = len(att)
         report["counts"]["attention_with_national_within_radius"] = int((j >= 0).sum())
-        log(f"\nattention file: {(j >= 0).sum()} of {len(att)} features have a national "
-            f"plant within {a.radius_km:g} km -> {dest.name}")
+        log(
+            f"\nattention file: {(j >= 0).sum()} of {len(att)} features have a national "
+            f"plant within {a.radius_km:g} km -> {dest.name}"
+        )
 
     (out / "national_reference_report.json").write_text(
-        json.dumps(report, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
-    bad = [k for k, v in report["checks"].items()
-           if v is False or (isinstance(v, dict) and not all(v.values()))]
+        json.dumps(report, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+    )
+    bad = [k for k, v in report["checks"].items() if v is False or (isinstance(v, dict) and not all(v.values()))]
     log(f"\nchecks: {'all passed' if not bad else 'FAILED: ' + ', '.join(bad)}")
     log(f"wrote {gpkg}")
     return 0 if not bad else 1

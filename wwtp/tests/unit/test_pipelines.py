@@ -314,15 +314,25 @@ def test_prepare_data_uses_final_geometry_and_filters_industrial_sites(monkeypat
     monkeypatch.setattr("wwtp.service_areas.drop_duplicates", lambda gdf, col: gdf)
     monkeypatch.setattr("wwtp.geo_utils.buffer_geometry", lambda geom: geom)
     monkeypatch.setattr("wwtp.service_areas.intersects_with_country_db", fake_intersects_with_country_db)
-    monkeypatch.setattr("wwtp.service_areas.download_overture_maps", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download should not run when overture exists")))
-    monkeypatch.setattr("wwtp.service_areas.intersect_with_polygon_sindex", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("basin join should not run when HYBAS_ID already exists")))
+    monkeypatch.setattr(
+        "wwtp.service_areas.download_overture_maps",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download should not run when overture exists")),
+    )
+    monkeypatch.setattr(
+        "wwtp.service_areas.intersect_with_polygon_sindex",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("basin join should not run when HYBAS_ID already exists")
+        ),
+    )
     monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
     monkeypatch.setattr(pipelines.gpd, "read_file", fake_read_file)
     monkeypatch.setattr(pipelines.pd, "read_parquet", lambda path: country_df.copy())
     monkeypatch.setattr(
         pipelines.os.path,
         "exists",
-        lambda path: path in {cfg["paths"]["overture"], os.path.abspath(cfg["paths"]["watershed"].replace('.geojson', '.gpkg'))},
+        lambda path: (
+            path in {cfg["paths"]["overture"], os.path.abspath(cfg["paths"]["watershed"].replace(".geojson", ".gpkg"))}
+        ),
     )
 
     result = pipelines.prepare_data(cfg)
@@ -418,9 +428,11 @@ def test_prepare_data_csv_mode_downloads_overture_once_and_exports_expanded_outp
         raise AssertionError(f"Unexpected read path: {path}")
 
     def fake_exists(path):
-        watershed_gpkg = os.path.abspath(cfg["paths"]["watershed"].replace('.geojson', '.gpkg'))
-        expanded_csv = os.path.join(os.path.dirname(cfg["paths"]["bboxes"]), f"expanded_{os.path.basename(cfg['paths']['bboxes'])}")
-        expanded_gpkg = expanded_csv.replace('.csv', '.gpkg')
+        watershed_gpkg = os.path.abspath(cfg["paths"]["watershed"].replace(".geojson", ".gpkg"))
+        expanded_csv = os.path.join(
+            os.path.dirname(cfg["paths"]["bboxes"]), f"expanded_{os.path.basename(cfg['paths']['bboxes'])}"
+        )
+        expanded_gpkg = expanded_csv.replace(".csv", ".gpkg")
         if path == cfg["paths"]["overture"]:
             return state["overture_exists"]
         if path == watershed_gpkg:
@@ -467,8 +479,8 @@ def test_prepare_data_csv_mode_downloads_overture_once_and_exports_expanded_outp
     result = pipelines.prepare_data(cfg)
 
     expanded_csv = os.path.join(os.path.dirname(cfg["paths"]["bboxes"]), "expanded_bboxes.csv")
-    expanded_gpkg = expanded_csv.replace('.csv', '.gpkg')
-    watershed_gpkg = os.path.abspath(cfg["paths"]["watershed"].replace('.geojson', '.gpkg'))
+    expanded_gpkg = expanded_csv.replace(".csv", ".gpkg")
+    watershed_gpkg = os.path.abspath(cfg["paths"]["watershed"].replace(".geojson", ".gpkg"))
     assert state["overture_exists"] is True
     assert expanded_csv in captured["to_csv"]
     assert watershed_gpkg in captured["to_file"]

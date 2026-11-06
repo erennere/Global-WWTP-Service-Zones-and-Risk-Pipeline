@@ -2,6 +2,7 @@
 
 Part of the service-area stage (``python -m wwtp.create_voronoi``).
 """
+
 import os
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -54,15 +55,13 @@ def dissolve_overlapping_geometries_fast(subdf, radius, convex=False):
         boxes = apply_in_utm_zones(subdf, lambda geoms: geoms.envelope)
     else:
         # Square of side 2 * radius around the centroid
-        boxes = apply_in_utm_zones(
-            subdf, lambda geoms: geoms.centroid.buffer(float(radius), cap_style='square')
-        )
+        boxes = apply_in_utm_zones(subdf, lambda geoms: geoms.centroid.buffer(float(radius), cap_style="square"))
     subdf = subdf.set_geometry(boxes).to_crs(4326)
 
     # 3. Spatial Join to find overlaps (The "Sweep" replacement)
     # This finds every pair of geometries that intersect
     sindex = subdf.sindex
-    left_indices, right_indices = sindex.query(subdf.geometry, predicate='intersects')
+    left_indices, right_indices = sindex.query(subdf.geometry, predicate="intersects")
 
     # 4. Building the Graph (The DFS replacement)
     # We treat each row index as a node and an intersection as an edge
@@ -72,27 +71,27 @@ def dissolve_overlapping_geometries_fast(subdf, radius, convex=False):
     # 5. Extracting Connected Components
     # This identifies "islands" of overlapping shapes
     components = list(nx.connected_components(g))
-    
+
     final_groups = []
     for component in components:
         # Map the row indices back to your 'some_id' column
-        group_ids = set(subdf.iloc[list(component)]['some_id'])
+        group_ids = set(subdf.iloc[list(component)]["some_id"])
         final_groups.append(group_ids)
 
     # 6. Final buffer(0) to ensure valid geometries as per original code
-    subdf['geometry'] = subdf['geometry'].buffer(0)
+    subdf["geometry"] = subdf["geometry"].buffer(0)
 
     return final_groups, subdf
 
 
-def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False, country_col='ISO_2'):
+def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False, country_col="ISO_2"):
     """
     Orchestrate parallel dissolving of overlapping geometries by country.
-    
+
     Processes countries in parallel using ProcessPoolExecutor, applies
     dissolution to each country's geometries, and merges results.
     Caches results to file to avoid recomputation.
-    
+
     Parameters
     ----------
     df : geopandas.GeoDataFrame
@@ -128,20 +127,21 @@ def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False
 
     if country_col not in df.columns:
         raise KeyError(f"Country grouping column '{country_col}' not found in input dataframe.")
-    
+
     # Overlap groups stay within one country on purpose: Voronoi regions are
     # built and clipped per country, so a neighbour's buffer across the border
     # must not enlarge a country's clipping polygon. The order is only for load
     # balancing; a fixed seed keeps runs reproducible.
     countries = np.random.default_rng(0).permutation(np.asarray(pd.unique(df[country_col]), dtype=object))
     logger.debug(f"Processing {len(countries)} countries in parallel with {max_workers} workers")
-    df['some_id'] = np.arange(0, len(df))
-    #subdf = df.copy()
+    df["some_id"] = np.arange(0, len(df))
+    # subdf = df.copy()
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(dissolve_overlapping_geometries_fast,
-                                    df[df[country_col] == country].copy(), radius, convex
-                                   ) for country in countries]
-    
+        futures = [
+            executor.submit(dissolve_overlapping_geometries_fast, df[df[country_col] == country].copy(), radius, convex)
+            for country in countries
+        ]
+
     final_groups = []
     dfs = []
     error_count = 0
@@ -156,7 +156,7 @@ def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False
                 dfs.append(subdf)
         except Exception as err:
             error_count += 1
-            logger.error(f'Error in parallel dissolution: {err}', exc_info=True)
+            logger.error(f"Error in parallel dissolution: {err}", exc_info=True)
 
     if error_count:
         # A failed country would silently lose every plant's buffer downstream.
@@ -166,22 +166,22 @@ def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False
     else:
         logger.error("No results from parallel dissolution")
         dfs = pd.DataFrame()
-    
+
     final_dict = {}
     for i, group in enumerate(final_groups):
         for item in group:
             final_dict[int(item)] = i
 
-    dfs['some_id'] = dfs['some_id'].astype(int)
-    dfs['group_id'] = dfs['some_id'].map(lambda x: final_dict[x])
-    dissolved_buffers = dfs.dissolve(by='group_id').reset_index(drop=True)  # type: ignore[operator]
+    dfs["some_id"] = dfs["some_id"].astype(int)
+    dfs["group_id"] = dfs["some_id"].map(lambda x: final_dict[x])
+    dissolved_buffers = dfs.dissolve(by="group_id").reset_index(drop=True)  # type: ignore[operator]
     logger.debug(f"Dissolved {len(dfs)} geometries into {len(dissolved_buffers)} groups")
-    dissolved_buffers['geometry'] = dissolved_buffers['geometry'].buffer(0)
-    if 'centroid' in dissolved_buffers:
-        dissolved_buffers = dissolved_buffers.drop(labels='centroid', axis=1)
+    dissolved_buffers["geometry"] = dissolved_buffers["geometry"].buffer(0)
+    if "centroid" in dissolved_buffers:
+        dissolved_buffers = dissolved_buffers.drop(labels="centroid", axis=1)
     try:
         with atomic_output(buffers_filepath) as tmp_path:
-            dissolved_buffers.to_file(tmp_path, driver='GPKG', index=False)
+            dissolved_buffers.to_file(tmp_path, driver="GPKG", index=False)
         logger.info(f"Saved dissolved buffers to {buffers_filepath}")
     except Exception as err:
         logger.warning(f"Failed to cache dissolved buffers: {err}")
@@ -191,11 +191,11 @@ def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False
 def resolve_polygon_overlaps(region_polygons):
     """
     Remove overlapping areas from Voronoi region polygons based on area size.
-    
+
     For each pair of overlapping polygons, removes the intersection area from
     the smaller polygon and keeps it in the larger one. Operates on a copy of
     input geometries to avoid modifying the original GeoDataFrame.
-    
+
     Parameters
     ----------
     region_polygons : geopandas.GeoDataFrame

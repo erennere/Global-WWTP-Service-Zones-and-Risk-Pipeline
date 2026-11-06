@@ -1,4 +1,5 @@
 """wwtp.workflow: the variants and file lists the Snakemake workflow is built from."""
+
 import re
 from pathlib import Path
 
@@ -24,8 +25,13 @@ def test_the_sweep_grid_comes_from_config():
 
 def test_default_variant_is_the_configured_run_at_basin_level_6():
     v = wf.default_variant()
-    assert (v.level, v.weight_method, v.weight_func, v.dynamic_buffering, v.size_measure) == \
-        ("6", "size", "mult", True, "reported")
+    assert (v.level, v.weight_method, v.weight_func, v.dynamic_buffering, v.size_measure) == (
+        "6",
+        "size",
+        "mult",
+        True,
+        "reported",
+    )
     assert v.tag == "v2_lvl6_bfrep_sz_mult"
 
 
@@ -47,7 +53,15 @@ def test_file_names_carry_the_tag():
 
 def test_every_stage_of_the_snakefile_has_resources():
     stages = set(re.findall(r'(?:res|threads)\("(\w+)"\)', SNAKEFILE.read_text()))
-    stages |= {"hw_comparison", "eu_comparison", "piechart_figure", "piechart_interactive", "sizes_interactive_map",
-               "composite_area_population_plots", "pop_at_risk_figures", "interactive_unconnected_industrial_map"}
+    stages |= {
+        "hw_comparison",
+        "eu_comparison",
+        "piechart_figure",
+        "piechart_interactive",
+        "sizes_interactive_map",
+        "composite_area_population_plots",
+        "pop_at_risk_figures",
+        "interactive_unconnected_industrial_map",
+    }
     for stage in stages:
         assert set(wf.resources(stage)) == {"threads", "mem_mb", "runtime"}, stage

@@ -1,4 +1,5 @@
 """Tests for pop_at_risk_figures (moved from the coverage-campaign files)."""
+
 import geopandas as gpd
 import pandas as pd
 import duckdb
@@ -66,6 +67,7 @@ def test_pop_at_risk_helpers_with_dummy_data(monkeypatch, tmp_path):
 
 def test_pop_at_risk_create_single_plot_linear_and_log(tmp_path):
     import matplotlib
+
     matplotlib.use("Agg")
 
     gdf = gpd.GeoDataFrame(
@@ -116,7 +118,12 @@ def test_pop_at_risk_create_impact_polygon_plots(monkeypatch, tmp_path):
         crs="EPSG:4326",
     )
     pop = gpd.GeoDataFrame(
-        {"tile": [1, 2], "500_2024_zonal_sum": [100, 200], "1000_2023_zonal_sum": [50, 90], "geometry": [Point(0, 0), Point(1, 0)]},
+        {
+            "tile": [1, 2],
+            "500_2024_zonal_sum": [100, 200],
+            "1000_2023_zonal_sum": [50, 90],
+            "geometry": [Point(0, 0), Point(1, 0)],
+        },
         geometry="geometry",
         crs="EPSG:4326",
     )
@@ -224,9 +231,9 @@ def test_create_impact_polygon_plots_skip_paths(monkeypatch, tmp_path):
     pop_bad = gpd.GeoDataFrame(
         {
             "tile": [1],
-            "bad_zonal_sum": [10],          # len(parts) < 3
-            "abc_2024_zonal_sum": [11],     # non-numeric radius
-            "500_abc_zonal_sum": [12],      # non-numeric year
+            "bad_zonal_sum": [10],  # len(parts) < 3
+            "abc_2024_zonal_sum": [11],  # non-numeric radius
+            "500_abc_zonal_sum": [12],  # non-numeric year
             "geometry": [Point(0, 0)],
         },
         geometry="geometry",
@@ -309,6 +316,7 @@ def test_pop_at_risk_main_orchestrates_with_patched_io(monkeypatch, tmp_path):
 
     monkeypatch.setattr(prf, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(prf, "load_config", lambda **kwargs: cfg)
+
     def _read_file(path, columns=None, **kwargs):
         if str(path).endswith("non_served_above_threshold.gpkg"):
             return gpd.GeoDataFrame(
@@ -319,14 +327,18 @@ def test_pop_at_risk_main_orchestrates_with_patched_io(monkeypatch, tmp_path):
         return boundaries.copy()
 
     monkeypatch.setattr(prf.gpd, "read_file", _read_file)
+
     def _read_parquet(path):
         seen["parquet_path"] = path
         return pop_at_risk.copy()
 
     monkeypatch.setattr(prf.gpd, "read_parquet", _read_parquet)
     monkeypatch.setattr(prf, "find_tiles_in_countries", lambda *args, **kwargs: tiles.copy())
-    monkeypatch.setattr(prf, "create_impact_polygon_plots", lambda *args, **kwargs: calls.__setitem__("impact", calls["impact"] + 1))
+    monkeypatch.setattr(
+        prf, "create_impact_polygon_plots", lambda *args, **kwargs: calls.__setitem__("impact", calls["impact"] + 1)
+    )
     monkeypatch.setattr(prf, "create_single_plot", lambda **kwargs: calls.__setitem__("single", calls["single"] + 1))
+
     def _duckdb_sql(query):
         seen["duckdb_query"] = query
         return _DuckResult()
@@ -339,8 +351,6 @@ def test_pop_at_risk_main_orchestrates_with_patched_io(monkeypatch, tmp_path):
     assert calls["single"] == 1
     assert seen["parquet_path"] == cfg["paths"]["pop_at_risk_output_filepath"]
     assert "duckdb_query" not in seen
-
-
 
 
 def test_pop_at_risk_module_main_guard_executes(monkeypatch, tmp_path):
@@ -393,6 +403,7 @@ def test_pop_at_risk_module_main_guard_executes(monkeypatch, tmp_path):
     monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(starter_mod, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(starter_mod, "load_config", lambda **kwargs: cfg)
+
     def _read_file(path, columns=None, **kwargs):
         if str(path).endswith("non_served_above_threshold.gpkg"):
             return gpd.GeoDataFrame(

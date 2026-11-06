@@ -27,20 +27,22 @@ logger = logging.getLogger(__name__)
 # Ensure handler flushes after each message
 for handler in logging.root.handlers:
     handler.flush()
-    if hasattr(handler, 'setLevel'):
+    if hasattr(handler, "setLevel"):
         handler.setLevel(logging.INFO)
+
 
 # ============================================================
 # I/O
 # ============================================================
-def from_wkb_modified(x): 
+def from_wkb_modified(x):
     """Convert WKB bytes to a geometry and return None on malformed rows."""
     try:
         x = from_wkb(x)
         return x
     except Exception:
         return None
-    
+
+
 def load_geodata(path):
     """Load a parquet layer and coerce its geometry column into a GeoDataFrame."""
     # Read the Parquet file
@@ -48,17 +50,17 @@ def load_geodata(path):
 
     # If df already has a 'geometry' column as bytes or object type,
     # GeoPandas can interpret it automatically
-    if 'geometry' not in df.columns and 'geom' in df.columns:
+    if "geometry" not in df.columns and "geom" in df.columns:
         # Rename the column
-        df = df.rename(columns={'geom': 'geometry'})
+        df = df.rename(columns={"geom": "geometry"})
 
     # FIX [C-1]: fail fast with a clear contract error when geometry input column is missing.
-    if 'geometry' not in df.columns:
+    if "geometry" not in df.columns:
         raise ValueError("Input parquet must contain either 'geometry' or 'geom' column")
 
     # Convert to GeoDataFrame; GeoPandas may auto-convert Arrow binary
-    df['geometry'] = df['geometry'].map(from_wkb_modified)
-    gdf = gpd.GeoDataFrame(df, geometry='geometry', crs=4326)
+    df["geometry"] = df["geometry"].map(from_wkb_modified)
+    gdf = gpd.GeoDataFrame(df, geometry="geometry", crs=4326)
 
     return gdf
 
@@ -68,32 +70,37 @@ def write_geodata(gdf: gpd.GeoDataFrame, path: str, driver: str = "GeoJSON") -> 
     with atomic_output(path) as tmp_path:
         gdf.to_file(tmp_path, driver=driver)
 
+
 # ============================================================
 # Geometry helpers
 # ============================================================
 
+
 def compute_centroids(gdf):
     """Compute centroids for valid geometries and store them in a new column."""
     gdf = gdf.copy()
-    gdf['centroid'] = None
+    gdf["centroid"] = None
     mask = gdf.geometry.is_valid & ~gdf.geometry.is_empty
-    gdf.loc[mask, 'centroid'] = gdf.loc[mask, 'geometry'].centroid
+    gdf.loc[mask, "centroid"] = gdf.loc[mask, "geometry"].centroid
     return gdf
+
 
 def build_spatial_index(points):
     """Build an STRtree over centroid points while preserving input indexing."""
     # We replace None with an empty Point to preserve the list index
     # STRtree will accept empty geometries but they won't match any spatial query
-    placeholder = geom.Point() 
+    placeholder = geom.Point()
     indexed_points = [pt if (pt is not None and not pt.is_empty) else placeholder for pt in points]
-    
+
     return STRtree(indexed_points)
+
 
 # ============================================================
 # Clustering
 # ============================================================
 
-def cluster_points(points,tree, distance_threshold):
+
+def cluster_points(points, tree, distance_threshold):
     """Cluster nearby points by breadth-first expansion over STRtree neighbors."""
     visited: Set[int] = set()
     clusters: List[Set[int]] = []
@@ -116,12 +123,12 @@ def cluster_points(points,tree, distance_threshold):
             for j in candidate_indices:
                 if j in visited:
                     continue
-                
+
                 neighbor = points[j]
                 # Double check neighbor exists (though tree shouldn't match EMPTY points)
                 if neighbor is None or neighbor.is_empty:
                     continue
-                    
+
                 if curr_geom.distance(neighbor) <= distance_threshold:
                     visited.add(j)
                     cluster.add(j)
@@ -129,9 +136,11 @@ def cluster_points(points,tree, distance_threshold):
         clusters.append(cluster)
     return clusters
 
+
 # ============================================================
 # Output geometry
 # ============================================================
+
 
 def clusters_to_bboxes(
     gdf: gpd.GeoDataFrame,
@@ -144,12 +153,9 @@ def clusters_to_bboxes(
         geoms = gdf.iloc[list(cluster)].geometry
         merged = geoms.unary_union
         bbox = geom.box(*merged.bounds)
-        records.append({
-            "cluster_id": cid,
-            "man_name": label,
-            "geometry": bbox
-        })
+        records.append({"cluster_id": cid, "man_name": label, "geometry": bbox})
     return gpd.GeoDataFrame(records, crs=gdf.crs)
+
 
 def sanitize_gdf_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Lowercase GeoDataFrame column names and drop duplicate labels."""
@@ -158,11 +164,8 @@ def sanitize_gdf_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf = gdf.loc[:, ~gdf.columns.duplicated()]
     return gdf
 
-def convert_geojson_to_parquet(
-    geojson_file: str,
-    temp_parquet_dir: str,
-    overwrite: bool = False
-) -> str | None:
+
+def convert_geojson_to_parquet(geojson_file: str, temp_parquet_dir: str, overwrite: bool = False) -> str | None:
     """Convert a single GeoJSON file to parquet using DuckDB.
 
     Parameters
@@ -181,7 +184,7 @@ def convert_geojson_to_parquet(
     """
     basename = os.path.splitext(os.path.basename(geojson_file))[0]
     temp_parquet = os.path.join(temp_parquet_dir, f"{basename}.parquet")
-    
+
     if not os.path.exists(temp_parquet) or overwrite:
         try:
             ensure_output_dir_for_file(temp_parquet)
@@ -202,15 +205,12 @@ def convert_geojson_to_parquet(
             return None
     else:
         logger.info(f"⏭️  Parquet already exists for {basename}, skipping")
-    
+
     return temp_parquet
 
 
 def parallel_convert_geojsons(
-    geojson_files: List[str],
-    temp_parquet_dir: str,
-    max_workers: int = 4,
-    overwrite = False
+    geojson_files: List[str], temp_parquet_dir: str, max_workers: int = 4, overwrite=False
 ) -> List[str]:
     """Convert many GeoJSON files to parquet in parallel.
 
@@ -231,13 +231,12 @@ def parallel_convert_geojsons(
         Sorted list of successfully created parquet file paths.
     """
     parquet_files = []
-    
+
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(convert_geojson_to_parquet, f, temp_parquet_dir, overwrite): f
-            for f in geojson_files
+            executor.submit(convert_geojson_to_parquet, f, temp_parquet_dir, overwrite): f for f in geojson_files
         }
-        
+
         for future in as_completed(futures):
             try:
                 parquet_file = future.result()
@@ -254,8 +253,8 @@ def get_parquet_schema_info(
 ) -> Tuple[List[str], Dict[str, str]]:
     """Return ordered column names and SQL types for a temporary DuckDB table."""
     cols_info = conn.execute(f"PRAGMA table_info('{tmp_table}');").df()
-    column_names = list(cols_info['name'])
-    column_types = dict(zip(cols_info['name'], cols_info['type']))
+    column_names = list(cols_info["name"])
+    column_types = dict(zip(cols_info["name"], cols_info["type"]))
     return column_names, column_types
 
 
@@ -271,9 +270,9 @@ def discover_parquet_schema(parquet_file: str) -> Tuple[str, str, List[str], Dic
     temp_conn = duckdb.connect(":memory:")
     try:
         basename = os.path.splitext(os.path.basename(parquet_file))[0]
-        grid = basename.split('_')[1]
+        grid = basename.split("_")[1]
         tmp_table = f"tmp_{basename.replace('-', '_')}"
-        
+
         # Load parquet WITHOUT adding GRID column (GRID is metadata, not a data column)
         temp_conn.execute(
             f"""CREATE TEMP TABLE {tmp_table} 
@@ -284,6 +283,7 @@ def discover_parquet_schema(parquet_file: str) -> Tuple[str, str, List[str], Dic
         return parquet_file, grid, col_names, col_types
     finally:
         temp_conn.close()
+
 
 def merge_parquets_sql(
     conn: duckdb.DuckDBPyConnection,
@@ -311,13 +311,13 @@ def merge_parquets_sql(
     """
     grid_mapping = {}
     schema_results = {}
-    
+
     # Phase 1: Discover all schemas in parallel using separate connections
     logger.info(f"🔄 Discovering schemas from {len(parquet_files)} parquets (max_workers={max_workers})...")
-    
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(discover_parquet_schema, pf) for pf in parquet_files]
-        
+
         for future in as_completed(futures):
             try:
                 pf, grid, col_names, col_types = future.result()
@@ -327,10 +327,10 @@ def merge_parquets_sql(
                 logger.info(f"  ✅ {basename}: {len(col_names)} columns")
             except Exception as e:
                 logger.error(f"❌ Failed to discover schema: {e}")
-    
+
     # Phase 2: Build unified schema (union of all columns) - normalize to lowercase
     all_columns_map = {}  # col_name (lowercase) -> col_type (normalized)
-    
+
     for pf, (grid, col_names, col_types) in schema_results.items():
         for col, dtype in col_types.items():
             col_lower = col.lower()
@@ -339,13 +339,13 @@ def merge_parquets_sql(
                 if dtype.upper() in ("BLOB", "STRING", "TEXT"):
                     dtype = "VARCHAR"
                 all_columns_map[col_lower] = dtype
-    
+
     # Add GRID as a metadata column (present in all parquets)
-    all_columns_map['grid'] = 'VARCHAR'
-    
+    all_columns_map["grid"] = "VARCHAR"
+
     all_columns_ordered = sorted(all_columns_map.keys())
     logger.info(f"📊 Unified schema: {len(all_columns_ordered)} unique columns")
-    
+
     # Phase 3: Create dataset table with all columns at once (avoids ALTER locks)
     # Deduplicate case-insensitive column names using a set
     col_defs = []
@@ -356,17 +356,17 @@ def merge_parquets_sql(
             dtype = all_columns_map[col]
             col_defs.append(f'"{col}" {dtype}')
             seen_cols.add(col_lower)
-    
-    conn.execute('DROP TABLE IF EXISTS dataset;')
-    conn.execute(f'CREATE TABLE dataset ({", ".join(col_defs)});')
+
+    conn.execute("DROP TABLE IF EXISTS dataset;")
+    conn.execute(f"CREATE TABLE dataset ({', '.join(col_defs)});")
     logger.info("✅ Created dataset table with unified schema")
-    
+
     # Phase 4: Load and insert from all parquets using controlled batched UNION ALL inserts.
     logger.info(f"⚙️  Inserting {len(parquet_files)} parquets into dataset...")
     batch_size = max(1, insert_batch_size)
 
     for batch_start in range(0, len(parquet_files), batch_size):
-        batch_files = parquet_files[batch_start:batch_start + batch_size]
+        batch_files = parquet_files[batch_start : batch_start + batch_size]
 
         select_statements = []
         for pf in batch_files:
@@ -375,7 +375,7 @@ def merge_parquets_sql(
 
             aligned_expr = []
             for col in all_columns_ordered:
-                if col == 'grid':
+                if col == "grid":
                     aligned_expr.append(f"'{grid}' AS \"{col}\"")
                 elif col in col_names_lower:
                     original_col = col_names_lower[col]
@@ -383,18 +383,17 @@ def merge_parquets_sql(
                 else:
                     aligned_expr.append(f'NULL AS "{col}"')
 
-            select_statements.append(
-                f'SELECT {", ".join(aligned_expr)} FROM read_parquet(\'{pf}\')'
-            )
+            select_statements.append(f"SELECT {', '.join(aligned_expr)} FROM read_parquet('{pf}')")
 
-        union_query = ' UNION ALL '.join(select_statements)
-        conn.execute(f'INSERT INTO dataset {union_query}')
+        union_query = " UNION ALL ".join(select_statements)
+        conn.execute(f"INSERT INTO dataset {union_query}")
 
         batch_num = (batch_start // batch_size) + 1
         total_batches = (len(parquet_files) + batch_size - 1) // batch_size
         logger.info(f"  Inserted batch {batch_num}/{total_batches} ({len(batch_files)} files)")
-    
+
     return grid_mapping
+
 
 def merge_bboxes_sql(
     polygons_dir: str,
@@ -404,7 +403,7 @@ def merge_bboxes_sql(
     max_workers: int = 4,
     insert_batch_size: int = 8,
     duckdb_threads: int = 4,
-    overwrite: bool = False
+    overwrite: bool = False,
 ) -> None:
     """Merge all matching GeoJSON files into one parquet dataset via DuckDB.
 
@@ -442,16 +441,18 @@ def merge_bboxes_sql(
         conn.execute("SET memory_limit='220GB';")  # Adjust based on system capabilities
         conn.execute("SET max_temp_directory_size = '220GB';")
         ensure_duckdb_spatial(conn)
-        
+
         # 1️⃣ Parallelize GeoJSON to Parquet conversion
         logger.info(f"🔄 Converting {len(files)} GeoJSON files to Parquet (max_workers={max_workers})...")
-        temp_parquet_files = parallel_convert_geojsons(files, temp_parquet_dir, max_workers=max_workers, overwrite=overwrite)
+        temp_parquet_files = parallel_convert_geojsons(
+            files, temp_parquet_dir, max_workers=max_workers, overwrite=overwrite
+        )
         # FIX [F-2]: guard against empty conversion output to avoid downstream SQL assumptions.
         if not temp_parquet_files:
             logger.error("No parquet files were generated from input GeoJSON files")
             return
         logger.info("✅ Converted all files. Starting merge...")
-        
+
         # 2️⃣ Merge Parquets with parallel schema discovery and unified table creation
         merge_parquets_sql(
             conn,
@@ -472,6 +473,7 @@ def merge_bboxes_sql(
 # ============================================================
 # Main
 # ============================================================
+
 
 def parse_args():
     """Parse the standardized named config-override flags."""
@@ -506,16 +508,13 @@ def main(
     centroids = gdf.centroid.tolist()
     tree = build_spatial_index(centroids)
 
-    clusters = cluster_points(
-        centroids,
-        tree,
-        distance_threshold
-    )
+    clusters = cluster_points(centroids, tree, distance_threshold)
     print(f"✅ Found {len(clusters)} spatial clusters", flush=True)
 
     out_gdf = clusters_to_bboxes(gdf, clusters, label)
     write_geodata(out_gdf, output_path)
     print(f"✅ GeoJSON saved to: {output_path}", flush=True)
+
 
 # ============================================================
 # Entry point
@@ -531,39 +530,42 @@ if __name__ == "__main__":
 
     points_path = cfg["paths"]["corrected_all_filepath"]
     grid_filedir = cfg["paths"]["annotations_grid_dir"]
-    grid_filepath = os.path.join(grid_filedir, f'grids_{os.path.basename(points_path)}')
+    grid_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(points_path)}")
     polygons_dir = cfg["paths"]["annotations_by_osm_dir"]
     temp_parquet_dir = cfg["paths"]["annotations_temp_parquet_dir"]
 
-    output_dir = os.path.join(os.path.abspath(os.path.join(grid_filedir, '..')), 'data')
+    output_dir = os.path.join(os.path.abspath(os.path.join(grid_filedir, "..")), "data")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
-    output_filepath = os.path.join(output_dir, 'merged_polygons.parquet')
-    output_path = os.path.join(output_dir, 'wastewater_plant.geojson')
-    prototype = '*_polygons.geojson'
-    
-    
+    output_filepath = os.path.join(output_dir, "merged_polygons.parquet")
+    output_path = os.path.join(output_dir, "wastewater_plant.geojson")
+    prototype = "*_polygons.geojson"
+
     # Run polygons and lines merges in parallel using separate processes (bypasses GIL)
     merge_tasks = []
     max_parallel_workers = 128
-    
+
     if not os.path.exists(output_filepath) or overwrite:
-        merge_tasks.append({
-            "polygons_dir": polygons_dir,
-            "prototype": prototype,
-            "output_filepath": output_filepath,
-            "temp_parquet_dir": temp_parquet_dir
-        })
-    
-    if not os.path.exists(output_filepath.replace('polygons', 'lines')) or overwrite:
-        merge_tasks.append({
-            "polygons_dir": polygons_dir,
-            "prototype": prototype.replace('polygons', 'lines'),
-            "output_filepath": output_filepath.replace('polygons', 'lines'),
-            "temp_parquet_dir": temp_parquet_dir
-        })
-    
+        merge_tasks.append(
+            {
+                "polygons_dir": polygons_dir,
+                "prototype": prototype,
+                "output_filepath": output_filepath,
+                "temp_parquet_dir": temp_parquet_dir,
+            }
+        )
+
+    if not os.path.exists(output_filepath.replace("polygons", "lines")) or overwrite:
+        merge_tasks.append(
+            {
+                "polygons_dir": polygons_dir,
+                "prototype": prototype.replace("polygons", "lines"),
+                "output_filepath": output_filepath.replace("polygons", "lines"),
+                "temp_parquet_dir": temp_parquet_dir,
+            }
+        )
+
     # Execute merge tasks in parallel with separate processes
     if merge_tasks:
         # Split workers across concurrently running merge jobs to avoid memory spikes.
@@ -576,13 +578,13 @@ if __name__ == "__main__":
                     max_workers=per_task_workers,
                     insert_batch_size=64,
                     duckdb_threads=per_task_workers,
-                    overwrite=overwrite
+                    overwrite=overwrite,
                 )
                 for task in merge_tasks
             ]
             for future in futures:
                 future.result()
-        
+
     # FIX [D-1]: only execute downstream clustering when merged polygon parquet exists.
     if os.path.exists(output_filepath):
         main(

@@ -150,8 +150,7 @@ def test_orchestrate_voronoi_weights_normalizes_per_basin_independently(monkeypa
     assert len(captured) == 2
 
     weights_by_group = {
-        str(frame["HYBAS_ID"].iloc[0]): frame.sort_values("WASTE_ID")["weights"].to_numpy()
-        for frame in captured
+        str(frame["HYBAS_ID"].iloc[0]): frame.sort_values("WASTE_ID")["weights"].to_numpy() for frame in captured
     }
     assert weights_by_group["101"] == pytest.approx(weights_by_group["202"])
     assert weights_by_group["101"].sum() == pytest.approx(1.0)
@@ -242,7 +241,9 @@ def test_orchestrate_voronoi_weights_output_mode_resumes_from_temp_checkpoint(mo
     assert replace_calls == [(str(temp_output_path), str(output_path))]
 
 
-def test_orchestrate_voronoi_weights_output_mode_overwrite_clears_temp_checkpoint(monkeypatch, tiny_country_gdf, tmp_path):
+def test_orchestrate_voronoi_weights_output_mode_overwrite_clears_temp_checkpoint(
+    monkeypatch, tiny_country_gdf, tmp_path
+):
     output_path = tmp_path / "voronoi.gpkg"
     temp_output_path = tmp_path / "temp_voronoi.gpkg"
     state = {"temp_exists": True, "output_exists": False}

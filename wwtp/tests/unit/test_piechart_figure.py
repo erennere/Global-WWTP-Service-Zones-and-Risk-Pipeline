@@ -1,4 +1,5 @@
 """Tests for piechart_figure (moved from the coverage-campaign files)."""
+
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -17,6 +18,7 @@ class _Wedge:
 
     def set_linewidth(self, _):
         return None
+
 
 class _InsetAx:
     def __init__(self):
@@ -82,7 +84,10 @@ def test_piechart_aggregation_and_scaling_paths():
     assert any(c.startswith("IND_") for c in type_agg.columns)
     assert any(c.startswith("RES_") for c in type_agg.columns)
 
-    sizes = [pf.calculate_size(v, min_value=10, max_value=100, min_size=0.1, max_size=1.0, scale="linear") for v in [10, 30, 90]]
+    sizes = [
+        pf.calculate_size(v, min_value=10, max_value=100, min_size=0.1, max_size=1.0, scale="linear")
+        for v in [10, 30, 90]
+    ]
     assert all(isinstance(s, float) for s in sizes)
 
     with pytest.raises(ValueError):
@@ -104,7 +109,9 @@ def test_piechart_position_and_rounding_helpers():
 
 def test_piechart_percentage_and_zonal_resolution_helpers():
     df = pd.DataFrame({"population_served": [50, 30], "population_total": [100, 60]})
-    col = pf.ensure_population_percentage_column(df, preferred_col="population_served_index", zonal_sum_col="2024_zonal_sum")
+    col = pf.ensure_population_percentage_column(
+        df, preferred_col="population_served_index", zonal_sum_col="2024_zonal_sum"
+    )
     assert col == "population_served_index"
     assert np.isclose(df[col].iloc[0], 0.5)
 
@@ -115,6 +122,7 @@ def test_piechart_percentage_and_zonal_resolution_helpers():
 
 def test_plot_splitted_piechart_executes(tmp_path):
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 

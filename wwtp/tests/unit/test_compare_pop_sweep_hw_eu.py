@@ -8,10 +8,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_parse_pop_output_path_accepts_integer_buffer_token():
-    filepath = (
-        "/tmp/pop_voronoi_layers/v2/lvl7/bf1500/log/"
-        "pop_added_appr_1_v2_lvl7_bf1500_log_mult.gpkg"
-    )
+    filepath = "/tmp/pop_voronoi_layers/v2/lvl7/bf1500/log/pop_added_appr_1_v2_lvl7_bf1500_log_mult.gpkg"
 
     parsed = parse_pop_output_path(filepath)
 
@@ -27,10 +24,7 @@ def test_parse_pop_output_path_accepts_integer_buffer_token():
 
 
 def test_parse_pop_output_path_accepts_dynamic_k_buffer_token():
-    filepath = (
-        "/tmp/pop_voronoi_layers/v2/lvl7/bfk0_75/log/"
-        "pop_added_appr_1_only_round_v2_lvl7_bfk0_75_log.gpkg"
-    )
+    filepath = "/tmp/pop_voronoi_layers/v2/lvl7/bfk0_75/log/pop_added_appr_1_only_round_v2_lvl7_bfk0_75_log.gpkg"
 
     parsed = parse_pop_output_path(filepath)
 
@@ -45,10 +39,7 @@ def test_parse_pop_output_path_accepts_dynamic_k_buffer_token():
 
 
 def test_parse_pop_output_path_accepts_dotted_dynamic_k_buffer_token():
-    filepath = (
-        "/tmp/pop_voronoi_layers/v2/lvl7/bfk0.75/log/"
-        "pop_added_appr_1_v2_lvl7_bfk0.75_log_add.gpkg"
-    )
+    filepath = "/tmp/pop_voronoi_layers/v2/lvl7/bfk0.75/log/pop_added_appr_1_v2_lvl7_bfk0.75_log_add.gpkg"
 
     parsed = parse_pop_output_path(filepath)
 
@@ -69,10 +60,7 @@ def test_parse_pop_output_path_accepts_without_weight_type_subdir():
 
 
 def test_parse_pop_output_path_rejects_buffer_token_mismatch():
-    filepath = (
-        "/tmp/pop_voronoi_layers/v2/lvl7/bfk0_75/log/"
-        "pop_added_appr_1_v2_lvl7_bf1500_log_mult.gpkg"
-    )
+    filepath = "/tmp/pop_voronoi_layers/v2/lvl7/bfk0_75/log/pop_added_appr_1_v2_lvl7_bf1500_log_mult.gpkg"
 
     assert parse_pop_output_path(filepath) is None
 
@@ -94,7 +82,6 @@ def test_build_alias_order_can_prioritize_hw_source():
     assert hw_weighted_order[0] == "A"
     assert score_table["hw_weight_used"].iloc[0] == pytest.approx(0.8)
     assert score_table["eu_weight_used"].iloc[0] == pytest.approx(0.2)
-
 
 
 def test_parse_pop_output_path_accepts_size_measure_buffer_token():
@@ -136,8 +123,9 @@ def test_zscore_of_a_constant_is_zero():
 
 
 def test_alias_order_uses_the_available_scores_only():
-    summary = pd.DataFrame({"alias": ["A", "A", "B", "C"], "source": ["HW", "EU", "HW", "EU"],
-                            "sensitivity_score": [1.0, 3.0, 2.5, 0.5]})
+    summary = pd.DataFrame(
+        {"alias": ["A", "A", "B", "C"], "source": ["HW", "EU", "HW", "EU"], "sensitivity_score": [1.0, 3.0, 2.5, 0.5]}
+    )
     order, table = cmp.build_alias_order(summary, hw_weight=0.5)
     scores = table.set_index("alias")["joint_score"]
     assert scores["A"] == pytest.approx(2.0) and scores["B"] == pytest.approx(2.5) and scores["C"] == pytest.approx(0.5)
@@ -150,11 +138,13 @@ def test_alias_order_uses_the_available_scores_only():
 
 def test_listing_skips_temp_files_and_duplicate_unweighted_runs(tmp_path):
     base = tmp_path / "pop_voronoi_layers" / "v2" / "lvl6" / "bfrep"
-    files = [base / "sz" / "pop_added_appr_1_v2_lvl6_bfrep_sz_mult.gpkg",
-             base / "li" / "pop_added_appr_1_v2_lvl6_bfrep_li.gpkg",
-             base / "log" / "pop_added_appr_1_v2_lvl6_bfrep_log.gpkg",   # same run without weighting
-             base / "sz" / "temp_pop_added_appr_1_v2_lvl6_bfrep_sz_mult.gpkg",
-             base / "sz" / "notes.gpkg"]
+    files = [
+        base / "sz" / "pop_added_appr_1_v2_lvl6_bfrep_sz_mult.gpkg",
+        base / "li" / "pop_added_appr_1_v2_lvl6_bfrep_li.gpkg",
+        base / "log" / "pop_added_appr_1_v2_lvl6_bfrep_log.gpkg",  # same run without weighting
+        base / "sz" / "temp_pop_added_appr_1_v2_lvl6_bfrep_sz_mult.gpkg",
+        base / "sz" / "notes.gpkg",
+    ]
     for f in files:
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text("")

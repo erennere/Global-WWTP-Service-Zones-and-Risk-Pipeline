@@ -13,10 +13,12 @@ the reference density D_ref (people per km2 at full size) is the 95th percentile
 
 Usage: python 05_service.py <data_dir> <hb_dir> <agg_dir> <out_dir> [radius_tag]
 """
+
 import sys, json
 import numpy as np, pandas as pd, geopandas as gpd
 from shapely import affinity
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
 
@@ -44,7 +46,9 @@ def spatial(df, polys):
     j = j[~j.index.duplicated()]
     miss = j.PFAF_ID.isna()
     if miss.any():
-        nn = gpd.sjoin_nearest(g[miss].to_crs(EA), polys[["PFAF_ID", "geometry"]].to_crs(EA), how="left", max_distance=25000)
+        nn = gpd.sjoin_nearest(
+            g[miss].to_crs(EA), polys[["PFAF_ID", "geometry"]].to_crs(EA), how="left", max_distance=25000
+        )
         nn = nn[~nn.index.duplicated()]
         j.loc[miss, "PFAF_ID"] = nn.PFAF_ID.values
     return j.PFAF_ID.values
@@ -55,8 +59,12 @@ def pfaf_route(ids, table, lev):
     return v.map(lambda x: int(str(int(x))[:lev]) if pd.notna(x) else np.nan)
 
 
-report = {"non_served_rows": len(ns), "non_served_pop": float(ns.pop_sum.sum()),
-          "heigit_plants": len(hp), "served_pop_2024": float(hp.zonal_sum_2024.sum())}
+report = {
+    "non_served_rows": len(ns),
+    "non_served_pop": float(ns.pop_sum.sum()),
+    "heigit_plants": len(hp),
+    "served_pop_2024": float(hp.zonal_sum_2024.sum()),
+}
 for lev in (3, 4):
     units = gpd.read_file(f"{AGG}/units_hybas{lev}_{TAG}.gpkg")[["PFAF_ID", "status", "geometry"]]
     units = units.rename(columns={"status": "status_1a"})
@@ -75,12 +83,14 @@ for lev in (3, 4):
     h_sp = pd.Series(spatial(hp, polys), index=hp.index)
     h_unit = h_id.where(h_id.notna(), h_sp)
 
-    agg = pd.DataFrame({
-        "P_non": ns.groupby(ns_unit).pop_sum.sum(),
-        "n_areas": ns.groupby(ns_unit).size(),
-        "P_served": hp.groupby(h_unit).zonal_sum_2024.sum(),
-        "n_plants": hp.groupby(h_unit).size(),
-    }).fillna(0)
+    agg = pd.DataFrame(
+        {
+            "P_non": ns.groupby(ns_unit).pop_sum.sum(),
+            "n_areas": ns.groupby(ns_unit).size(),
+            "P_served": hp.groupby(h_unit).zonal_sum_2024.sum(),
+            "n_plants": hp.groupby(h_unit).size(),
+        }
+    ).fillna(0)
     agg.index = agg.index.astype("int64")
     u = units.merge(agg, left_on="PFAF_ID", right_index=True, how="left")
     for c in ("P_non", "n_areas", "P_served", "n_plants"):
@@ -97,26 +107,32 @@ for lev in (3, 4):
     ok = (u.status == "ok") & (u.P_non > 0)
     dref = float(np.nanquantile(dens[ok], DREF_Q))
     u["shrink"] = np.where(ok, np.minimum(1.0, np.sqrt(dens / dref)), np.nan)
-    shrunk = [affinity.scale(g, s, s, origin="centroid") if ok_ else None
-              for g, s, ok_ in zip(ue.geometry, u["shrink"].fillna(0), ok)]
+    shrunk = [
+        affinity.scale(g, s, s, origin="centroid") if ok_ else None
+        for g, s, ok_ in zip(ue.geometry, u["shrink"].fillna(0), ok)
+    ]
     sh = gpd.GeoDataFrame(u.drop(columns="geometry"), geometry=gpd.GeoSeries(shrunk, crs=EA), crs=EA)
     u.to_file(f"{OUT}/service_hybas{lev}.gpkg", driver="GPKG")
     sh[ok.values].to_file(f"{OUT}/service_hybas{lev}_cartogram.gpkg", driver="GPKG")
     ok_u = u[u.status == "ok"]
     report[f"lev{lev}"] = dict(
-        basins_ok=int((u.status == "ok").sum()), uncovered=int((u.status == "uncovered").sum()),
+        basins_ok=int((u.status == "ok").sum()),
+        uncovered=int((u.status == "uncovered").sum()),
         no_data=int((u.status == "no_data").sum()),
         non_served_by_id=round(float(a_id.notna().mean()), 4),
         non_served_pop_by_id=round(float(ns.pop_sum[a_id.notna()].sum() / ns.pop_sum.sum()), 4),
         id_vs_point_agreement=round(float((a_id[both] == a_sp[both]).mean()), 4),
         non_served_unassigned_pop=float(ns.pop_sum[ns_unit.isna()].sum()),
         heigit_unassigned=int(h_unit.isna().sum()),
-        P_non_in_units=float(u.P_non.sum()), P_served_in_units=float(u.P_served.sum()),
+        P_non_in_units=float(u.P_non.sum()),
+        P_served_in_units=float(u.P_served.sum()),
         P_non_in_uncovered=float(u.loc[u.status == "uncovered", "P_non"].sum()),
-        D_ref_people_per_km2=round(dref, 1), n_full_size=int((u["shrink"] >= 0.999).sum()),
-        S_quantiles={str(q): round(float(ok_u.S.quantile(q)), 3) for q in (.1, .25, .5, .75, .9)},
+        D_ref_people_per_km2=round(dref, 1),
+        n_full_size=int((u["shrink"] >= 0.999).sum()),
+        S_quantiles={str(q): round(float(ok_u.S.quantile(q)), 3) for q in (0.1, 0.25, 0.5, 0.75, 0.9)},
         S_global=round(float(ok_u.P_served.sum() / (ok_u.P_served.sum() + ok_u.P_non.sum())), 4),
-        n_S_zero=int((ok_u.S == 0).sum()), n_S_one=int((ok_u.S == 1).sum()),
+        n_S_zero=int((ok_u.S == 0).sum()),
+        n_S_one=int((ok_u.S == 1).sum()),
     )
     print(json.dumps(report[f"lev{lev}"], indent=1))
 json.dump(report, open(f"{OUT}/service_report.json", "w"), indent=1)

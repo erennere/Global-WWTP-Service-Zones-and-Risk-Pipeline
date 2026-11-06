@@ -1,5 +1,6 @@
 """Metric distances where degrees would mislead: a 499 m pair matches at 500 m, a 501 m pair does not,
 at 0, 50 and 70 degrees, north-south and east-west."""
+
 import geopandas as gpd
 import pytest
 from pyproj import Geod
@@ -25,8 +26,10 @@ def _offset(lon, lat, metres, direction):
 def _pair(lat, metres, direction):
     a = (8.0, lat)
     b = _offset(*a, metres, direction)
-    return (gpd.GeoDataFrame({"id": [1]}, geometry=[Point(a)], crs=4326),
-            gpd.GeoDataFrame({"ref": [2]}, geometry=[Point(b)], crs=4326))
+    return (
+        gpd.GeoDataFrame({"id": [1]}, geometry=[Point(a)], crs=4326),
+        gpd.GeoDataFrame({"ref": [2]}, geometry=[Point(b)], crs=4326),
+    )
 
 
 @pytest.mark.parametrize("lat", LATITUDES)

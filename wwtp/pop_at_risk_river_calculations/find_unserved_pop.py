@@ -3,6 +3,7 @@
 This script reads a CSV of non-served polygons (WKT geometry), filters rows by
 `pop_sum > threshold`, and writes the result to a GPKG file.
 """
+
 import os
 import logging
 import argparse
@@ -21,21 +22,23 @@ from .find_pop_in_danger_pop import finding_tiles
 
 logger = logging.getLogger(__name__)
 
+
 def read_urban_areas(filepath):
     try:
         return gpd.read_file(filepath)
     except Exception as e:
         logger.error("Failed to read urban areas file: %s", e)
         raise Exception(f"Failed to read urban areas file: {filepath}") from e
-    
+
+
 def add_bbox(gdf, zoom_level, max_workers, is_parallel):
     def chunk_find_bbox(chunk, zoom_level):
-        chunk['tiles'] = chunk['geometry'].map(lambda geom: finding_tiles(geom, zoom_level))
+        chunk["tiles"] = chunk["geometry"].map(lambda geom: finding_tiles(geom, zoom_level))
         return chunk
 
     if is_parallel:
-        gdf['indx'] = range(len(gdf))
-        chunks = [gdf[['indx', 'geometry']].iloc[i:i + max_workers] for i in range(0, len(gdf), max_workers)]
+        gdf["indx"] = range(len(gdf))
+        chunks = [gdf[["indx", "geometry"]].iloc[i : i + max_workers] for i in range(0, len(gdf), max_workers)]
         results = []
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -47,14 +50,14 @@ def add_bbox(gdf, zoom_level, max_workers, is_parallel):
                     logger.error("Error processing chunk: %s", e)
                     raise
 
-        results = pd.concat(results).drop(columns=['geometry'])
-        gdf = gdf.merge(results, on='indx', how='left').drop(columns=['indx'])
+        results = pd.concat(results).drop(columns=["geometry"])
+        gdf = gdf.merge(results, on="indx", how="left").drop(columns=["indx"])
     else:
-        gdf['tiles'] = gdf['geometry'].map(lambda geom: finding_tiles(geom, zoom_level))
+        gdf["tiles"] = gdf["geometry"].map(lambda geom: finding_tiles(geom, zoom_level))
     return gdf
 
-def add_buffers_to_WWTP(gdf, wwtp_filepath, wwtp_buffer, zoom_level,
-                        max_workers, is_parallel, wwtp_country_col):
+
+def add_buffers_to_WWTP(gdf, wwtp_filepath, wwtp_buffer, zoom_level, max_workers, is_parallel, wwtp_country_col):
     """Keep the non-served polygons that lie within ``wwtp_buffer`` metres of a plant.
 
     Each plant is buffered by ``wwtp_buffer`` metres in its own UTM zone and
@@ -72,10 +75,12 @@ def add_buffers_to_WWTP(gdf, wwtp_filepath, wwtp_buffer, zoom_level,
     """
     logger.info(
         "Starting add_buffers_to_WWTP: input_rows=%s wwtp_path=%s wwtp_buffer=%s m",
-        len(gdf), wwtp_filepath, wwtp_buffer,
+        len(gdf),
+        wwtp_filepath,
+        wwtp_buffer,
     )
     wwtp_gdf = gpd.read_file(wwtp_filepath)
-    if 'geometry' not in wwtp_gdf.columns:
+    if "geometry" not in wwtp_gdf.columns:
         raise ValueError(f"WWTP file has no geometry column: {wwtp_filepath}")
     if wwtp_country_col not in wwtp_gdf.columns:
         raise KeyError(f"WWTP file is missing configured country column '{wwtp_country_col}': {wwtp_filepath}")
@@ -88,38 +93,41 @@ def add_buffers_to_WWTP(gdf, wwtp_filepath, wwtp_buffer, zoom_level,
 
     if gdf.crs is None:
         raise ValueError("Non-served polygons need a CRS")
-    wwtp_zones = gpd.GeoDataFrame(geometry=buffer_meters(wwtp_gdf, float(wwtp_buffer)), crs=wwtp_gdf.crs).to_crs(gdf.crs)
+    wwtp_zones = gpd.GeoDataFrame(geometry=buffer_meters(wwtp_gdf, float(wwtp_buffer)), crs=wwtp_gdf.crs).to_crs(
+        gdf.crs
+    )
 
     probe = gpd.GeoDataFrame(geometry=gdf.geometry.values, crs=gdf.crs)
-    probe['_row'] = range(len(probe))
-    hits = gpd.sjoin(probe, wwtp_zones, how='inner', predicate='intersects')
-    keep = sorted(set(hits['_row'].tolist()))
+    probe["_row"] = range(len(probe))
+    hits = gpd.sjoin(probe, wwtp_zones, how="inner", predicate="intersects")
+    keep = sorted(set(hits["_row"].tolist()))
     result = gdf.iloc[keep].copy()
     logger.info("Non-served polygons within %s m of a plant: %s of %s", wwtp_buffer, len(result), len(gdf))
     return result
 
 
-def orchestrate_urban_intersection(unserved_gdf, urban_filepath, zoom_level=8, max_workers=32, is_parallel=True,
-                                   urban_buffer=10000, tolerance=0.0001):
+def orchestrate_urban_intersection(
+    unserved_gdf, urban_filepath, zoom_level=8, max_workers=32, is_parallel=True, urban_buffer=10000, tolerance=0.0001
+):
     if int(max_workers) < 1:
         raise ValueError("max_workers must be >= 1")
 
     if unserved_gdf.empty:
         return unserved_gdf
 
-    unserved_gdf['idx'] = range(len(unserved_gdf))
+    unserved_gdf["idx"] = range(len(unserved_gdf))
 
     unserved_gdf = add_bbox(unserved_gdf, zoom_level=zoom_level, max_workers=max_workers, is_parallel=is_parallel)
     urban_areas_gdf = read_urban_areas(urban_filepath)
     # Buffer in metres in each area's UTM zone (EPSG:3857 shrank it by cos(lat)).
     urban_areas_gdf = urban_areas_gdf.to_crs(4326)
-    urban_areas_gdf['geometry'] = buffer_meters(urban_areas_gdf, float(urban_buffer))
+    urban_areas_gdf["geometry"] = buffer_meters(urban_areas_gdf, float(urban_buffer))
     urban_areas_gdf = add_bbox(urban_areas_gdf, zoom_level=zoom_level, max_workers=max_workers, is_parallel=False)
 
     urban_areas_gdf = urban_areas_gdf.to_crs(3857)
-    urban_areas_gdf['geometry'] = urban_areas_gdf['geometry'].map(to_wkt)
+    urban_areas_gdf["geometry"] = urban_areas_gdf["geometry"].map(to_wkt)
     unserved_gdf = unserved_gdf.to_crs(3857)
-    unserved_gdf['geometry'] = unserved_gdf['geometry'].map(to_wkt)
+    unserved_gdf["geometry"] = unserved_gdf["geometry"].map(to_wkt)
 
     duckdb_query = f"""
         WITH urban_areas AS (
@@ -183,32 +191,37 @@ def orchestrate_urban_intersection(unserved_gdf, urban_filepath, zoom_level=8, m
             ensure_duckdb_spatial(conn)
             df = conn.execute(duckdb_query).df()
             if df.empty:
-                empty_columns = [col for col in unserved_gdf.columns if col not in {'idx', 'tiles'}] + ['tile']
-                return gpd.GeoDataFrame(columns=empty_columns, geometry='geometry', crs=4326)
-            df = df.sort_values('idx').drop(columns=['tiles', 'idx'])
-            df['geometry'] = df['geometry'].map(from_wkt)
-            return gpd.GeoDataFrame(df, geometry='geometry', crs=3857).to_crs(4326)
+                empty_columns = [col for col in unserved_gdf.columns if col not in {"idx", "tiles"}] + ["tile"]
+                return gpd.GeoDataFrame(columns=empty_columns, geometry="geometry", crs=4326)
+            df = df.sort_values("idx").drop(columns=["tiles", "idx"])
+            df["geometry"] = df["geometry"].map(from_wkt)
+            return gpd.GeoDataFrame(df, geometry="geometry", crs=3857).to_crs(4326)
     except Exception as e:
         logger.error("Error during urban intersection: %s", e)
         raise Exception("Error during urban intersection") from e
 
+
 def parse_args():
     """Parse optional config override flags for this step."""
-    parser = argparse.ArgumentParser(
-        description="Filter non-served polygons above threshold and export to GPKG."
-    )
+    parser = argparse.ArgumentParser(description="Filter non-served polygons above threshold and export to GPKG.")
     add_standard_override_arguments(parser)
     return parser.parse_args()
 
-def create_unserved_pop(filepath, threshold, output_filepath,
-                        urban_filepath, wwtp_filepath,
-                        max_workers=32,
-                        is_parallel=True,
-                        zoom_level=8,
-                        urban_buffer=10000,
-                        wwtp_buffer=10000,
-                        wwtp_country_col='ISO_2',
-                        tolerance=0.0001):
+
+def create_unserved_pop(
+    filepath,
+    threshold,
+    output_filepath,
+    urban_filepath,
+    wwtp_filepath,
+    max_workers=32,
+    is_parallel=True,
+    zoom_level=8,
+    urban_buffer=10000,
+    wwtp_buffer=10000,
+    wwtp_country_col="ISO_2",
+    tolerance=0.0001,
+):
     """Create a GeoPackage with non-served polygons above a population threshold.
 
     Parameters
@@ -255,8 +268,8 @@ def create_unserved_pop(filepath, threshold, output_filepath,
     if "geometry" not in df.columns:
         raise ValueError("Input CSV is missing required 'geometry' column")
 
-    df['geometry'] = df.geometry.apply(from_wkt)
-    df = gpd.GeoDataFrame(df, geometry='geometry', crs=4326)
+    df["geometry"] = df.geometry.apply(from_wkt)
+    df = gpd.GeoDataFrame(df, geometry="geometry", crs=4326)
     df = orchestrate_urban_intersection(
         df,
         urban_filepath,
@@ -264,20 +277,23 @@ def create_unserved_pop(filepath, threshold, output_filepath,
         max_workers=max_workers,
         is_parallel=is_parallel,
         urban_buffer=urban_buffer,
-        tolerance=tolerance
+        tolerance=tolerance,
     )
-    df = add_buffers_to_WWTP(df, 
-                            wwtp_filepath=wwtp_filepath,
-                            wwtp_buffer=wwtp_buffer,
-                            zoom_level=zoom_level,
-                            max_workers=max_workers,
-                            is_parallel=is_parallel,
-                            wwtp_country_col=wwtp_country_col)
+    df = add_buffers_to_WWTP(
+        df,
+        wwtp_filepath=wwtp_filepath,
+        wwtp_buffer=wwtp_buffer,
+        zoom_level=zoom_level,
+        max_workers=max_workers,
+        is_parallel=is_parallel,
+        wwtp_country_col=wwtp_country_col,
+    )
 
     with atomic_output(output_filepath) as tmp_path:
-        df.to_file(tmp_path, driver='GPKG', index=False)
+        df.to_file(tmp_path, driver="GPKG", index=False)
     logger.info("Wrote %s polygons to %s", len(df), output_filepath)
     return len(df)
+
 
 def main():
     """Load config and run threshold-based non-served population extraction."""
@@ -294,9 +310,9 @@ def main():
     tolerance = float(cfg["tolerance"])
     wwtp_buffer = int(cfg["wwtp_buffer"])
     wwtp_country_col = cfg["country_output_column"]
-    wwtp_filepath = os.path.abspath(cfg['paths']['annotated_all_filepath'])
-    
-    non_served_outpath = os.path.abspath(cfg["paths"]["non_served_outpath"].replace('.gpkg', '.csv'))
+    wwtp_filepath = os.path.abspath(cfg["paths"]["annotated_all_filepath"])
+
+    non_served_outpath = os.path.abspath(cfg["paths"]["non_served_outpath"].replace(".gpkg", ".csv"))
     non_served_above_threshold_outpath = os.path.abspath(cfg["paths"]["non_served_above_threshold_outpath"])
     urban_filepath = os.path.abspath(cfg["paths"]["urban_areas_filepath"])
     rows_written = create_unserved_pop(
@@ -304,16 +320,17 @@ def main():
         threshold,
         non_served_above_threshold_outpath,
         urban_filepath,
-        wwtp_filepath, 
+        wwtp_filepath,
         max_workers=max_workers,
         is_parallel=is_parallel,
         zoom_level=zoom_level,
         urban_buffer=urban_buffer,
-        wwtp_buffer = wwtp_buffer,
+        wwtp_buffer=wwtp_buffer,
         wwtp_country_col=wwtp_country_col,
-        tolerance=tolerance
+        tolerance=tolerance,
     )
     logger.info("Completed non-served population extraction. rows_written=%s", rows_written)
+
 
 if __name__ == "__main__":
     configure_logging()
