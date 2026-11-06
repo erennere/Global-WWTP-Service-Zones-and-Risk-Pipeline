@@ -665,3 +665,16 @@ def test_find_diff_pop_can_resolve_its_country_layer():
 
     cfg = load_config(script_name="find_diff_pop")
     assert cfg["paths"]["overture"] and cfg["country_boundary_column"]
+
+
+def test_sweep_tasks_partition_the_grid():
+    from src.sensitivity_analysis_scripts.create_voronoi_parallel_sweep import (
+        filter_combinations_by_task, generate_parameter_combinations, split_combinations_into_jobs)
+
+    combos = generate_parameter_combinations()
+    tasks = [filter_combinations_by_task(combos, t, num_tasks=10, shuffle_seed=42) for t in range(10)]
+    flat = [c for t in tasks for c in t]
+    assert sorted(flat) == sorted(combos) and len(set(flat)) == len(flat)  # every run once, in one task
+    assert tasks == [filter_combinations_by_task(combos, t, num_tasks=10, shuffle_seed=42) for t in range(10)]
+    jobs = split_combinations_into_jobs(tasks[0], num_jobs=4)
+    assert sorted(c for j in jobs for c in j) == sorted(tasks[0]) and max(map(len, jobs)) - min(map(len, jobs)) <= 1

@@ -20,6 +20,11 @@ TAG = f"r{int(MATCH_RADIUS_M)}"  # suffix of the matched files: plants_with_unit
 PATHS = FIG1["paths"]
 
 
+def enough_plants(n, minimum=MIN_PLANTS):
+    """Whether a unit has enough plants to be coloured (fewer: hatched). Works on numbers and Series."""
+    return n >= minimum
+
+
 def main():
     key = sys.argv[1]
     values = {"min_plants": MIN_PLANTS, "match_radius_m": int(MATCH_RADIUS_M), "tag": TAG}

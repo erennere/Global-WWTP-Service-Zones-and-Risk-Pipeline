@@ -67,6 +67,12 @@ def parse_pop_output_path(filepath):
     if file_match.group("file_buffer") != path_match.group("buffer"):
         return None
 
+    # The filename ends in _<weight_type><weight_func suffix>: "_log_mult",
+    # "_sz_mult", or "_li" for an unweighted run. distance_weighting is the
+    # suffix alone ("", "mult", "add").
+    weight_type = path_match.group("weight_type") or ""
+    tail = file_match.group("weight_func")
+    suffix = tail[len(weight_type) + 1:] if weight_type and tail.startswith("_" + weight_type) else tail
     return {
         "filepath": normalized,
         "filename": filename,
@@ -77,6 +83,7 @@ def parse_pop_output_path(filepath):
         "approach": file_match.group("approach"),
         "only_round": bool(file_match.group("only_round")),
         "weight_func": file_match.group("weight_func"),
+        "distance_weighting": suffix.lstrip("_"),
     }
 
 
@@ -107,7 +114,10 @@ def list_pop_output_files(data_dir):
             parse_failures.append(str(filepath).replace("\\", "/"))
             continue
 
-        if params["weight_func"] == "":
+        # Unweighted runs differ only in weight_type, which has no effect without
+        # weighting. (Checking weight_func == "" never matched: it always
+        # carries "_<weight_type>", so duplicates were all scored.)
+        if params["distance_weighting"] == "":
             key = (params["version"], params["level"], params["buffer"],
                    params["approach"], params["only_round"])
             if key in seen_empty_wf:

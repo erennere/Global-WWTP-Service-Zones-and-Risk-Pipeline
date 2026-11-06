@@ -23,7 +23,7 @@ from shapely.geometry import box, Polygon
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG, enough_plants  # noqa: E402  (config.yaml, section figure1)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("units"); ap.add_argument("label"); ap.add_argument("out")
@@ -84,8 +84,8 @@ TR = pyproj.Transformer.from_crs(4326, CRS, always_xy=True)
 ALLSHIFT = "idonly" not in V
 shift_col = "med_shift_all" if ALLSHIFT else "med_shift"
 n_shift = (u.n_corr + u.n_match) if ALLSHIFT else u.n_corr
-ok_a = (u.status == "ok") & (u.n_ref >= a.min_ref)
-ok_b = (u.status == "ok") & (n_shift >= a.min_corr)
+ok_a = (u.status == "ok") & enough_plants(u.n_ref, a.min_ref)
+ok_b = (u.status == "ok") & enough_plants(n_shift, a.min_corr)
 cls3 = lambda v: np.digitize(v, BRK)
 u["biv"] = None
 u.loc[ok_a, "biv"] = [BIV[3 * cls3(m) + cls3(n)] for n, m in zip(u.loc[ok_a, "p_new"].fillna(0), u.loc[ok_a, "p_missing"].fillna(0))]
@@ -236,7 +236,7 @@ def lat_profile(ax_map, ax_p, panel, plants):
         c = pl[sel]
         g = c.groupby(pd.cut(c.lat, edges), observed=False).shift_m
         med, q1, q3, n = g.median().values, g.quantile(.25).values, g.quantile(.75).values, g.size().values
-        mid = (yy[:-1] + yy[1:]) / 2; k = n >= a.min_corr
+        mid = (yy[:-1] + yy[1:]) / 2; k = enough_plants(n, a.min_corr)
         ax_p.fill_betweenx(mid[k], q1[k], q3[k], color=SHIFT_COL[2], alpha=0.5, lw=0)
         ax_p.plot(med[k], mid[k], color=SHIFT_COL[5], lw=0.7, marker="o", ms=1.4, mew=0)
         ax_p.set_xscale("log"); ax_p.set_xlim(8, 3000)

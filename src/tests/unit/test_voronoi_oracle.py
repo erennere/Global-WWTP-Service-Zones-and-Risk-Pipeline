@@ -15,7 +15,6 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from shapely.geometry import Point, box
 
-from src import create_voronoi as cv
 from src import service_areas as sa
 
 pytestmark = pytest.mark.unit
@@ -117,3 +116,19 @@ def test_size_weights_follow_people_not_footprint():
     clip = box(-15_000, -15_000, 25_000, 15_000)
     cells = _solve(sites, clip, scale_weights=True, size_kwargs=size, size_weights=True)
     assert cells[1].area > 20 * cells[2].area
+
+
+@pytest.mark.parametrize("factor", [2, 3])
+def test_scaling_every_site_and_the_grid_scales_every_cell(factor):
+    """Equal weights are scale-free: scale sites, clip area and grid step together."""
+    xy = [(2_000, 3_000), (7_500, 2_000), (5_000, 8_000), (9_000, 9_000)]
+    clip = box(0, 0, 10_000, 10_000)
+    base = _solve(_sites(xy), clip)
+    sites = _sites([(x * factor, y * factor) for x, y in xy])
+    clipping = gpd.GeoDataFrame(geometry=[shapely.affinity.scale(clip, factor, factor, origin=(0, 0))], crs=UTM)
+    kwargs = dict(FAR, buffer=FAR["buffer"] * factor)
+    scaled, _ = sa.weighted_voronoi(sites, "WASTE_ID", None, clipping=clipping, n_points=STEP * factor,
+                                    buffer_fn_kwargs=kwargs, threshold=1.0)
+    scaled = scaled.to_crs(UTM).set_index("WASTE_ID").geometry
+    for i in base.index:
+        assert _iou(shapely.affinity.scale(base[i], factor, factor, origin=(0, 0)), scaled[i]) > 0.99

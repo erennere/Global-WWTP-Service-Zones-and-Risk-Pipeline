@@ -27,7 +27,7 @@ from matplotlib.patches import Rectangle, Wedge, Circle
 from shapely.geometry import box, Polygon, Point
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG, enough_plants  # noqa: E402  (config.yaml, section figure1)
 
 INK, INK2 = "#1a1a1a", "#5a5a5a"
 NODATA, HATCH_EDGE = "#dedede", "#9a9a9a"
@@ -192,7 +192,7 @@ class Tanks:
         agg["round_share"] = agg.round_share_area if a.weighting == "area" else agg.round_share_plantmean
         u = u.drop(columns=[c for c in agg.columns if c in u.columns]).merge(agg, left_on=key, right_index=True, how="left")
         u[["n_plants", "n_tank"]] = u[["n_plants", "n_tank"]].fillna(0).astype(int)
-        ok = u.n_tank >= a.min_fill
+        ok = enough_plants(u.n_tank, a.min_fill)
         u["_ok"], u["_few"] = ok, (u.n_plants > 0) & ~ok
         u["_unc"] = (u.status == "uncovered") & (u.n_plants == 0)
         u["fill"] = None
@@ -241,7 +241,7 @@ class Tanks:
         G["p_ring"] = comp.get(self.RING, 0) / G.n_cat
         for c in self.OTHERS:
             G[f"p_{int(c)}"] = comp[c] / G.n_cat
-        G = G[G.n_cat >= a.min_glyph].copy()
+        G = G[enough_plants(G.n_cat, a.min_glyph)].copy()
         pl = pw[pw.unit.isin(G.index)].copy()                    # centre of HeiGIT + missing plants, as map 1
         pl["x"], pl["y"] = TR.transform(pl.lon.values, pl.lat.values)
         G["x"], G["y"] = pl.groupby("unit").x.mean(), pl.groupby("unit").y.mean()

@@ -43,3 +43,23 @@ def test_scripts_compile(script):
     import py_compile
 
     py_compile.compile(str(FIG1 / script), doraise=True)
+
+
+
+def test_a_unit_with_4_plants_is_hatched_and_with_5_coloured():
+    sys.path.insert(0, str(FIG1))
+    from fig1_config import enough_plants
+
+    import pandas as pd
+
+    assert not enough_plants(4) and enough_plants(5)
+    assert enough_plants(pd.Series([0, 4, 5, 12])).tolist() == [False, False, True, True]
+
+
+def test_every_threshold_check_goes_through_enough_plants():
+    import re
+
+    for name in ("match/03_plot.py", "match/tanks_panel.py"):
+        text = (FIG1 / name).read_text()
+        assert "enough_plants(" in text
+        assert not re.search(r"\b(n_ref|n_shift|n_tank|n_cat|n)\s*>=\s*a\.min_", text), name

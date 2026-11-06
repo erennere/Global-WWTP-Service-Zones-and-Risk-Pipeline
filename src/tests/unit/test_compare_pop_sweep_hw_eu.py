@@ -23,6 +23,7 @@ def test_parse_pop_output_path_accepts_integer_buffer_token():
     assert parsed["approach"] == "1"
     assert parsed["only_round"] is False
     assert parsed["weight_func"] == "_log_mult"
+    assert parsed["distance_weighting"] == "mult"
 
 
 def test_parse_pop_output_path_accepts_dynamic_k_buffer_token():
@@ -101,3 +102,62 @@ def test_parse_pop_output_path_accepts_size_measure_buffer_token():
         "/tmp/pop_voronoi_layers/v2/lvl8/bfq0_6/log/pop_added_appr_1_v2_lvl8_bfq0_6_log_mult.gpkg"
     )
     assert parsed is not None and parsed["buffer"] == "q0_6"
+
+
+# --- metrics against hand-computed values ------------------------------------
+import numpy as np
+
+from src.sensitivity_analysis_scripts import compare_pop_sweep_hw_eu as cmp
+
+
+def test_identical_predictions_score_perfectly():
+    df = pd.DataFrame({"pred": [10.0, 200.0, 3000.0, 45.0], "ref": [10.0, 200.0, 3000.0, 45.0]})
+    m = cmp.compute_sensitivity_metrics(df, "pred", "ref")
+    assert m["n"] == 4 and m["median_abs_ndi"] == pytest.approx(0) and m["median_alpha"] == pytest.approx(1)
+    assert m["rmse_log_ratio"] == pytest.approx(0, abs=1e-9) and m["spearman_r"] == pytest.approx(1)
+
+
+def test_doubling_every_prediction_gives_alpha_2_and_log_ratio_ln2():
+    df = pd.DataFrame({"pred": [20.0, 400.0, 6000.0], "ref": [10.0, 200.0, 3000.0]})
+    m = cmp.compute_sensitivity_metrics(df, "pred", "ref")
+    assert m["median_alpha"] == pytest.approx(2, rel=1e-3)
+    assert m["rmse_log_ratio"] == pytest.approx(np.log(2), rel=1e-3)
+
+
+@pytest.mark.parametrize("frame", [pd.DataFrame({"x": [1.0]}), pd.DataFrame({"pred": [np.inf], "ref": [np.nan]})])
+def test_unusable_inputs_give_n_0(frame):
+    assert cmp.compute_sensitivity_metrics(frame, "pred", "ref")["n"] == 0
+
+
+def test_zscore_of_a_constant_is_zero():
+    assert cmp._safe_zscore(pd.Series([3.0, 3.0, 3.0])).tolist() == [0.0, 0.0, 0.0]
+    z = cmp._safe_zscore(pd.Series([1.0, 2.0, 3.0]))
+    assert z.mean() == pytest.approx(0) and z.std(ddof=0) == pytest.approx(1)
+
+
+def test_alias_order_uses_the_available_scores_only():
+    summary = pd.DataFrame({"alias": ["A", "A", "B", "C"], "source": ["HW", "EU", "HW", "EU"],
+                            "sensitivity_score": [1.0, 3.0, 2.5, 0.5]})
+    order, table = cmp.build_alias_order(summary, hw_weight=0.5)
+    scores = table.set_index("alias")["joint_score"]
+    assert scores["A"] == pytest.approx(2.0) and scores["B"] == pytest.approx(2.5) and scores["C"] == pytest.approx(0.5)
+    assert order == ["C", "A", "B"]
+    with pytest.raises(ValueError):
+        cmp.build_alias_order(summary, hw_weight=-0.1)
+    with pytest.raises(ValueError):
+        cmp.build_alias_order(summary, hw_weight=0.0, eu_weight=0.0)
+
+
+def test_listing_skips_temp_files_and_duplicate_unweighted_runs(tmp_path):
+    base = tmp_path / "pop_voronoi_layers" / "v2" / "lvl6" / "bfrep"
+    files = [base / "sz" / "pop_added_appr_1_v2_lvl6_bfrep_sz_mult.gpkg",
+             base / "li" / "pop_added_appr_1_v2_lvl6_bfrep_li.gpkg",
+             base / "log" / "pop_added_appr_1_v2_lvl6_bfrep_log.gpkg",   # same run without weighting
+             base / "sz" / "temp_pop_added_appr_1_v2_lvl6_bfrep_sz_mult.gpkg",
+             base / "sz" / "notes.gpkg"]
+    for f in files:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("")
+    records = cmp.make_aliases(cmp.list_pop_output_files(tmp_path))
+    assert len(records) == 2 and [r["alias"] for r in records] == ["F001", "F002"]
+    assert {r["buffer"] for r in records} == {"rep"}
