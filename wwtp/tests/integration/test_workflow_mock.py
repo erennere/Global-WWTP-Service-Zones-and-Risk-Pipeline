@@ -93,3 +93,23 @@ def test_create_rasters_ran_as_shards_and_merged(run):
 def test_a_second_run_has_nothing_to_do(run):
     again = _snakemake(run["work"], "-n")
     assert again.returncode == 0 and "Nothing to be done" in again.stdout + again.stderr
+
+
+def test_fig1_targets_chain_from_the_prepared_inputs(tmp_path):
+    """`snakemake fig1` plans every Figure 1 step from the inputs prepared in match/data and cartogram/data."""
+    data = tmp_path / "data"
+    fig1 = data / "figures" / "fig1"
+    for folder, names in {"match/data": ["heigit_points.csv", "uwwtd_points.csv", "HydroWASTE_v10.csv",
+                                         "ne_50m_admin_0_countries.geojson", "HeiGIT_WWTP_LVL9_BFK0_8_LOG_MULT.gpkg"],
+                          "cartogram/data": ["non_served_points.csv", "heigit_points.csv", "heigit_pop.csv",
+                                             "ne_50m_admin_0_countries.geojson"],
+                          "hydrobasins": ["hybas_lev03_v1c.gpkg"]}.items():
+        (fig1 / folder).mkdir(parents=True, exist_ok=True)
+        for name in names:
+            (fig1 / folder / name).touch()
+    harness.write_config(harness.REPO, data, tmp_path / "config.yaml")
+    plan = _snakemake(tmp_path, "-n", "fig1")
+    assert plan.returncode == 0, plan.stderr[-2000:]
+    jobs = {line.split()[0] for line in plan.stdout.splitlines() if line.startswith("fig1")}
+    assert jobs == {"fig1", "fig1_reconcile", "fig1_aggregate", "fig1_aggregate_basins", "fig1_maps", "fig1_tanks",
+                    "fig1_service", "fig1_cartogram", "fig1_cartogram_figures", "fig1_combined"}

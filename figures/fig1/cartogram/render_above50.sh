@@ -13,9 +13,10 @@ for lev in 3 4; do
   done
 done
 python3 - <<'PY'
+from matplotlib import font_manager
 from PIL import Image, ImageDraw, ImageFont
 import os
-import os; O = os.environ.get("OUT", "figs2/above50"); font = ImageFont.truetype("C:/Windows/Fonts/LiberationSans-Bold.ttf", 30)
+import os; O = os.environ.get("OUT", "figs2/above50"); font = ImageFont.truetype(font_manager.findfont(font_manager.FontProperties(family="DejaVu Sans", weight="bold")), 30)
 rows = []
 for lev in (3, 4):
     for sc in ("linear", "exp", "quantile", "continuous"):

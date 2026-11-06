@@ -18,8 +18,9 @@ for lev in 3 4; do
 done
 OUT=$O python3 - <<'PY'
 import os
+from matplotlib import font_manager
 from PIL import Image, ImageDraw, ImageFont
-O = os.environ["OUT"]; font = ImageFont.truetype("C:/Windows/Fonts/LiberationSans-Bold.ttf", 34)
+O = os.environ["OUT"]; font = ImageFont.truetype(font_manager.findfont(font_manager.FontProperties(family="DejaVu Sans", weight="bold")), 34)
 S = ("linear", "exp", "quantile", "continuous")
 names = ([f"fig1b_pair_hybas{l}" for l in (3, 4)] + [f"fig1b_pair_hybas{l}_{s}" for l in (3, 4) for s in S] +
          [f"fig1b_pair_above50_hybas{l}_{s}" for l in (3, 4) for s in S])

@@ -845,6 +845,10 @@ figure1:
     match_dir: '{data_dir}/figures/fig1/match'
     cartogram_dir: '{data_dir}/figures/fig1/cartogram'
     combined_dir: '{data_dir}/figures/fig1/combined'
+    # HeiGIT plants with their attributes, read by fid (the tanks panel: plant types)
+    heigit_attrs: '{data_dir}/figures/fig1/match/data/HeiGIT_WWTP_LVL9_BFK0_8_LOG_MULT.gpkg'
+    # HydroBASINS v1c: hybas_lev03/04_v1c.gpkg, hybas_lev08/09_v1c_attributes.csv
+    hydrobasins_dir: '{data_dir}/figures/fig1/hydrobasins'
 
 # Snakemake (workflow/Snakefile): where it keeps its logs and stamp files, how
 # many jobs split download_bing_annotate, and the SLURM resources of every
