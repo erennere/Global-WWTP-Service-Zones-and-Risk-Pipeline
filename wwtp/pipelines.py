@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 
 SITE_UID_COLUMN = 'SITE_UID'
+# Keys of create_output_paths(cfg)['voronoi']: the service-area layers one variant can have.
+APPROACHES = ('0', '0_only_round', '1', '1_only_round', '2')
 
 
 def _site_uid(source_id, wkt):

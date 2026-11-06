@@ -38,8 +38,8 @@ def chain(tmp_path_factory):
     for name, args in harness.STAGES:
         if name == "add_pop":
             files = harness._gpkgs(paths["add_pop"]["voronoi_dir"])
-            runs = [harness.run_module(harness.REPO, cfg_path, ["add_pop", "--index", str(i)], logs, f"add_pop_{i}")
-                    for i in range(len(files))]
+            runs = [harness.run_module(harness.REPO, cfg_path, a, logs, f"add_pop_{i}")
+                    for i, a in enumerate(harness.add_pop_runs(harness.REPO, files))]
             status[name] = next((r for r in runs if r["returncode"]), runs[0] if runs else {"returncode": 1, "error": "no input"})
         else:
             status[name] = harness.run_module(harness.REPO, cfg_path, args, logs, name)

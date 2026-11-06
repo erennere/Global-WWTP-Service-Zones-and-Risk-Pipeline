@@ -336,6 +336,7 @@ add_pop:
   include_2014: null
   paths:
     data_dir: null
+    buffers_dir: null  # create_output_paths names the service-area layers from both folders
     voronoi_dir: null
     pop_tif_dir: '{data_dir}/population/unzipped'
     pop_output_dir: '{data_dir}/pop_voronoi_layers/v{version}/lvl{level}/bf{buffer}/{weight_type}'

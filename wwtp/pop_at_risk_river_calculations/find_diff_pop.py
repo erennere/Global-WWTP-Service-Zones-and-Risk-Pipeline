@@ -136,15 +136,9 @@ def parse_bool(value):
     raise ValueError(f"Invalid boolean value: {value}")
 
 def parse_args():
-    """Parse named CLI args for input index and parallel execution mode."""
+    """Parse the parallel-execution flag and the standard config overrides."""
     parser = argparse.ArgumentParser(
-        description="Compute population difference polygons for one input file index."
-    )
-    parser.add_argument(
-        "--index",
-        type=int,
-        default=0,
-        help="0-based file index from filtered pop output files",
+        description="Compute population difference polygons for the population layer of figures.approach."
     )
     parser.add_argument(
         "--is-parallel",
@@ -165,7 +159,6 @@ def main():
 
     watershed_filepath = cfg['paths']['watershed']
     max_workers = cfg['max_workers']
-    pop_output_dir = cfg['paths']['pop_output_dir']
     tif_dir = cfg['paths']['pop_tif_dir']
     pop_dif_output_dir = cfg['paths']['pop_dif_output_dir']
 
@@ -177,30 +170,10 @@ def main():
             f"expected one of {sorted(voronoi_map)}"
         )
 
-    configured_input_path = os.path.abspath(voronoi_map[approach])
-    configured_input_name = os.path.basename(configured_input_path)
-
-    filenames = sorted([
-        x for x in os.listdir(pop_output_dir) if str(x).lower().endswith('.gpkg')
-    ])
-    if not filenames:
-        raise FileNotFoundError(f"No matching input .gpkg files found in {pop_output_dir}")
-    if os.path.exists(configured_input_path):
-        filename = configured_input_name
-        pop_input_path = configured_input_path
-        logger.info("Selected configured input file %s for approach %s", filename, approach)
-    else:
-        if args.index < 0 or args.index >= len(filenames):
-            raise IndexError(f"index must be in [0, {len(filenames) - 1}], got {args.index}")
-        filename = filenames[args.index]
-        pop_input_path = os.path.join(pop_output_dir, filename)
-        logger.warning(
-            "Configured input file not found: %s. Falling back to indexed selection %s (%s/%s)",
-            configured_input_path,
-            filename,
-            args.index,
-            len(filenames),
-        )
+    pop_input_path = os.path.abspath(voronoi_map[approach])
+    if not os.path.exists(pop_input_path):
+        raise FileNotFoundError(f"Population layer of approach {approach} not found (run add_pop first): {pop_input_path}")
+    filename = os.path.basename(pop_input_path)
 
     pop_gdf = gpd.read_file(pop_input_path)
     watershed_gdf = gpd.read_file(watershed_filepath)

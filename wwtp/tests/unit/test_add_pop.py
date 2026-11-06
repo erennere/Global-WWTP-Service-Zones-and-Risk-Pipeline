@@ -292,230 +292,8 @@ def test_intersect_all_files_rejects_non_positive_workers(monkeypatch):
         add_pop.intersect_all_files(gdf, tif_dir="unused", max_workers=0, all_years=True, country_col="ISO_2")
 
 
-def test_orchestrate_intersections_rejects_negative_index(tmp_path):
-    data_dir = tmp_path / "voronoi"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    (data_dir / "sample.gpkg").write_text("stub", encoding="utf-8")
-
-    with pytest.raises(IndexError, match="out of range"):
-        add_pop.orchestrate_intersections(str(data_dir), "unused", str(output_dir), index=-1)
-
-
-def test_orchestrate_intersections_rejects_index_past_available_files(tmp_path):
-    data_dir = tmp_path / "voronoi"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    (data_dir / "sample.gpkg").write_text("stub", encoding="utf-8")
-
-    with pytest.raises(IndexError, match="out of range"):
-        add_pop.orchestrate_intersections(str(data_dir), "unused", str(output_dir), index=1)
-
-
-def test_orchestrate_intersections_reads_selected_file_and_writes_output(monkeypatch, tmp_path):
-    data_dir = tmp_path / "voronoi"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    (data_dir / "b_file.gpkg").write_text("stub", encoding="utf-8")
-    (data_dir / "a_file.gpkg").write_text("stub", encoding="utf-8")
-    rng = np.random.default_rng(31)
-    captured = {}
-
-    source_gdf = gpd.GeoDataFrame(
-        {
-            "ISO_2": ["DE", "FR"],
-            "geometry": [Point(*rng.random(2)), Point(*(rng.random(2) + 1))],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-
-    def fake_read_file(path):
-        captured["read_path"] = path
-        return source_gdf.copy()
-
-    def fake_intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col="ISO_2", years=None):
-        captured["intersect"] = {
-            "tif_dir": tif_dir,
-            "max_workers": max_workers,
-            "country_col": country_col,
-            "rows": len(gdf),
-        }
-        return gdf.assign(seed_value=int(rng.integers(1, 1000)))
-
-    monkeypatch.setattr(add_pop.gpd, "read_file", fake_read_file)
-    monkeypatch.setattr(add_pop, "intersect_all_files", fake_intersect_all_files)
-    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
-
-    original_to_file = gpd.GeoDataFrame.to_file
-
-    def fake_to_file(self, path, driver=None, index=None, **kwargs):
-        captured["write"] = {"path": path, "driver": driver, "index": index, "rows": len(self)}
-
-    try:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
-        add_pop.orchestrate_intersections(str(data_dir), "tifs", str(output_dir), index=1, max_workers=3, country_col="ISO_2")
-    finally:
-        monkeypatch.setattr(gpd.GeoDataFrame, "to_file", original_to_file)
-
-    expected_input = str(data_dir / "b_file.gpkg")
-    expected_output = str(output_dir / "pop_added_b_file.gpkg")
-    assert captured["read_path"] == expected_input
-    assert captured["intersect"] == {"tif_dir": "tifs", "max_workers": 3, "country_col": "ISO_2", "rows": 2}
-    assert captured["ensured"] == expected_output
-    assert captured["write"] == {"path": expected_output, "driver": "GPKG", "index": False, "rows": 2}
-
-
-def test_main_passes_configured_paths_and_avoids_false_existing_output_warning(monkeypatch, mock_cfg, caplog, tmp_path):
-    cfg = mock_cfg
-    cfg["paths"]["voronoi_dir"] = str(tmp_path / "voronoi")
-    cfg["paths"]["pop_tif_dir"] = str(tmp_path / "tifs")
-    cfg["paths"]["pop_output_dir"] = str(tmp_path / "new_output")
-    cfg["country_output_column"] = "ISO_2"
-    cfg["add_pop_max_workers"] = 5
-    cfg["overwrite_existing"] = False
-    captured = {}
-    state = {"output_exists": False}
-
-    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--index", "2"])
-    monkeypatch.setattr(add_pop, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(add_pop.os, "chdir", lambda path: None)
-
-    def fake_makedirs(path, exist_ok=False):
-        captured.setdefault("makedirs", (path, exist_ok))
-        if path == cfg["paths"]["pop_output_dir"]:
-            state["output_exists"] = True
-
-    monkeypatch.setattr(add_pop.os, "makedirs", fake_makedirs)
-
-    original_exists = add_pop.os.path.exists
-    monkeypatch.setattr(
-        add_pop.os.path,
-        "exists",
-        lambda path: state["output_exists"] if path == cfg["paths"]["pop_output_dir"] else original_exists(path),
-    )
-    monkeypatch.setattr(
-        add_pop,
-        "orchestrate_intersections",
-        lambda data_dir, tif_dir, output_dir, index, max_workers, country_col=None, overwrite=True, years=None: captured.update(
-            {
-                "call": {
-                    "data_dir": data_dir,
-                    "tif_dir": tif_dir,
-                    "output_dir": output_dir,
-                    "index": index,
-                    "max_workers": max_workers,
-                    "country_col": country_col,
-                    "overwrite": overwrite,
-                }
-            }
-        ),
-    )
-
-    with caplog.at_level(logging.WARNING):
-        add_pop.main()
-
-    assert captured["makedirs"] == (cfg["paths"]["pop_output_dir"], True)
-    assert captured["call"] == {
-        "data_dir": cfg["paths"]["voronoi_dir"],
-        "tif_dir": cfg["paths"]["pop_tif_dir"],
-        "output_dir": cfg["paths"]["pop_output_dir"],
-        "index": 2,
-        "max_workers": 5,
-        "country_col": "ISO_2",
-        "overwrite": False,
-    }
-
-
-def test_main_exits_on_non_integer_index(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--index", "not-an-int"])
-
-    with pytest.raises(SystemExit, match="2"):
-        add_pop.main()
-
-
-def test_main_exits_when_index_argument_is_missing(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["add_pop.py"])
-
-    with pytest.raises(SystemExit, match="2"):
-        add_pop.main()
-
-
-def test_main_exits_when_required_path_key_missing(monkeypatch, mock_cfg):
-    cfg = mock_cfg
-    cfg["paths"].pop("voronoi_dir", None)
-
-    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--index", "0"])
-    monkeypatch.setattr(add_pop, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(add_pop.os, "chdir", lambda path: None)
-
-    with pytest.raises(KeyError, match="voronoi_dir"):
-        add_pop.main()
-
-
-def test_main_exits_when_paths_section_is_empty(monkeypatch, mock_cfg):
-    cfg = mock_cfg
-    cfg["paths"] = {}
-
-    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--index", "0"])
-    monkeypatch.setattr(add_pop, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(add_pop.os, "chdir", lambda path: None)
-
-    with pytest.raises(KeyError, match="voronoi_dir"):
-        add_pop.main()
-
-
-def test_orchestrate_intersections_skips_when_output_exists_and_overwrite_disabled(monkeypatch, caplog, tmp_path):
-    data_dir = tmp_path / "voronoi"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    output_dir.mkdir()
-    (data_dir / "b_file.gpkg").write_text("stub", encoding="utf-8")
-    (output_dir / "pop_added_b_file.gpkg").write_text("stub", encoding="utf-8")
-    captured = {}
-
-    monkeypatch.setattr(add_pop, "intersect_all_files", lambda *a, **k: captured.setdefault("processed", True))
-
-    with caplog.at_level(logging.INFO):
-        add_pop.orchestrate_intersections(str(data_dir), "tifs", str(output_dir), index=0, overwrite=False)
-
-    assert "processed" not in captured
-    assert "already exists" in caplog.text and "overwrite is False" in caplog.text
-
-
-def test_orchestrate_intersections_reprocesses_when_overwrite_enabled(monkeypatch, tmp_path):
-    data_dir = tmp_path / "voronoi"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    output_dir.mkdir()
-    (data_dir / "b_file.gpkg").write_text("stub", encoding="utf-8")
-    (output_dir / "pop_added_b_file.gpkg").write_text("stale", encoding="utf-8")
-    captured = {}
-
-    source_gdf = gpd.GeoDataFrame(
-        {"ISO_2": ["DE"], "geometry": [Point(0, 0)]},
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    monkeypatch.setattr(add_pop.gpd, "read_file", lambda path: source_gdf.copy())
-    def _fake_intersect(gdf, *a, **k):
-        captured["processed"] = True
-        return gdf
-
-    monkeypatch.setattr(add_pop, "intersect_all_files", _fake_intersect)
-    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
-    monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, *a, **k: None)
-
-    add_pop.orchestrate_intersections(str(data_dir), "tifs", str(output_dir), index=0, overwrite=True)
-
-    assert captured.get("processed") is True
-
-
 def test_main_exits_when_config_overrides_are_invalid(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--index", "0"])
+    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--approach", "1"])
     monkeypatch.setattr(add_pop, "parse_config_overrides", lambda args=None: (_ for _ in ()).throw(ValueError("invalid override")))
 
     with pytest.raises(SystemExit, match="1"):
@@ -643,44 +421,6 @@ def test_intersect_all_files_raises_on_future_result_errors(monkeypatch):
         add_pop.intersect_all_files(gdf, tif_dir="unused", max_workers=1, all_years=True, country_col="ISO_2")
 
 
-def test_orchestrate_intersections_reraises_read_errors(monkeypatch, tmp_path):
-    data_dir = tmp_path / "voronoi"
-    data_dir.mkdir()
-    (data_dir / "sample.gpkg").write_text("stub", encoding="utf-8")
-
-    monkeypatch.setattr(add_pop.gpd, "read_file", lambda path: (_ for _ in ()).throw(RuntimeError("broken layer")))
-
-    with pytest.raises(RuntimeError, match="broken layer"):
-        add_pop.orchestrate_intersections(str(data_dir), "unused", str(tmp_path / "output"), index=0)
-
-
-def test_main_exits_when_orchestration_fails(monkeypatch, mock_cfg, tmp_path):
-    cfg = mock_cfg
-    cfg["paths"]["voronoi_dir"] = str(tmp_path / "voronoi")
-    cfg["paths"]["pop_tif_dir"] = str(tmp_path / "tifs")
-    cfg["paths"]["pop_output_dir"] = str(tmp_path / "output")
-    cfg["country_output_column"] = "ISO_2"
-    cfg["add_pop_max_workers"] = 2
-
-    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--index", "0"])
-    monkeypatch.setattr(add_pop, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(add_pop.os, "chdir", lambda path: None)
-    monkeypatch.setattr(add_pop.os.path, "exists", lambda path: False)
-    monkeypatch.setattr(add_pop.os, "makedirs", lambda path, exist_ok=False: None)
-    monkeypatch.setattr(
-        add_pop,
-        "orchestrate_intersections",
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("orchestration failed")),
-    )
-
-    with pytest.raises(SystemExit, match="1"):
-        add_pop.main()
-
-
-
-
-
 def test_intersect_single_file_repairs_invalid_polygons_and_leaves_null_geometry_unmeasured(monkeypatch):
     """R7: an invalid polygon used to be dropped and reported as 0 people."""
     bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)])  # self-intersecting
@@ -729,3 +469,74 @@ def test_rasters_of_unconfigured_years_are_skipped(tmp_path):
     gdf = gpd.GeoDataFrame({"ISO_2": ["XX"]}, geometry=[box(8.0, 49.98, 8.02, 50.0)], crs=4326)
     out = add_pop.intersect_single_file(gdf, paths, years={2020})
     assert "2020_zonal_sum" in out.columns and "2014_zonal_sum" not in out.columns
+
+
+def _voronoi_layer(path):
+    gpd.GeoDataFrame({"ISO_2": ["DE", "FR"]}, geometry=[Point(0, 0), Point(1, 1)], crs=4326).to_file(path)
+    return str(path)
+
+
+def test_orchestrate_intersections_writes_the_enriched_layer(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col="ISO_2", years=None):
+        captured.update(tif_dir=tif_dir, max_workers=max_workers, country_col=country_col, years=years)
+        return gdf.assign(pop=[1.0, 2.0])
+
+    monkeypatch.setattr(add_pop, "intersect_all_files", fake_intersect_all_files)
+    out = tmp_path / "pop" / "pop_added_appr_1.gpkg"
+    add_pop.orchestrate_intersections(_voronoi_layer(tmp_path / "appr_1.gpkg"), "tifs", str(out), max_workers=3,
+                                      years={2024})
+    assert captured == {"tif_dir": "tifs", "max_workers": 3, "country_col": "ISO_2", "years": {2024}}
+    assert gpd.read_file(out)["pop"].tolist() == [1.0, 2.0]
+
+
+def test_orchestrate_intersections_keeps_existing_output_without_overwrite(monkeypatch, tmp_path, caplog):
+    out = tmp_path / "pop_added.gpkg"
+    out.write_text("kept")
+    monkeypatch.setattr(add_pop, "intersect_all_files", lambda *a, **k: pytest.fail("must not run"))
+    with caplog.at_level(logging.INFO):
+        add_pop.orchestrate_intersections("missing.gpkg", "tifs", str(out), overwrite=False)
+    assert out.read_text() == "kept" and "overwrite is False" in caplog.text
+
+
+def test_orchestrate_intersections_needs_the_service_areas(tmp_path):
+    with pytest.raises(FileNotFoundError, match="run create_voronoi first"):
+        add_pop.orchestrate_intersections(str(tmp_path / "appr_1.gpkg"), "tifs", str(tmp_path / "out.gpkg"))
+
+
+def test_main_reads_and_writes_the_paths_of_the_requested_approach(monkeypatch, tmp_path):
+    cfg = {"version": "2", "level": "6", "buffer_path_token": "rep", "weight_func": "mult",
+           "weight_func_suffix": "_mult", "weight_type": "sz", "add_pop_max_workers": 4, "country_output_column": "ISO_2",
+           "overwrite_existing": True, "start_year": 2024, "end_year": 2024, "include_2014": False,
+           "paths": {"buffers_dir": str(tmp_path / "b"), "voronoi_dir": str(tmp_path / "v"),
+                     "pop_output_dir": str(tmp_path / "p"), "pop_tif_dir": "tifs"}}
+    captured = {}
+    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--approach", "0"])
+    monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
+    monkeypatch.setattr(add_pop, "orchestrate_intersections", lambda *a, **k: captured.update(args=a, kwargs=k))
+    add_pop.main()
+    voronoi_file, tif_dir, output_path, workers = captured["args"]
+    assert voronoi_file.endswith("v/appr_0_v2_lvl6_bfrep_sz_mult.gpkg")
+    assert output_path.endswith("p/pop_added_appr_0_v2_lvl6_bfrep_sz_mult.gpkg")
+    assert (tif_dir, workers, captured["kwargs"]["years"]) == ("tifs", 4, {2024})
+
+
+@pytest.mark.parametrize("argv", [["add_pop.py"], ["add_pop.py", "--approach", "7"], ["add_pop.py", "--index", "0"]])
+def test_main_requires_a_known_approach(monkeypatch, argv):
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit, match="2"):
+        add_pop.main()
+
+
+def test_main_exits_when_orchestration_fails(monkeypatch, tmp_path):
+    cfg = {"version": "2", "level": "6", "buffer_path_token": "9000", "weight_func": "", "weight_func_suffix": "",
+           "weight_type": "li", "add_pop_max_workers": 1, "country_output_column": "ISO_2", "overwrite_existing": True,
+           "start_year": 2024, "end_year": 2024, "include_2014": False,
+           "paths": {"buffers_dir": "b", "voronoi_dir": "v", "pop_output_dir": "p", "pop_tif_dir": "t"}}
+    monkeypatch.setattr(sys, "argv", ["add_pop.py", "--approach", "1"])
+    monkeypatch.setattr(add_pop, "load_config", lambda **overrides: cfg)
+    monkeypatch.setattr(add_pop, "orchestrate_intersections", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    with pytest.raises(SystemExit, match="1"):
+        add_pop.main()
+

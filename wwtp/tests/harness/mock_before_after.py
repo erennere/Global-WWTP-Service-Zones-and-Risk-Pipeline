@@ -46,7 +46,7 @@ STAGES = [
     ("assign_rivers_to_basin", ["pop_at_risk_river_calculations.assign_rivers_to_basin", "--max-workers", "2"]),
     ("find_intersection_river", ["pop_at_risk_river_calculations.find_intersection_river", "--max-workers", "2"]),
     ("impact_polygons_pop", ["pop_at_risk_river_calculations.impact_polygons_pop", "--max-workers", "2"]),
-    ("find_diff_pop", ["pop_at_risk_river_calculations.find_diff_pop", "--index", "0", "--is-parallel", "true"]),
+    ("find_diff_pop", ["pop_at_risk_river_calculations.find_diff_pop", "--is-parallel", "true"]),
     ("find_pop_in_danger_pop", ["pop_at_risk_river_calculations.find_pop_in_danger_pop"]),
     ("verification_script", ["pop_validation_scripts.verification_script"]),
     ("hw_comparison", ["pop_validation_scripts.hw_comparison"]),
@@ -65,6 +65,24 @@ PATH_SCRIPTS = ["create_voronoi", "add_pop", "create_rasters", "find_unserved_po
 def package_of(code_root):
     """The checkout's package folder: ``wwtp``, or ``src`` before the rename."""
     return "wwtp" if (code_root / "wwtp" / "__init__.py").exists() else "src"
+
+
+def selects_by_approach(code_root):
+    """add_pop takes ``--approach`` (and find_diff_pop no ``--index``) from Phase 4 on; older code picks by file index."""
+    return "--approach" in (code_root / package_of(code_root) / "add_pop.py").read_text()
+
+
+def add_pop_runs(code_root, voronoi_files):
+    """The add_pop argument lists for every Voronoi layer of one variant."""
+    if selects_by_approach(code_root):
+        return [["add_pop", "--approach", re.match(r"appr_(.+?)_v", os.path.basename(f)).group(1)] for f in voronoi_files]
+    return [["add_pop", "--index", str(i)] for i in range(len(voronoi_files))]
+
+
+def stage_args(code_root, args):
+    if not selects_by_approach(code_root) and args[0].endswith("find_diff_pop"):
+        return [args[0], "--index", "0", *args[1:]]
+    return args
 
 
 def checkout(ref, dest):
@@ -317,14 +335,14 @@ def run_version(label, ref, workdir, seed, settings=None):
             hashes["before"] = file_hash(appr1[0]) if appr1 else None
         if name == "add_pop":
             files = _gpkgs(paths["add_pop"].get("voronoi_dir"))
-            results = [run_module(code_root, cfg_path, ["add_pop", "--index", str(i)], log_dir, f"add_pop_{i}")
-                       for i in range(len(files))]
+            results = [run_module(code_root, cfg_path, a, log_dir, f"add_pop_{i}")
+                       for i, a in enumerate(add_pop_runs(code_root, files))]
             bad = [r for r in results if r["returncode"]]
             status[name] = {"returncode": bad[0]["returncode"] if bad else 0,
                             "seconds": round(sum(r["seconds"] for r in results), 1),
                             "error": bad[0]["error"] if bad else "", "files": len(files)}
         else:
-            status[name] = run_module(code_root, cfg_path, args, log_dir, name)
+            status[name] = run_module(code_root, cfg_path, stage_args(code_root, args), log_dir, name)
         print(f"[{label}] {name}: rc={status[name]['returncode']} {status[name]['seconds']}s {status[name]['error'][:120]}",
               flush=True)
     appr1 = [f for f in _gpkgs(main_voronoi) if os.path.basename(f).startswith("appr_1_v")]

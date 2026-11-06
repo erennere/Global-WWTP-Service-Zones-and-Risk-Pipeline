@@ -29,6 +29,7 @@ from shapely.ops import unary_union
 from shapely.validation import explain_validity
 from .starter import load_config, parse_config_overrides, add_standard_override_arguments
 from . import provenance
+from .pipelines import APPROACHES, create_output_paths, create_pop_output_paths
 from .utils import atomic_output, configure_logging, get_iso_codes
 from .geo_utils import repair_geometry
 from exactextract import exact_extract
@@ -454,115 +455,70 @@ def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_co
     data = pd.concat(parts, ignore_index=True)
     return gpd.GeoDataFrame(data, geometry='geometry', crs=gdf.crs)
     
-def orchestrate_intersections(data_dir, tif_dir, output_dir, index, max_workers=16, country_col='ISO_2', overwrite=True,
+def orchestrate_intersections(voronoi_file, tif_dir, output_path, max_workers=16, country_col='ISO_2', overwrite=True,
                               years=None):
-    """Run the population-intersection workflow for one Voronoi file.
+    """Add population columns to one Voronoi layer and write it to ``output_path``.
 
     Parameters
     ----------
-    data_dir : str
-        Directory containing input Voronoi GeoPackage files.
+    voronoi_file : str
+        Service-area GeoPackage of one approach (``create_output_paths(cfg)['voronoi'][approach]``).
     tif_dir : str
         Root directory containing country population rasters.
-    output_dir : str
-        Directory where population-enriched GeoPackages are written.
-    index : int
-        Zero-based index of the Voronoi file to process.
+    output_path : str
+        Population-enriched GeoPackage (``create_pop_output_paths(cfg)['voronoi'][approach]``).
     max_workers : int, default=16
         Maximum number of worker processes for zonal statistics.
     country_col : str, default='ISO_2'
         Column on the loaded GeoDataFrame containing ISO alpha-2 country codes.
     overwrite : bool, default=True
-        Whether to redo this file's output if it already exists.
-
-    Raises
-    ------
-    IndexError
-        If ``index`` is outside the available file range.
-    Exception
-        If reading, processing, or writing the selected file fails.
+        Whether to redo the output if it already exists.
+    years : set[int] | None
+        Raster years to read (``population_years(cfg)``).
     """
-    voronoi_files = sorted(
-        [
-            os.path.join(data_dir, f)
-            for f in os.listdir(data_dir)
-            if f.endswith('.gpkg') and not f.startswith('temp_')
-        ]
-    )
-
-    if index < 0 or index >= len(voronoi_files):
-        raise IndexError(f"File index {index} out of range (found {len(voronoi_files)} files)")
-
-    voronoi_file = voronoi_files[index]
-    output_path = os.path.join(output_dir, f'pop_added_{os.path.basename(voronoi_file)}')
     if os.path.exists(output_path) and not overwrite:
         logger.info(f"Output already exists at {output_path} and overwrite is False. Skipping.")
         return
-    logger.info(f"Processing file {index+1}/{len(voronoi_files)}: {os.path.basename(voronoi_file)}")
+    if not os.path.exists(voronoi_file):
+        raise FileNotFoundError(f"Service areas not found (run create_voronoi first): {voronoi_file}")
+    logger.info(f"Processing {os.path.basename(voronoi_file)}")
 
-    try:
-        gdf = gpd.read_file(voronoi_file)
-        logger.info(f"Loaded Voronoi layer with {len(gdf)} features")
-        
-        gdf = intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col=country_col, years=years)
+    gdf = gpd.read_file(voronoi_file)
+    logger.info(f"Loaded Voronoi layer with {len(gdf)} features")
+    gdf = intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col=country_col, years=years)
+    with atomic_output(output_path) as tmp_path:
+        gdf.to_file(tmp_path, driver='GPKG', index=False)
+    logger.info(f"Successfully saved population-enhanced file to {output_path}")
 
-        with atomic_output(output_path) as tmp_path:
-            gdf.to_file(tmp_path, driver='GPKG', index=False)
-        logger.info(f"Successfully saved population-enhanced file to {output_path}")
-    except Exception as err:
-        logger.error(f"Failed to process {voronoi_file}: {err}", exc_info=True)
-        raise
 
 def main():
-    """Validate CLI args, load config, and run population enrichment.
-
-    Notes
-    -----
-    The ``--index`` argument selects the Voronoi file index.
-    """
+    """Add population to the service areas of one approach (``--approach 1``) of the configured variant."""
     parser = argparse.ArgumentParser(
         description="Intersect Voronoi polygons with population rasters and export enriched layers."
     )
-    parser.add_argument(
-        "--index",
-        type=int,
-        required=True,
-        help="0-based index of the Voronoi input file to process",
-    )
+    parser.add_argument("--approach", required=True, choices=APPROACHES,
+                        help="Service-area approach whose layer gets population columns")
     add_standard_override_arguments(parser)
     args = parser.parse_args()
-
-    index = int(args.index)
 
     try:
         overrides = parse_config_overrides(args=args)
     except ValueError as exc:
         logger.error(str(exc))
         sys.exit(1)
-    
-    # Switch to the package directory so the relative config path resolves correctly.
+
     cfg = load_config(script_name="add_pop", **overrides)
     provenance.write_run_manifest(cfg, "add_pop")
-    
-    paths = cfg['paths']
-    max_workers = cfg['add_pop_max_workers']
-
-    voronoi_dir = paths['voronoi_dir']
-    pop_tif_dir = paths['pop_tif_dir']
-    pop_output_dir = paths['pop_output_dir']
-    
-    os.makedirs(pop_output_dir, exist_ok=True)
-
-    logger.info(f"Configuration loaded: voronoi_dir={voronoi_dir}, "
-                f"pop_tif_dir={pop_tif_dir}, max_workers={max_workers}")
-
+    voronoi_file = create_output_paths(cfg)['voronoi'][args.approach]
+    output_path = create_pop_output_paths(cfg)['voronoi'][args.approach]
+    logger.info(f"Configuration loaded: input={voronoi_file}, pop_tif_dir={cfg['paths']['pop_tif_dir']}, "
+                f"max_workers={cfg['add_pop_max_workers']}")
     try:
         orchestrate_intersections(
-            voronoi_dir,
-            pop_tif_dir,
-            pop_output_dir,
-            index,
-            max_workers,
+            voronoi_file,
+            cfg['paths']['pop_tif_dir'],
+            output_path,
+            cfg['add_pop_max_workers'],
             country_col=cfg['country_output_column'],
             overwrite=cfg['overwrite_existing'],
             years=population_years(cfg),
@@ -571,6 +527,7 @@ def main():
     except Exception as err:
         logger.error(f"Population data integration failed: {err}", exc_info=True)
         sys.exit(1)
+
 
 def population_years(cfg):
     """Raster years add_pop reads: the years download_pop fetches.

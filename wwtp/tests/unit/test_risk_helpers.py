@@ -694,14 +694,12 @@ def test_parse_bool_rejects_invalid_value():
         find_diff_pop.parse_bool("not-bool")
 
 
-def test_parse_args_parses_index_parallel_flag_and_optional_overrides(monkeypatch):
+def test_parse_args_parses_parallel_flag_and_optional_overrides(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "find_diff_pop.py",
-            "--index",
-            "2",
             "--is-parallel",
             "false",
             "--level",
@@ -723,7 +721,7 @@ def test_parse_args_parses_index_parallel_flag_and_optional_overrides(monkeypatc
 
     args = find_diff_pop.parse_args()
 
-    assert args.index == 2
+    assert not hasattr(args, "index")
     assert args.is_parallel is False
     assert args.level == "lvl"
     assert args.version == "v2"
@@ -734,7 +732,7 @@ def test_parse_args_parses_index_parallel_flag_and_optional_overrides(monkeypatc
     assert args.size_measure == "footprint"
 
 
-def test_find_diff_pop_main_selects_sorted_input_and_writes_output(
+def test_find_diff_pop_main_reads_the_configured_approach_and_writes_output(
     mock_cfg,
     monkeypatch,
     tiny_watershed_gdf,
@@ -764,17 +762,17 @@ def test_find_diff_pop_main_selects_sorted_input_and_writes_output(
     monkeypatch.setattr(
         find_diff_pop,
         "parse_args",
-        lambda: SimpleNamespace(index=1, is_parallel=False),
+        lambda: SimpleNamespace(is_parallel=False),
     )
     monkeypatch.setattr(find_diff_pop.os, "chdir", lambda path: None)
     monkeypatch.setattr(find_diff_pop, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_diff_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_diff_pop.os, "listdir", lambda path: ["z_input.gpkg", "a_input.gpkg"])
-    monkeypatch.setattr(find_diff_pop.os.path, "exists", lambda path: False)
+    monkeypatch.setattr(find_diff_pop, "create_pop_output_paths", lambda c: {"voronoi": {"1": "/pop_outputs/z_input.gpkg"}})
+    monkeypatch.setattr(find_diff_pop.os.path, "exists", lambda path: path == "/pop_outputs/z_input.gpkg")
     monkeypatch.setattr(find_diff_pop.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok)))
 
     def fake_read_file(path):
-        if path == os.path.join(cfg["paths"]["pop_output_dir"], "z_input.gpkg"):
+        if path == "/pop_outputs/z_input.gpkg":
             return pop_gdf.copy()
         if path == cfg["paths"]["watershed"]:
             return tiny_watershed_gdf.copy()
@@ -847,7 +845,7 @@ def test_find_diff_pop_main_selects_sorted_input_and_writes_output(
     }
 
 
-def test_find_diff_pop_main_raises_when_no_input_files_exist(mock_cfg, monkeypatch):
+def test_find_diff_pop_main_raises_when_the_population_layer_is_missing(mock_cfg, monkeypatch):
     cfg = mock_cfg
     cfg["paths"]["watershed"] = "watersheds.gpkg"
     cfg["paths"]["pop_output_dir"] = "./pop_outputs"
@@ -855,47 +853,12 @@ def test_find_diff_pop_main_raises_when_no_input_files_exist(mock_cfg, monkeypat
     cfg["paths"]["pop_dif_output_dir"] = "./diff_outputs"
     cfg["figures"] = {"approach": 1}
 
-    monkeypatch.setattr(find_diff_pop, "parse_args", lambda: SimpleNamespace(index=0, is_parallel=True))
+    monkeypatch.setattr(find_diff_pop, "parse_args", lambda: SimpleNamespace(is_parallel=True))
     monkeypatch.setattr(find_diff_pop.os, "chdir", lambda path: None)
     monkeypatch.setattr(find_diff_pop, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_diff_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_diff_pop.os, "listdir", lambda path: [])
 
-    with pytest.raises(FileNotFoundError, match="No matching input .gpkg files found"):
+    with pytest.raises(FileNotFoundError, match="run add_pop first"):
         find_diff_pop.main()
 
 
-def test_find_diff_pop_main_ignores_non_gpkg_files(mock_cfg, monkeypatch):
-    cfg = mock_cfg
-    cfg["paths"]["watershed"] = "watersheds.gpkg"
-    cfg["paths"]["pop_output_dir"] = "./pop_outputs"
-    cfg["paths"]["pop_tif_dir"] = "./tifs"
-    cfg["paths"]["pop_dif_output_dir"] = "./diff_outputs"
-    cfg["figures"] = {"approach": 1}
-
-    monkeypatch.setattr(find_diff_pop, "parse_args", lambda: SimpleNamespace(index=0, is_parallel=True))
-    monkeypatch.setattr(find_diff_pop.os, "chdir", lambda path: None)
-    monkeypatch.setattr(find_diff_pop, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(find_diff_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_diff_pop.os, "listdir", lambda path: ["notes.txt", "result.parquet"])
-
-    with pytest.raises(FileNotFoundError, match="No matching input .gpkg files found"):
-        find_diff_pop.main()
-
-
-def test_find_diff_pop_main_raises_when_index_is_out_of_range(mock_cfg, monkeypatch):
-    cfg = mock_cfg
-    cfg["paths"]["watershed"] = "watersheds.gpkg"
-    cfg["paths"]["pop_output_dir"] = "./pop_outputs"
-    cfg["paths"]["pop_tif_dir"] = "./tifs"
-    cfg["paths"]["pop_dif_output_dir"] = "./diff_outputs"
-    cfg["figures"] = {"approach": 1}
-
-    monkeypatch.setattr(find_diff_pop, "parse_args", lambda: SimpleNamespace(index=3, is_parallel=True))
-    monkeypatch.setattr(find_diff_pop.os, "chdir", lambda path: None)
-    monkeypatch.setattr(find_diff_pop, "parse_config_overrides", lambda args=None: {})
-    monkeypatch.setattr(find_diff_pop, "load_config", lambda **overrides: cfg)
-    monkeypatch.setattr(find_diff_pop.os, "listdir", lambda path: ["only_input.gpkg"])
-
-    with pytest.raises(IndexError, match=r"index must be in \[0, 0\], got 3"):
-        find_diff_pop.main()
