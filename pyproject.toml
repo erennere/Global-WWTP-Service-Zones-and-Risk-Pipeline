@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "global-wwtp-service-zones-and-risk-pipeline"
+version = "0.1.0"
+description = "WWTP service-area, population, and downstream-risk analysis pipeline"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "PyYAML",
+  "numpy",
+  "pandas",
+  "geopandas",
+  "shapely",
+  "pyproj",
+  "rasterio",
+  "exactextract",
+  "scipy",
+  "scikit-image",
+  "opencv-python",
+  "networkx",
+  "duckdb",
+  "pyarrow",
+  "tqdm",
+  "requests",
+  "pycountry",
+  "matplotlib",
+  "seaborn",
+  "Pillow",
+  "cartopy",
+  "folium",
+  "branca",
+  "mercantile",
+  "mapbox-vector-tile",
+  "hdx-python-api",
+]
+
+[project.optional-dependencies]
+calibration = [
+  "pyreadr",
+]
+test = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "pytest-mock>=3.14",
+  "hypothesis>=6",
+]
+
+[tool.setuptools]
+packages = [
+  "wwtp",
+  "wwtp.annotation_scripts",
+  "wwtp.calibration",
+  "wwtp.data_merge",
+  "wwtp.figures_scripts",
+  "wwtp.industrial_analysis",
+  "wwtp.pop_at_risk_river_calculations",
+  "wwtp.pop_validation_scripts",
+  "wwtp.sensitivity_analysis_scripts",
+  "wwtp.service_areas",
+]
+
+[tool.setuptools.package-data]
+wwtp = ["config.yaml", "config.cluster.example.yaml", "lib/*.sh"]
+"wwtp.annotation_scripts" = ["assets/*.ttf"]
+"wwtp.figures_scripts" = ["*.html"]

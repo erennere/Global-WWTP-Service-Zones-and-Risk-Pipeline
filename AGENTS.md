@@ -8,32 +8,32 @@ Purpose: make coding agents immediately productive in this repository while enfo
 
 ## Project Orientation
 - Root overview and canonical workflow: [README.md](README.md)
-- Package-level technical index: [src/README.md](src/README.md)
-- Runtime configuration source of truth: [src/config.yaml](src/config.yaml)
-- Config resolver/orchestration entry point: [src/starter.py](src/starter.py)
-- Shared path/helper resolver utilities: [src/pipelines.py](src/pipelines.py)
-- Tests root: [src/tests](src/tests)
+- Package-level technical index: [wwtp/README.md](wwtp/README.md)
+- Runtime configuration source of truth: [wwtp/config.yaml](wwtp/config.yaml)
+- Config resolver/orchestration entry point: [wwtp/starter.py](wwtp/starter.py)
+- Shared path/helper resolver utilities: [wwtp/pipelines.py](wwtp/pipelines.py)
+- Tests root: [wwtp/tests](wwtp/tests)
 
 ## Environment And Commands
 - Create env and editable install: see [README.md](README.md)
 - Test config: [pytest.ini](pytest.ini)
-- Package metadata/dependencies: [src/pyproject.toml](src/pyproject.toml)
+- Package metadata/dependencies: [pyproject.toml](pyproject.toml)
 
 Use these commands from repository root:
-- `python -m pip install -e ./src`
-- `python -m pip install -e "./src[test]"`
+- `python -m pip install -e .`
+- `python -m pip install -e ".[test]"`
 - `pytest -q`
 - `pytest -m unit -q`
 
 ## Architecture Boundaries
-- Keep `load_config` in [src/starter.py](src/starter.py) orchestration-focused.
-- Put defaults and runtime values in [src/config.yaml](src/config.yaml), not hardcoded in processing modules.
-- Treat stage folders as bounded contexts (`src/data_merge`, `src/annotation_scripts`, `src/pop_at_risk_river_calculations`, `src/industrial_analysis`, etc.).
+- Keep `load_config` in [wwtp/starter.py](wwtp/starter.py) orchestration-focused.
+- Put defaults and runtime values in [wwtp/config.yaml](wwtp/config.yaml), not hardcoded in processing modules.
+- Treat stage folders as bounded contexts (`wwtp/data_merge`, `wwtp/annotation_scripts`, `wwtp/pop_at_risk_river_calculations`, `wwtp/industrial_analysis`, etc.).
 - Prefer existing wrappers and section-level config inheritance over ad-hoc parameter plumbing.
 
 ## Mandatory Coding Policy (User-Enforced)
 1. Config-driven only:
-- Do not introduce hardcoded runtime values in Python modules when values can live in [src/config.yaml](src/config.yaml).
+- Do not introduce hardcoded runtime values in Python modules when values can live in [wwtp/config.yaml](wwtp/config.yaml).
 - Do not add legacy compatibility branches unless explicitly approved by the user.
 
 2. Dynamic fallback access is restricted:
@@ -48,7 +48,7 @@ Use these commands from repository root:
 - Prefer direct key access for required config values so missing keys fail loudly.
 
 ## Implementation Guidance
-- Before coding, identify the owning config section in [src/config.yaml](src/config.yaml).
+- Before coding, identify the owning config section in [wwtp/config.yaml](wwtp/config.yaml).
 - If a value is currently hardcoded in code, propose/implement moving it to config first.
 - Keep changes minimal and localized; avoid incidental refactors.
 - Preserve existing path-format conventions (`{data_dir}`, `{version}`, `{level}`, `{weight_type}` placeholders).

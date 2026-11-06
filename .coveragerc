@@ -1,9 +1,9 @@
 [run]
-source = src
+source = wwtp
 branch = true
 omit =
-    src/tests/*
-    src/maps/*
+    wwtp/tests/*
+    wwtp/maps/*
     */__init__.py
 
 [report]

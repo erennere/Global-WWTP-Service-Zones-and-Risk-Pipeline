@@ -1,6 +1,6 @@
 ---
 name: Enforce Fail-Fast
-description: Aggressively find and remove defensive fallbacks, legacy shims, and backward-compatibility paths across src/, converting them to loud immediate failures, unless explicitly allowed to remain.
+description: Aggressively find and remove defensive fallbacks, legacy shims, and backward-compatibility paths across wwtp/, converting them to loud immediate failures, unless explicitly allowed to remain.
 disable-model-invocation: true
 ---
 
@@ -18,13 +18,13 @@ General principle for this repo: **no defensive fallback, no legacy shim, no bac
 
 ## Explicit allowlist — do not flag these
 
-- The `try: from .module import x` / `except ImportError: from module import x` dual-import pattern used throughout `src/` to support both `python -m src.script` (package-relative import) and bare top-level invocation (e.g. a test doing `sys.path.insert(...)` then `import module` directly). This is real, load-bearing behavior actively depended on elsewhere in this repo — not legacy cruft kept "just in case." Confirm any other candidate isn't structurally the same pattern before flagging it.
+- (The `try: from .module import x` / `except ImportError` dual-import pattern was removed in 167e036; stages run only as `python -m wwtp.<stage>`. Flag any new instance.)
 
 When you find a pattern that resembles the allowlisted one but differs in a material way, describe the difference explicitly rather than silently including or excluding it.
 
 ## Method
 
-1. Use `Explore`/`general-purpose` agents to grep across `src/` for the patterns above in parallel, per subsystem directory.
+1. Use `Explore`/`general-purpose` agents to grep across `wwtp/` for the patterns above in parallel, per subsystem directory.
 2. For every candidate, read the surrounding code to confirm it's genuinely a fallback/shim and not something structurally load-bearing (like the allowlisted import pattern) before flagging it.
 3. For each flagged fallback, identify what the loud-failure replacement should look like (what exception, what message, at what point in the call chain it should surface — as close to the actual missing precondition as possible).
 

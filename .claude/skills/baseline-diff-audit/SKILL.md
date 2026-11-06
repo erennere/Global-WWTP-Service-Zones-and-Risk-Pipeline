@@ -1,6 +1,6 @@
 ---
 name: Baseline Diff Audit
-description: Compare the working tree against a frozen baseline copy of src/ (or a git ref) surface by surface, classify every behavioral divergence as intended / intended-undocumented / regression, and prove the scripts still run.
+description: Compare the working tree against a frozen baseline copy of wwtp/ (or a git ref) surface by surface, classify every behavioral divergence as intended / intended-undocumented / regression, and prove the scripts still run.
 disable-model-invocation: true
 ---
 
@@ -12,7 +12,7 @@ question: **does the pipeline still do what it did, and where it doesn't, was th
 
 ## Finding the baseline
 
-A directory under `src/` matching `*old*`, `*baseline*` or `*DO-NOT-CHANGE*`. If none exists, make
+A directory under `wwtp/` matching `*old*`, `*baseline*` or `*DO-NOT-CHANGE*`. If none exists, make
 one with `git worktree add <scratch> <ref>`. Confirm what it actually is before trusting it — check
 whether it matches any commit (`git show <c>:<path> | diff - <baseline>/<path>`); a hand-frozen copy
 is usually an *older lineage*, not last week's HEAD, and the gap is wider than you'd assume.
@@ -35,20 +35,20 @@ proves nothing. Compare surfaces, each small enough to read in full. Layers 1–
 run; layer 4 is the expensive one and is scoped to the consolidations the change set actually
 touched; layer 5 is not a comparison at all.
 
-1. **Static surfaces** — `src/tests/harness/baseline_diff.py <baseline>`. Per-module top-level API
+1. **Static surfaces** — `wwtp/tests/harness/baseline_diff.py <baseline>`. Per-module top-level API
    with signatures, config sections and dotted leaf keys (both directions *and* values changed in
    place), module-level constants, and per-wrapper `set` line / `lib/utils.sh` sourcing / parsed
    flags. Crucially, a name missing from its old module is matched against every new module before
    being called a deletion — **moved is not deleted**, and that distinction is most of the value.
-2. **Wrapper argv** — `src/tests/harness/wrapper_argv_snapshot.sh <out>`, run once per tree, then
+2. **Wrapper argv** — `wwtp/tests/harness/wrapper_argv_snapshot.sh <out>`, run once per tree, then
    diff the `-m <module> …` lines. This is what proves a wrapper still invokes the same thing with
-   the same overrides. Lay the baseline out as `<scratch>/src` and run with `PYTHONPATH=<scratch>`
+   the same overrides. Lay the baseline out as `<scratch>/wwtp` (`<scratch>/src` for a baseline from before the rename) and run with `PYTHONPATH=<scratch>`
    (see Traps).
-3. **Resolved config** — `src/tests/harness/baseline_config_diff.py <baseline>`. Compares config as
+3. **Resolved config** — `wwtp/tests/harness/baseline_config_diff.py <baseline>`. Compares config as
    `resolve_config` delivers it, after null-inheritance and `{placeholder}` interpolation. A key can
    be textually unchanged and still resolve differently because a section it inherits from moved;
    conversely, a large key diff with zero resolved-value changes is proof the moves were safe.
-4. **Differential tests** — `src/tests/harness/baseline_differential.py <baseline>`. Load both
+4. **Differential tests** — `wwtp/tests/harness/baseline_differential.py <baseline>`. Load both
    implementations, feed identical seeded inputs, compare. The only layer that catches a consolidated
    helper computing a different *number*. Each case declares `expect="same"` or `expect="differ"`, so
    the report flags both a regression **and** a fix that silently did not land.
@@ -87,12 +87,12 @@ When transcribing baseline logic into a fixture, copy it verbatim with a comment
 
 - **Baseline imports resolving to the live package.** The single most dangerous failure mode: the
   baseline appears to fail with the *current* code's errors, inventing regressions. Lay it out as
-  `<scratch>/src`, set `PYTHONPATH=<scratch>`, and sanity-check that a symbol you know differs
+  `<scratch>/wwtp` (or `src`), set `PYTHONPATH=<scratch>`, and sanity-check that a symbol you know differs
   between the trees reports the baseline's value.
 - **A stubbed interpreter changes exit codes.** Stubbing `pip` makes a wrapper that unconditionally
   reinstalls fail its follow-up import check. Classify by *cause*, not by exit code.
-- **`pytest` from the repo root**, never from `src/` — `testpaths` keeps the baseline's own `tests/`
-  out. Run from `src/` and it gets collected, producing hundreds of spurious errors.
+- **`pytest` from the repo root**, never from `wwtp/` — `testpaths` keeps the baseline's own `tests/`
+  out. Run from `wwtp/` and it gets collected, producing hundreds of spurious errors.
 - **`hasattr` is not a safe probe.** It swallows only `AttributeError`; a property raising anything
   else propagates, and under a blanket `except Exception` becomes a silent `False`.
 - **Dual-import blocks** must stay symmetric. A name added to one branch and not the other fails

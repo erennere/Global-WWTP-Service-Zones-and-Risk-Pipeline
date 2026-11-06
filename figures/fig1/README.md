@@ -2,12 +2,12 @@
 
 HeiGIT plants against reference plants (HydroWASTE, UWWTD, national registers) per country and
 HydroBASINS level 3/4 unit (map 1), and the share of people not served as a cartogram plus the tank
-map (map 2), composed into one figure per level. Moved here from `src/maps/fig1_run_2026-11-04/`
+map (map 2), composed into one figure per level. Moved here from `wwtp/maps/fig1_run_2026-11-04/`
 (`match_10km/scripts` → `match/`, `fig1b_cartogram/scripts` → `cartogram/`, `fig1_combined/scripts` →
 `compose/`). Method notes: the project docs `fig1_global_maps_method.md`, `fig1b_cartogram_method.md`,
 `fig1_combined_method.md`.
 
-## Settings (`src/config.yaml`, section `figure1`)
+## Settings (`wwtp/config.yaml`, section `figure1`)
 
 | key | default | used by |
 |---|---|---|
@@ -23,7 +23,7 @@ a setting (the `render_*.sh` wrappers use it).
 ## Data
 
 Inputs and outputs stay out of git, under `data_dir`. To continue from the 4 Nov run, move
-`src/maps/fig1_run_2026-11-04/match_10km/{data,agg,figs}` to `data/figures/fig1/match/`,
+`wwtp/maps/fig1_run_2026-11-04/match_10km/{data,agg,figs}` to `data/figures/fig1/match/`,
 `fig1b_cartogram/{data,svc,figs2}` to `data/figures/fig1/cartogram/`, and `fig1_combined/rows` to
 `data/figures/fig1/combined/`.
 

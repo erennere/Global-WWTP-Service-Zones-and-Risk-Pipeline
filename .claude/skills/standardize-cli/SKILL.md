@@ -6,11 +6,11 @@ disable-model-invocation: true
 
 # Standardize CLI
 
-Audit every executable script under `src/` for how it parses command-line arguments and propagate config overrides, and converge them onto **one** standardized, simple pattern. The goal is convergence, not a catalog of "it works, just differently" — don't let a script keep bespoke CLI logic just because it currently functions.
+Audit every executable script under `wwtp/` for how it parses command-line arguments and propagate config overrides, and converge them onto **one** standardized, simple pattern. The goal is convergence, not a catalog of "it works, just differently" — don't let a script keep bespoke CLI logic just because it currently functions.
 
 ## The reference standard
 
-Read `src/starter.py` first. It defines the canonical mechanism every script should use:
+Read `wwtp/starter.py` first. It defines the canonical mechanism every script should use:
 - `add_standard_override_arguments` — the shared argparse setup for config overrides.
 - `_OVERRIDE_FIELDS` / `_OVERRIDE_FLAG_TO_FIELD` — the declared set of overridable fields.
 - `_apply_runtime_overrides` — how CLI flags get merged into the resolved config.
@@ -25,7 +25,7 @@ Read `src/starter.py` first. It defines the canonical mechanism every script sho
 
 ## Method
 
-1. Use `Explore` agents to enumerate every script with a `__main__` block or shebang-style entry point across `src/` and its subsystem directories, and report each one's current argument-handling approach with `file:line`.
+1. Use `Explore` agents to enumerate every script with a `__main__` block or shebang-style entry point across `wwtp/` and its subsystem directories, and report each one's current argument-handling approach with `file:line`.
 2. Cross-reference against `starter.py`'s current `_OVERRIDE_FIELDS` list to check every hand-rolled override dict is complete relative to it.
 3. Group findings by "already standard" vs. "needs migration," and for the latter, describe the target CLI surface using the same `add_standard_override_arguments`/`resolve_config` shape used by an already-compliant sibling script.
 

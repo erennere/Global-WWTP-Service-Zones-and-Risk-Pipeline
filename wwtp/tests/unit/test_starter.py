@@ -1,0 +1,578 @@
+import argparse
+from argparse import Namespace
+from pathlib import Path
+
+import pytest
+import yaml
+
+from wwtp import create_voronoi, starter
+import concurrent.futures
+import os
+import runpy
+import geopandas as gpd
+import pandas as pd
+from shapely import to_wkb
+from shapely.geometry import Point, Polygon
+import wwtp.create_voronoi as create_voronoi
+import wwtp.starter as starter
+from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
+import sys
+import types
+import duckdb
+import numpy as np
+from shapely.geometry import LineString, Point, box
+from wwtp import download_pop as dp
+from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
+from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
+from wwtp.annotation_scripts import download_bing_annotate as dba
+from wwtp.figures_scripts import piechart_figure as pf
+from wwtp import starter
+from wwtp.pop_at_risk_river_calculations import create_rasters as cr
+from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
+from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
+from wwtp.industrial_analysis import download_and_vectorize as dv
+from wwtp import service_areas as sa
+
+
+pytestmark = pytest.mark.unit
+
+
+def test_normalize_optional_cli_value_preserves_explicit_empty_string():
+    assert starter._normalize_optional_cli_value("   ", preserve_empty=True) == ""
+
+
+def test_parse_config_overrides_from_argv_parses_all_supported_types():
+    overrides = starter.parse_config_overrides(
+        argv=[
+            "prog",
+            "--level", "9", "--version", "3", "--buffer", "12000",
+            "--weight-method", "square_root", "--weight-func=",
+            "--dynamic-buffering", "yes", "--size-measure", "footprint",
+        ]
+    )
+
+    assert overrides == {
+        "level": "9",
+        "version": "3",
+        "buffer": 12000,
+        "weight_method": "square_root",
+        "weight_func": "",
+        "dynamic_buffering": True,
+        "size_measure": "footprint",
+        "sets": [],
+    }
+
+
+def test_parse_config_overrides_from_namespace_normalizes_optional_values():
+    args = Namespace(
+        level=" 7 ",
+        version=" null ",
+        buffer=None,
+        weight_method="logarithmic",
+        weight_func="add",
+        dynamic_buffering="false",
+        size_measure=" reported ",
+    )
+
+    overrides = starter.parse_config_overrides(args=args)
+
+    assert overrides == {
+        "level": "7",
+        "version": None,
+        "buffer": None,
+        "weight_method": "logarithmic",
+        "weight_func": "add",
+        "dynamic_buffering": False,
+        "size_measure": "reported",
+        "sets": [],
+    }
+
+
+def test_add_standard_override_arguments_parses_named_flags():
+    parser = argparse.ArgumentParser()
+    starter.add_standard_override_arguments(parser)
+    args = parser.parse_args([
+        "--level", "7",
+        "--version", "3",
+        "--buffer", "1200",
+        "--weight-method", "logarithmic",
+        "--weight-func", "mult",
+        "--dynamic-buffering", "true",
+        "--size-measure", "footprint",
+    ])
+
+    overrides = starter.parse_config_overrides(args=args)
+
+    assert overrides == {
+        "level": "7",
+        "version": "3",
+        "buffer": 1200,
+        "weight_method": "logarithmic",
+        "weight_func": "mult",
+        "dynamic_buffering": True,
+        "size_measure": "footprint",
+        "sets": [],
+    }
+
+
+def test_parse_config_overrides_ignores_positional_tokens():
+    """Positional overrides were removed: a stray token must not become `level`."""
+    overrides = starter.parse_config_overrides(
+        argv=["prog", "required_arg", "8", "4", "1500", "linear", "mult", "0", "1.5"],
+    )
+
+    assert overrides == {
+        "level": None,
+        "version": None,
+        "buffer": None,
+        "weight_method": None,
+        "weight_func": None,
+        "dynamic_buffering": None,
+        "size_measure": None,
+        "sets": [],
+    }
+
+
+def test_parse_config_overrides_reads_named_flags_from_argv():
+    overrides = starter.parse_config_overrides(
+        argv=[
+            "prog", "positional-arg",
+            "--level", "8", "--version", "4", "--buffer", "1500",
+            "--weight-method", "linear", "--weight-func", "mult",
+            "--dynamic-buffering", "0", "--size-measure", "reported",
+        ],
+    )
+
+    assert overrides == {
+        "level": "8",
+        "version": "4",
+        "buffer": 1500,
+        "weight_method": "linear",
+        "weight_func": "mult",
+        "dynamic_buffering": False,
+        "size_measure": "reported",
+        "sets": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["prog", "--buffer", "not-an-int"], "Invalid buffer"),
+        (["prog", "--weight-func", "bad-mode"], "Invalid weight_func"),
+        (["prog", "--dynamic-buffering", "maybe"], "Invalid dynamic_buffering"),
+        (["prog", "--size-measure", "capacity"], "Invalid size_measure"),
+    ],
+)
+def test_parse_config_overrides_rejects_invalid_optional_values(argv, message):
+    with pytest.raises(ValueError, match=message):
+        starter.parse_config_overrides(argv=argv)
+
+
+def test_normalize_cfg_path_handles_relative_absolute_and_url_inputs(tmp_path):
+    base_dir = tmp_path / "config_root"
+    base_dir.mkdir()
+
+    relative_result = starter._normalize_cfg_path("data/example.csv", str(base_dir))
+    absolute_input = str((tmp_path / "absolute.csv").resolve())
+
+    assert relative_result == str((base_dir / "data" / "example.csv").resolve())
+    assert starter._normalize_cfg_path(absolute_input, str(base_dir)) == absolute_input
+    assert starter._normalize_cfg_path("s3://bucket/key/file.parquet", str(base_dir)) == "s3://bucket/key/file.parquet"
+    assert starter._normalize_cfg_path(42, str(base_dir)) == 42
+
+
+def test_load_config_expands_relative_paths_and_aliases(write_test_config):
+    config_path = write_test_config(
+        {
+            "combine_watersheds": {
+                "level": "5",
+            },
+            "correct_locations_w_OSM": {
+                "version": "9",
+            },
+            "create_voronoi": {
+                "buffer": 1500,
+                "weight_method": "square_root",
+                "weight_func": "add",
+                "dynamic_buffering": False,
+            },
+        }
+    )
+
+    cfg = starter.load_config(script_name="create_voronoi", config=str(config_path))
+
+    assert cfg["level"] == "5"
+    assert cfg["version"] == "9"
+    assert cfg["weight_type"] == "sq"
+    assert cfg["weight_func"] == "add"
+    assert cfg["weight_func_suffix"] == "_add"
+    assert cfg["buffer_path_token"] == "1500"
+    assert cfg["distance_fn"] is sa.default_distance_additive
+    assert cfg["paths"]["bboxes"] == str((config_path.parent / "data" / "bboxes.csv").resolve())
+    assert "bf1500" in cfg["paths"]["voronoi_dir"]
+
+
+def test_load_config_dynamic_buffering_uses_size_measure_token_and_empty_weight_func(write_test_config):
+    config_path = write_test_config(
+        {
+            "create_voronoi": {
+                "buffer": 2200,
+                "weight_method": "logarithmic",
+                "weight_func": "mult",
+                "dynamic_buffering": True,
+                "size_measure": "reported",
+                "sets": [],
+            },
+        }
+    )
+
+    cfg = starter.load_config(
+        script_name="create_voronoi",
+        config=str(config_path),
+        weight_func="",
+        dynamic_buffering=True,
+        size_measure="footprint",
+    )
+
+    assert cfg["weight_func"] == ""
+    assert cfg["weight_func_suffix"] == ""
+    assert cfg["buffer_path_token"] == "fp"
+    assert cfg["dynamic_buffering"] is True
+    assert cfg["size_measure"] == "footprint"
+    assert cfg["distance_fn"] is sa.default_distance_multiplicative
+
+
+SIZE_CONFIG = {
+    "size_measure": "reported",
+    "footprint_to_people": {"intercept": 1.0, "slope": 0.8, "unsized_people": 2000},
+    "reported_size_columns": ["POP_SERVED"],
+    "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
+}
+SIZE_KWARGS = {
+    "size_measure": "reported",
+    "footprint_to_people": {"intercept": 1.0, "slope": 0.8, "unsized_people": 2000.0},
+    "reported_size_columns": ["POP_SERVED"],
+    "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
+}
+
+
+def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_test_config):
+    config_path = write_test_config(
+        {
+            "create_voronoi": {
+                "buffer": 9000,
+                "weight_method": "size",
+                "weight_func": "mult",
+                "dynamic_buffering": True,
+                "max_buffer": 50000,
+                **SIZE_CONFIG,
+                "radius_calibration": {"reported": {"radius_exponent": 0.3, "radius_at_10k_people_km": 4.0}},
+            },
+        }
+    )
+
+    cfg = starter.load_config(script_name="create_voronoi", config=str(config_path))
+
+    assert cfg["calculate_buffer_kwargs"] == {
+        "buffer": 9000,
+        "dynamic_buffering": True,
+        "max_buffer": 50000,
+        **SIZE_KWARGS,
+        "radius_exponent": 0.3,
+        "radius_at_10k_people_km": 4.0,
+    }
+
+
+def test_fixed_buffering_needs_no_radius_calibration(write_test_config):
+    config_path = write_test_config(
+        {"create_voronoi": {"buffer": 9000, "dynamic_buffering": False, "max_buffer": 50000, **SIZE_CONFIG,
+                            "radius_calibration": {}}}
+    )
+    cfg = starter.load_config(script_name="create_voronoi", config=str(config_path))
+    # the plant size stays available for weight_method 'size'
+    assert cfg["calculate_buffer_kwargs"] == {"buffer": 9000, "dynamic_buffering": False, "max_buffer": 50000, **SIZE_KWARGS}
+    assert cfg["buffer_path_token"] == "9000"
+
+
+def test_size_measure_without_calibration_entry_is_rejected():
+    table = {"footprint": {"radius_exponent": 0.4, "radius_at_10k_people_km": 4.0}}
+    assert starter._calibration_row(table, "footprint")["radius_exponent"] == 0.4
+    with pytest.raises(ValueError, match="no radius_calibration entry"):
+        starter._calibration_row(table, "reported")
+    with pytest.raises(ValueError, match="must have"):
+        starter._calibration_row({"reported": {"radius_exponent": 0.4}}, "reported")
+
+
+def test_load_config_normalizes_weight_func_from_yaml(write_test_config):
+    config_path = write_test_config(
+        {
+            "create_voronoi": {
+                "buffer": 2200,
+                "weight_method": "logarithmic",
+                "weight_func": " add ",
+                "dynamic_buffering": False,
+            },
+        }
+    )
+
+    cfg = starter.load_config(script_name="create_voronoi", config=str(config_path))
+
+    assert cfg["weight_func"] == "add"
+    assert cfg["weight_func_suffix"] == "_add"
+    assert cfg["distance_fn"] is sa.default_distance_additive
+
+
+def test_load_config_rejects_invalid_weight_method(write_test_config):
+    config_path = write_test_config(
+        {
+            "create_voronoi": {
+                "weight_method": "banana",
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="Invalid weight_method"):
+        starter.load_config(script_name="create_voronoi", config=str(config_path))
+
+
+def test_load_config_allows_sections_without_unrelated_voronoi_runtime_keys(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "correct_locations_w_OSM": {
+                    "version": "2",
+                    "rad": 5000,
+                    "paths": {
+                        "data_dir": "./data",
+                        "paul_corrected_filepath": "{data_dir}/Enhanced_HW_WWTP__jun20_2025.geojson",
+                        "corrected_south": "{data_dir}/corrected_WWTP_enhanced_v{version}.geojson",
+                        "corrected_all_filepath": "{data_dir}/all_merged_v{version}.gpkg",
+                    },
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = starter.load_config(script_name="correct_locations_w_OSM", config=str(config_path))
+
+    assert cfg["rad"] == 5000
+    assert cfg["version"] == "2"
+    assert cfg["paths"]["corrected_all_filepath"] == str((tmp_path / "data" / "all_merged_v2.gpkg").resolve())
+    assert "buffer" not in cfg
+    assert "weight_type" not in cfg
+
+
+def test_resolve_config_rejects_missing_script_section():
+    with pytest.raises(starter.ConfigResolutionError, match="missing"):
+        starter.resolve_config("missing_script", {"correct_locations_w_OSM": {}})
+
+
+def test_resolve_config_rejects_non_mapping_script_section():
+    with pytest.raises(starter.ConfigResolutionError, match="must be a mapping"):
+        starter.resolve_config("download_pop", {"download_pop": []})
+
+
+def test_resolve_config_uses_yaml_section_order():
+    raw_config = {
+        "combine_watersheds": {"shared": "wrong"},
+        "final_data_merge": {"shared": "right"},
+        "create_voronoi": {"shared": None},
+    }
+
+    resolved = starter.resolve_config("create_voronoi", raw_config)
+
+    assert resolved["shared"] == "wrong"
+
+
+def test_resolve_config_rejects_future_section_fallbacks():
+    raw_config = {
+        "correct_locations_w_OSM": {"shared": None},
+        "create_voronoi": {"shared": "future-only"},
+    }
+
+    with pytest.raises(starter.ConfigResolutionError, match="shared"):
+        starter.resolve_config("correct_locations_w_OSM", raw_config)
+
+
+def test_resolve_config_rejects_non_mapping_earlier_section():
+    raw_config = {
+        "correct_locations_w_OSM": [],
+        "download_pop": {"zoom_level": 8},
+    }
+
+    with pytest.raises(starter.ConfigResolutionError, match="must be a mapping"):
+        starter.resolve_config("download_pop", raw_config)
+
+
+def test_resolve_config_rejects_unresolved_null_key():
+    raw_config = {
+        "correct_locations_w_OSM": {
+            "paths": {
+                "data_dir": "./data",
+            }
+        },
+        "download_pop": {
+            "paths": None,
+            "zoom_level": None,
+        },
+    }
+
+    with pytest.raises(starter.ConfigResolutionError, match="zoom_level"):
+        starter.resolve_config("download_pop", raw_config)
+
+
+def test_resolve_config_limits_nested_inheritance_to_declared_keys():
+    raw_config = {
+        "correct_locations_w_OSM": {
+            "paths": {
+                "data_dir": "./data",
+                "corrected_south": "./data/corrected.geojson",
+            }
+        },
+        "combine_watersheds": {
+            "paths": {
+                "data_dir": None,
+                "watershed": "{data_dir}/watershed.gpkg",
+            }
+        },
+    }
+
+    resolved = starter.resolve_config("combine_watersheds", raw_config)
+
+    assert resolved["paths"] == {
+        "data_dir": "./data",
+        "watershed": "{data_dir}/watershed.gpkg",
+    }
+
+
+# --- moved from the coverage-campaign files ---
+
+class _Future:
+    def __init__(self, fn=None, args=(), kwargs=None, value=None):
+        self._fn = fn
+        self._args = args
+        self._kwargs = kwargs or {}
+        self._value = value
+
+    def result(self):
+        if self._fn is None:
+            return self._value
+        return self._fn(*self._args, **self._kwargs)
+
+class _Executor:
+    def __init__(self, max_workers=None, eager_results=True):
+        self.max_workers = max_workers
+        self.eager_results = eager_results
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def submit(self, fn, *args, **kwargs):
+        if self.eager_results:
+            return _Future(fn, args, kwargs)
+        return _Future(value=None)
+
+
+def test_new03_script_entrypoint_runs_merge_tasks_and_calls_main(monkeypatch, tmp_path):
+    cfg = {
+        "overwrite_existing": False,
+        "paths": {
+            "corrected_all_filepath": str(tmp_path / "points.gpkg"),
+            "annotations_grid_dir": str(tmp_path / "grids"),
+            "annotations_by_osm_dir": str(tmp_path / "osm"),
+            "annotations_temp_parquet_dir": str(tmp_path / "tmp_parquets"),
+        },
+    }
+    os.makedirs(cfg["paths"]["annotations_grid_dir"], exist_ok=True)
+    os.makedirs(cfg["paths"]["annotations_by_osm_dir"], exist_ok=True)
+
+    output_dir = os.path.join(os.path.abspath(os.path.join(cfg["paths"]["annotations_grid_dir"], "..")), "data")
+    output_filepath = os.path.join(output_dir, "merged_polygons.parquet")
+    lines_filepath = output_filepath.replace("polygons", "lines")
+    output_geojson = os.path.join(output_dir, "wastewater_plant.geojson")
+    original_exists = os.path.exists
+    checks = {"polygons": 0}
+    captured = {}
+
+    def fake_exists(path):
+        abs_path = os.path.abspath(str(path))
+        if abs_path == os.path.abspath(output_filepath):
+            checks["polygons"] += 1
+            return checks["polygons"] >= 2
+        if abs_path == os.path.abspath(lines_filepath):
+            return False
+        return original_exists(path)
+
+    def fake_to_file(self, path, driver="GeoJSON"):
+        captured["written"] = {"path": str(path), "driver": driver, "rows": len(self)}
+
+    df = pd.DataFrame(
+        {
+            "geometry": [
+                to_wkb(Polygon([(0, 0), (1, 0), (0, 1), (0, 0)])),
+                to_wkb(Polygon([(3, 3), (4, 3), (3, 4), (3, 3)])),
+            ]
+        }
+    )
+
+    monkeypatch.setattr(os, "chdir", lambda path: None)
+    monkeypatch.setattr(os.path, "exists", fake_exists)
+    monkeypatch.setattr(starter, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
+    monkeypatch.setattr(pd, "read_parquet", lambda path: df.copy())
+    monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", lambda max_workers=None: _Executor(max_workers=max_workers, eager_results=False))
+
+    runpy.run_module(ww3.__name__, run_name="__main__")
+
+    assert captured["ensured"] == output_geojson
+    assert captured["written"]["path"] == output_geojson
+    assert captured["written"]["rows"] == 2
+
+
+def test_new03_script_skips_main_when_output_file_missing(monkeypatch, tmp_path):
+    # FIX [D-1]: script entrypoint should skip clustering if merged parquet is absent.
+    cfg = {
+        "overwrite_existing": False,
+        "paths": {
+            "corrected_all_filepath": str(tmp_path / "points.gpkg"),
+            "annotations_grid_dir": str(tmp_path / "grids"),
+            "annotations_by_osm_dir": str(tmp_path / "osm"),
+            "annotations_temp_parquet_dir": str(tmp_path / "tmp_parquets"),
+        },
+    }
+
+    os.makedirs(cfg["paths"]["annotations_grid_dir"], exist_ok=True)
+    os.makedirs(cfg["paths"]["annotations_by_osm_dir"], exist_ok=True)
+
+    merged_path = os.path.join(os.path.abspath(os.path.join(cfg["paths"]["annotations_grid_dir"], "..")), "data", "merged_polygons.parquet")
+    merged_lines_path = merged_path.replace("polygons", "lines")
+    original_exists = os.path.exists
+    seen = {"merged_checks": 0, "lines_checks": 0}
+
+    def _exists(path):
+        abs_path = os.path.abspath(str(path))
+        if abs_path == os.path.abspath(merged_path):
+            seen["merged_checks"] += 1
+            # First check: appear present to skip merge task creation.
+            # Second check: appear absent so guarded main call is skipped.
+            return seen["merged_checks"] == 1
+        if abs_path == os.path.abspath(merged_lines_path):
+            seen["lines_checks"] += 1
+            # Keep lines output present to avoid creating any merge task.
+            return True
+        return original_exists(path)
+
+    monkeypatch.setattr(starter, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
+    monkeypatch.setattr(os.path, "exists", _exists)
+
+    runpy.run_module(ww3.__name__, run_name="__main__")

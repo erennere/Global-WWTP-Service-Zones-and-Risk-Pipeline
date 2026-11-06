@@ -11,7 +11,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
-from src.starter import load_config  # noqa: E402
+from wwtp.starter import load_config  # noqa: E402
 
 FIG1 = load_config(script_name="figure1")
 MIN_PLANTS = int(FIG1["min_plants"])

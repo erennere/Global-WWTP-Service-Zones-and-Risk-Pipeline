@@ -2,7 +2,7 @@
 
 The repository is a pipeline developed to explore whether AI can fill data gaps regarding Wastewater Treatment Plants (WWTPs) globally, for example the population served and the type of WWTP (residential, industrial, etc.). The core idea is to approximate WWTP service areas via Voronoi tessellations, provided that WWTP coverage is adequate enough that cells do not erroneously extend into areas served by uncovered WWTPs absent from the dataset.
 
-WWTPs are not just point infrastructure in this project: they are spatial service units whose catchments can be approximated, refined, and compared against reference datasets. This pipeline is designed to run at multi-country scale and combines correction, harmonization, Voronoi allocation, population attribution, river-linked risk propagation, validation, industrial coverage analysis, and reporting. Most runtime behavior is controlled from `src/config.yaml`, with shell wrappers providing reproducible local and SLURM entry points.
+WWTPs are not just point infrastructure in this project: they are spatial service units whose catchments can be approximated, refined, and compared against reference datasets. This pipeline is designed to run at multi-country scale and combines correction, harmonization, Voronoi allocation, population attribution, river-linked risk propagation, validation, industrial coverage analysis, and reporting. Most runtime behavior is controlled from `wwtp/config.yaml`, with shell wrappers providing reproducible local and SLURM entry points.
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ HydroWASTE is a spatially explicit global database of 58,502 WWTPs and their cha
 Reference:
 Ehalt Macedo, H., Lehner, B., Nicell, J., Grill, G., Li, J., Limtong, A., Shakya, R. (2022). Distribution and characteristics of wastewater treatment plants within the global river network. Earth System Science Data, 14(2): 559-577. https://doi.org/10.5194/essd-14-559-2022
 
-A drawback of HydroWASTE is that some points represent the discharge location rather than the WWTP itself. To address this, the repository uses a pre-corrected file configured as `correct_locations_w_OSM.paths.paul_corrected_filepath` in `src/config.yaml`.
+A drawback of HydroWASTE is that some points represent the discharge location rather than the WWTP itself. To address this, the repository uses a pre-corrected file configured as `correct_locations_w_OSM.paths.paul_corrected_filepath` in `wwtp/config.yaml`.
 
 The remaining locations are scanned in OpenStreetMap within a 5 km radius (`correct_locations_w_OSM.rad = 5000`). OSM geometry is assigned if found, otherwise the location is discarded.
 
@@ -95,7 +95,7 @@ To avoid disproportionately large Voronoi cells, especially in sparse areas, cel
 - Static buffering: disable dynamic buffering with `create_voronoi.dynamic_buffering: false`. The `--buffer` flag overrides the config value at runtime.
 - Dynamic buffering: enable with `create_voronoi.dynamic_buffering: true`. Each plant's radius grows with its size in people (`create_voronoi.size_measure`: `reported` or `footprint`; numbers in `create_voronoi.radius_calibration`).
 
-The sweep analysis scripts support sensitivity analysis across combinations of model parameters. The configurable hooks that govern those runs are `create_voronoi.calculate_area_fn`, `create_voronoi.calculate_buffer_fn`, and `create_voronoi.prepare_data_fn`, which are resolved at runtime through `src/pipelines.py`.
+The sweep analysis scripts support sensitivity analysis across combinations of model parameters. The configurable hooks that govern those runs are `create_voronoi.calculate_area_fn`, `create_voronoi.calculate_buffer_fn`, and `create_voronoi.prepare_data_fn`, which are resolved at runtime through `wwtp/pipelines.py`.
 
 ## Analyses
 
@@ -125,18 +125,18 @@ The repository is organized around one canonical processing chain and several op
 
 | Area | Location | Purpose |
 | --- | --- | --- |
-| Runtime configuration | `src/config.yaml` | Global parameter and path control |
-| Config resolver | `src/starter.py` | Resolves inherited config values and named `--level`/`--version`/... overrides |
-| Main technical index | `src/README.md` | Stage index and cross-stage settings |
-| Merge stage | `src/data_merge/` | Build the canonical WWTP dataset |
-| Annotation stage | `src/annotation_scripts/` | Generate grids, OSM context, and annotation merges |
-| Voronoi stage | `src/create_voronoi.py` (command line), `src/service_areas/` (size, weights, solver, contours, joins, overlaps, orchestrate), `src/create_voronoi.sh` | Create service areas |
-| Population stage | `src/add_pop.py`, `src/add_pop.sh` | Attach WorldPOP counts to service areas |
-| Risk stage | `src/pop_at_risk_river_calculations/` | Compute non-served population and downstream risk |
-| Validation stage | `src/pop_validation_scripts/` | Compare outputs against HydroWASTE and Waterbase-UWWTD |
-| Industrial stage | `src/industrial_analysis/` | Measure industrial land not covered by eligible WWTPs |
-| Figures stage | `src/figures_scripts/` | Build maps, plots, and publication outputs |
-| Sweep stage | `src/sensitivity_analysis_scripts/` | Run parameter sweeps and compare results |
+| Runtime configuration | `wwtp/config.yaml` | Global parameter and path control |
+| Config resolver | `wwtp/starter.py` | Resolves inherited config values and named `--level`/`--version`/... overrides |
+| Main technical index | `wwtp/README.md` | Stage index and cross-stage settings |
+| Merge stage | `wwtp/data_merge/` | Build the canonical WWTP dataset |
+| Annotation stage | `wwtp/annotation_scripts/` | Generate grids, OSM context, and annotation merges |
+| Voronoi stage | `wwtp/create_voronoi.py` (command line), `wwtp/service_areas/` (size, weights, solver, contours, joins, overlaps, orchestrate), `wwtp/create_voronoi.sh` | Create service areas |
+| Population stage | `wwtp/add_pop.py`, `wwtp/add_pop.sh` | Attach WorldPOP counts to service areas |
+| Risk stage | `wwtp/pop_at_risk_river_calculations/` | Compute non-served population and downstream risk |
+| Validation stage | `wwtp/pop_validation_scripts/` | Compare outputs against HydroWASTE and Waterbase-UWWTD |
+| Industrial stage | `wwtp/industrial_analysis/` | Measure industrial land not covered by eligible WWTPs |
+| Figures stage | `wwtp/figures_scripts/` | Build maps, plots, and publication outputs |
+| Sweep stage | `wwtp/sensitivity_analysis_scripts/` | Run parameter sweeps and compare results |
 
 Each major processing directory has its own README that explains the role of the stage, the purpose of each script, the local data flow, and the configuration settings that matter for that part of the pipeline.
 
@@ -144,28 +144,28 @@ Each major processing directory has its own README that explains the role of the
 
 The standard end-to-end order is the following.
 
-1. `src/data_merge/combine_locations.sh`
-2. `src/combine_watersheds.sh`
-3. `src/annotation_scripts/grid_generation_and_osm_extract.sh`
-4. `src/annotation_scripts/run_download_bing_annotate_array.sh`
-5. `src/annotation_scripts/merge_annotations.sh`
-6. `src/download_pop.sh`
-7. `src/create_voronoi.sh`
-8. `src/add_pop.sh`
-9. `src/pop_at_risk_river_calculations/create_rasters.sh`
-10. `src/pop_at_risk_river_calculations/pop_differences_and_impact_polygons.sh`
+1. `wwtp/data_merge/combine_locations.sh`
+2. `wwtp/combine_watersheds.sh`
+3. `wwtp/annotation_scripts/grid_generation_and_osm_extract.sh`
+4. `wwtp/annotation_scripts/run_download_bing_annotate_array.sh`
+5. `wwtp/annotation_scripts/merge_annotations.sh`
+6. `wwtp/download_pop.sh`
+7. `wwtp/create_voronoi.sh`
+8. `wwtp/add_pop.sh`
+9. `wwtp/pop_at_risk_river_calculations/create_rasters.sh`
+10. `wwtp/pop_at_risk_river_calculations/pop_differences_and_impact_polygons.sh`
     — chains `find_unserved_pop` → `find_diff_pop` → `assign_rivers_to_basin` →
     `find_intersection_river` → `impact_polygons_pop`. Each of the first four also
     has a standalone wrapper
     (`find_unserved_pop.sh`, `assign_rivers_to_basin.sh`, `find_intersection_river.sh`)
     for rerunning one stage without repeating the whole chain.
-11. `src/pop_at_risk_river_calculations/find_pop_in_danger_pop.sh`
-12. `src/pop_validation_scripts/comparison.sh`
-13. `src/industrial_analysis/industrial_analysis.sh`
-14. `src/figures_scripts/composite_area_population_plots.sh`
-15. `src/figures_scripts/pop_at_risk_figures.sh`
+11. `wwtp/pop_at_risk_river_calculations/find_pop_in_danger_pop.sh`
+12. `wwtp/pop_validation_scripts/comparison.sh`
+13. `wwtp/industrial_analysis/industrial_analysis.sh`
+14. `wwtp/figures_scripts/composite_area_population_plots.sh`
+15. `wwtp/figures_scripts/pop_at_risk_figures.sh`
 
-The sensitivity-analysis launchers under `src/sensitivity_analysis_scripts/` are optional and sit outside the canonical production run.
+The sensitivity-analysis launchers under `wwtp/sensitivity_analysis_scripts/` are optional and sit outside the canonical production run.
 
 ## Project Data Flow
 
@@ -234,14 +234,14 @@ Notes on this diagram:
 
 ## Environment Creation
 
-The Python package metadata lives in `src/pyproject.toml`. A minimal local environment can be created from the repository root.
+The code is the `wwtp` package (folder `wwtp/`; it was called `src` until November 2026) and its metadata is `pyproject.toml` at the repository root. A minimal local environment can be created from the repository root. An environment installed before the rename needs `python -m pip install -e .` once more.
 
 ### PowerShell
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ./src
+python -m pip install -e .
 ```
 
 ### Bash
@@ -249,13 +249,13 @@ python -m pip install -e ./src
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ./src
+python -m pip install -e .
 ```
 
 To install the test dependencies as well:
 
 ```bash
-python -m pip install -e "./src[test]"
+python -m pip install -e ".[test]"
 ```
 
 Practical prerequisites:
@@ -291,7 +291,7 @@ In addition, two canonical defaults point to external cluster paths and must usu
 - `merge_seg_results.paths.seg_results_filepath`
 - `download_bing_annotate.paths.annotations_images_dir` (and related annotation-output paths)
 
-If you only need to read or modify execution settings, start with `src/config.yaml` and `src/README.md`. The shell launchers orchestrate execution, but the pipeline dependencies are the data files above.
+If you only need to read or modify execution settings, start with `wwtp/config.yaml` and `wwtp/README.md`. The shell launchers orchestrate execution, but the pipeline dependencies are the data files above.
 
 ## Configuration Parameters You Usually Need To Change
 
@@ -318,17 +318,17 @@ The defaults are a mix of portable relative paths and environment-specific clust
 | `impact_polygons_pop.impact_polygons_pop_params.*` | Controls downstream organic-load propagation |
 | `find_unconnected_industrial_areas.industrial_category_numbers` | Controls which annotation categories are treated as industrial WWTPs |
 
-`src/starter.py` resolves values in canonical YAML order. Earlier sections define shared values and later sections inherit them with `null`. Positional CLI overrides always take precedence over the resolved config.
+`wwtp/starter.py` resolves values in canonical YAML order. Earlier sections define shared values and later sections inherit them with `null`. Positional CLI overrides always take precedence over the resolved config.
 
 ### Config layers
 
-`src/config.yaml` is the portable base. On top of it, in this order:
+`wwtp/config.yaml` is the portable base. On top of it, in this order:
 
-1. overlay files listed in `WWTP_CONFIG_OVERLAYS` (separated by `:`), e.g. a `config.cluster.yaml` with cluster paths and worker counts (see `src/config.cluster.example.yaml`);
-2. `src/config.local.yaml` if it exists (git-ignored, per machine);
+1. overlay files listed in `WWTP_CONFIG_OVERLAYS` (separated by `:`), e.g. a `config.cluster.yaml` with cluster paths and worker counts (see `wwtp/config.cluster.example.yaml`);
+2. `wwtp/config.local.yaml` if it exists (git-ignored, per machine);
 3. `--set SECTION.KEY=VALUE` on any stage's command line (repeatable).
 
-An overlay can only change keys the base already has, so a typo fails at load. `python -m src.starter show <section> [--set ...]` prints what a stage will use, including `config_layers`; every run manifest records the same list.
+An overlay can only change keys the base already has, so a typo fails at load. `python -m wwtp.starter show <section> [--set ...]` prints what a stage will use, including `config_layers`; every run manifest records the same list.
 
 The canonical shared override order used across the wrappers is:
 
@@ -342,22 +342,22 @@ The repository is not fully self-contained. Several required inputs are expected
 
 - Satellite imagery for annotation is not downloaded by the repository wrappers; the code expects an existing image directory.
 - Annotation inference CSV outputs are treated as external inputs to the merge-back stage.
-- Some default paths in `src/config.yaml` point to cluster-local storage and must be replaced for local execution.
+- Some default paths in `wwtp/config.yaml` point to cluster-local storage and must be replaced for local execution.
 - HydroBASINS zip archives must be placed manually under `data/hydroshed_river_levels/lvl{level}` before watershed combination.
 - The corrected HydroWASTE source referenced by `correct_locations_w_OSM.paths.paul_corrected_filepath` is used by the pipeline, but the publication metadata for that correction source is not embedded in the repository.
 - River matching distance is configurable via `find_intersection_river.x_distance` (default 5000 m).
 
 ## Section Documentation
 
-The section READMEs under `src/` are the detailed reference documents for each stage.
+The section READMEs under `wwtp/` are the detailed reference documents for each stage.
 
 | Section | Detailed documentation |
 | --- | --- |
-| `src/` technical index | `src/README.md` |
-| Data merge | `src/data_merge/README.md` |
-| Annotation | `src/annotation_scripts/README.md` |
-| Population and river-risk calculations | `src/pop_at_risk_river_calculations/README.md` |
-| Validation | `src/pop_validation_scripts/README.md` |
-| Figures and exports | `src/figures_scripts/README.md` |
-| Industrial analysis | `src/industrial_analysis/README.md` |
-| Sensitivity analysis | `src/sensitivity_analysis_scripts/README.md` |
+| `wwtp/` technical index | `wwtp/README.md` |
+| Data merge | `wwtp/data_merge/README.md` |
+| Annotation | `wwtp/annotation_scripts/README.md` |
+| Population and river-risk calculations | `wwtp/pop_at_risk_river_calculations/README.md` |
+| Validation | `wwtp/pop_validation_scripts/README.md` |
+| Figures and exports | `wwtp/figures_scripts/README.md` |
+| Industrial analysis | `wwtp/industrial_analysis/README.md` |
+| Sensitivity analysis | `wwtp/sensitivity_analysis_scripts/README.md` |

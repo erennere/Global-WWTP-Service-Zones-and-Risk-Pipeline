@@ -12,8 +12,8 @@ Diff the actual current state of the codebase — scripts, CLI flags, `config.ya
 
 Check every README under the repo, at minimum:
 - Root `README.md`
-- `src/README.md`
-- One per subsystem directory: `src/annotation_scripts/README.md`, `src/data_merge/README.md`, `src/figures_scripts/README.md`, `src/industrial_analysis/README.md`, `src/pop_at_risk_river_calculations/README.md`, `src/pop_validation_scripts/README.md`, `src/sensitivity_analysis_scripts/README.md`, `src/tests/README.md`
+- `wwtp/README.md`
+- One per subsystem directory: `wwtp/annotation_scripts/README.md`, `wwtp/data_merge/README.md`, `wwtp/figures_scripts/README.md`, `wwtp/industrial_analysis/README.md`, `wwtp/pop_at_risk_river_calculations/README.md`, `wwtp/pop_validation_scripts/README.md`, `wwtp/sensitivity_analysis_scripts/README.md`, `wwtp/tests/README.md`
 
 Plus any flowchart/diagram assets referenced from those docs or living alongside them (Mermaid blocks embedded in markdown, `.drawio`/`.svg`/`.dot` files, etc.).
 
@@ -21,7 +21,7 @@ Plus any flowchart/diagram assets referenced from those docs or living alongside
 
 - **Scripts documented that no longer exist** in the working tree (stale references — a common failure mode when a script gets renamed/superseded and its README entry isn't updated).
 - **Scripts that exist but aren't documented anywhere.**
-- **Config-reference tables** whose documented default values have drifted from the actual current values in `src/config.yaml`.
+- **Config-reference tables** whose documented default values have drifted from the actual current values in `wwtp/config.yaml`.
 - **CLI flag documentation** that no /longer matches a script's actual `argparse` surface (especially relevant after `standardize-cli` migrations).
 - **Flowcharts/diagrams** whose depicted pipeline stages, script names, or data flow no longer match the actual call graph between scripts (trace actual imports/subprocess calls/`.sh` invocation order, don't assume the existing diagram was ever fully accurate).
 - **Convoluted text, explanations** that doesn't clearly describe what the code actually does. Subdirectory READMEs should be more than just a copy of the root README; they should describe the subsystem's purpose, its inputs/outputs, and any special usage notes, how they are run and in which order, and how they fit into the overall pipeline, how they relate to other subsystems, and any special caveats or gotchas that a user should be aware of. While being concise is good, being clear and accurate is better. If a README is too terse to be useful, add more detail; if it's too verbose and repetitive, trim it down. After reading the README, a user should be able to answer the following questions:

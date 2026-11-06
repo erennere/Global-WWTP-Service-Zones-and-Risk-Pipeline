@@ -1,6 +1,6 @@
 ---
 name: Simplify Code
-description: Find convoluted code in src/ (oversized functions, deep nesting, fragile closures, dead/superseded logic, encoding corruption) and propose behavior-preserving simplifications.
+description: Find convoluted code in wwtp/ (oversized functions, deep nesting, fragile closures, dead/superseded logic, encoding corruption) and propose behavior-preserving simplifications.
 disable-model-invocation: true
 ---
 

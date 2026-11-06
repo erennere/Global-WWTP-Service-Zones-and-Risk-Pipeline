@@ -1,0 +1,855 @@
+# Section order below follows the canonical workflow derived from the repo wrappers and READMEs.
+# Put a shared parameter on the first script that actually consumes it.
+# Later scripts inherit that value by setting the field to null.
+# A later concrete value overrides only that script.
+# CLI overrides take precedence over all resolved config values.
+correct_locations_w_OSM:
+  version: '2'
+  rad: 5000
+  # Explicit values (not null) because this is the first config section, so
+  # there is no earlier canonical section to inherit from. create_voronoi's
+  # matching keys (country_output_column/country_boundary_column) are the
+  # section later scripts inherit these from via null.
+  country_output_column: 'ISO_2'
+  country_boundary_column: 'country'
+  paths:
+    data_dir: '../data'
+    corrected_south: '{data_dir}/corrected_WWTP_enhanced_v{version}.geojson'
+    osmgeo_filepath: '{data_dir}/wastewater_plant.geojson'
+    paul_corrected_filepath: '{data_dir}/Enhanced_HW_WWTP__jun20_2025.geojson'
+    overture: '{data_dir}/overture_maps_countries.parquet'
+    overture_s3_url: 's3://overturemaps-us-west-2/release/2025-01-22.0/theme=divisions/type=division_area/*'
+
+# Run manifests (wwtp/provenance.py): every stage writes one YAML per run with
+# the resolved config, git commit, package versions and input fingerprints.
+run_manifest:
+  # Inputs up to this size get a SHA-256; larger ones only size and time.
+  hash_max_mb: 200
+  paths:
+    data_dir: null
+    manifest_dir: '{data_dir}/run_manifests'
+
+merge_seg_results:
+  version: null
+  legacy_merge: true
+  paths:
+    data_dir: null
+    corrected_south: null
+    seg_corrected_south: '{data_dir}/seg_corrected_WWTP_enhanced_v{version}.gpkg'
+    corrected_all_filepath: '{data_dir}/all_merged_v{version}.gpkg'
+    dl_dir: '{data_dir}/DL_results'
+    dl_zipfile: '{data_dir}/DL_results/csvv2-2.zip'
+    dl_mapfile: '{data_dir}/DL_results/aftersort.geojson'
+    seg_results_filepath: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global/Images_z17_512/results/csv/segoutput.csv'
+
+final_data_merge:
+  version: null
+  legacy_merge: null
+  threshold: 500
+  osm_threshold: 1000
+  paths:
+    data_dir: null
+    corrected_south: null
+    seg_corrected_south: null
+    corrected_all_filepath: null
+    canada_filepath: '{data_dir}/extra_points/Canada_14_03_2025.csv'
+    germany_filepath: '{data_dir}/extra_points/Germany_Hydra_waste_geospatial_corrected.geojson'
+    osmgeo_filepath: null
+    us_new_filepath: '{data_dir}/final_data_source/final_USA_WWT_dec3.geojson'
+    eu_new_filepath: '{data_dir}/final_data_source/final_W_europe_WWT_dec3.geojson'
+    thailand_filepath: '{data_dir}/final_data_source/Thailand_500m_merged.geojson'
+    new_points_filepath: '{data_dir}/new_locations_v{version}.gpkg'
+
+combine_watersheds:
+  # HydroBASINS level of the basins that bound the service areas (approach 1):
+  # higher numbers = smaller basins. Level 6 (median ~5,600 km2 in GB) lets a
+  # city's service area cross the small level-8 basins its sewers cross.
+  level: '6'
+  paths:
+    data_dir: null
+    watersheds_zip_dir: '{data_dir}/hydroshed_river_levels/lvl{level}'
+    watershed: '{data_dir}/hydroshed_river_levels/hydrobase_lvl{level}_combined.gpkg'
+
+NEW_01_GENERATEGRIDS:
+  version: null
+  annotations:
+    cell_size: 3072
+    factor: 1.194
+  paths:
+    data_dir: null
+    corrected_all_filepath: null
+    annotations_grid_dir: '{data_dir}/annotations/GRID'
+
+NEW_02_EXTRACTOSMDATAFULL_GEOJSON:
+  version: null
+  overwrite_existing: false
+  annotations:
+    max_workers: 8
+    retries: 5
+    overpass_urls:
+      - 'https://overpass.kumi.systems/api/interpreter'
+      - 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+      - 'https://overpass-api.de/api/interpreter'
+    overpass_pause_seconds: 0.1
+  paths:
+    data_dir: null
+    corrected_all_filepath: null
+    annotations_grid_dir: null
+    annotations_by_osm_dir: '{data_dir}/annotations/osm_by_idx'
+
+download_bing_annotate:
+  version: null
+  annotations:
+    cell_size: null
+    factor: null
+    image_size_px: 3072
+    zoom_level: 17
+    base_z17_resolution: 1.1943285669555664
+    max_workers: 64
+    georeferenced: false
+    fontsize: 24
+    dpi: 72
+    target_size_px: 1024
+    mercator_tile_size_px: 256
+    imagery_reference_tile_size_px: 512
+    earth_radius_m: 6378137
+    # Single source of truth for annotation-pipeline seeding; declared here
+    # because this is the earliest consumer.
+    random_seed: 42
+  paths:
+    data_dir: null
+    corrected_all_filepath: null
+    annotations_grid_dir: null
+    annotations_by_osm_dir: null
+    annotations_temp_parquet_dir: '{data_dir}/temp_parquets'
+    annotations_images_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global/mm/Images_z17_512'
+    annotated_images_output_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global/annotated/mm/Images_z17_512'
+
+merge_annotations:
+  version: null
+  paths:
+    data_dir: null
+    # Input: the pre-annotation merged dataset (unchanged since merge_seg_results).
+    corrected_all_filepath: null
+    # Output: a NEW path, not corrected_all_filepath. merge_annotations used to
+    # read and overwrite the same file - a self-loop that destroyed the
+    # distinction between annotated and unannotated data on every re-run.
+    # Every section after this one that wants the annotated dataset reads
+    # annotated_all_filepath instead of corrected_all_filepath.
+    annotated_all_filepath: '{data_dir}/all_annotated_v{version}.gpkg'
+    annotated_images_output_dir: null
+    #annotations_results_filepath: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global/annotated/mm/inference/csv_files/chunk_1/i2t_res1.csv'
+    annotations_results_filepath: /sd17f001/sukanya/wtp_seg/2026_global/annotated/mm/inference/output/inference/csv_files/chunk_1/i2t_res1.csv
+annotations_inspection:
+  annotations:
+    n_sample_size: 1000
+    random_seed: null
+  paths:
+    # data_dir is required by every paths block: path expansion reads it
+    # unconditionally, so omitting it made load_config raise KeyError.
+    data_dir: null
+    annotated_images_output_dir: null
+    annotations_results_filepath: null
+    annotations_verf_image_outpath_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global/annotated/mm/inference/test'
+
+copy_falsy_images:
+  version: null
+  paths:
+    data_dir: null
+    # Needs the annotated dataset: filters on category_number (merge_annotations output).
+    annotated_all_filepath: null
+    annotated_images_output_dir: null
+    annotations_verf_image_outpath_dir: null
+
+sample_annotations_by_class:
+  annotations:
+    random_seed: null
+  sampling:
+    n_per_class: 10
+  paths:
+    data_dir: null
+    annotations_results_filepath: null
+    # Previously null with nothing to inherit from, so the script could not start.
+    sampled_images_output_filepath: '{data_dir}/annotations/sampled_images_by_class.json'
+
+NEW_03_WASTEWATERJOIN_GEOJSON:
+  version: null
+  overwrite_existing: null
+  paths:
+    data_dir: null
+    corrected_all_filepath: null
+    annotations_grid_dir: null
+    annotations_by_osm_dir: null
+    annotations_temp_parquet_dir: null
+
+NEW_04_EXPORTGEOTIFF:
+  version: null
+  export:
+    id_field: 'idx'
+    output_width_px: 3072
+    output_height_px: 3072
+    dpi: 96
+    image_format: 'tif'  # 'tif' or 'png'
+  paths:
+    data_dir: null
+    corrected_all_filepath: null
+    annotations_grid_dir: null
+    export_layer_filepath: '{data_dir}/annotations/data/wastewater_plant.geojson'
+    export_patch_dir: '{data_dir}/annotations/PATCH'
+
+download_pop:
+  start_year: 2015
+  end_year: 2024
+  worldpop_2014_url_template: 'https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2014/{country_upper}/{country_lower}_ppp_2014_1km_Aggregated.tif'
+  worldpop_yearly_url_template: 'https://data.worldpop.org/GIS/Population/Global_2015_2030/R2024B/{year}/{country_upper}/v1/100m/constrained/{country_lower}_pop_{year}_CN_100m_R2024B_v1.tif'
+  # 2014 is the 1 km unconstrained product, not comparable with the 100 m
+  # constrained 2015-2024 series; off by default.
+  include_2014: false
+  # Debug aid: process only the first N countries in alphabetical order. 0 = all.
+  country_limit: 0
+  paths:
+    data_dir: null
+    pop_dir: '{data_dir}/population'
+
+create_voronoi:
+  level: null
+  version: null
+  buffer: 9000
+  # 'size': each plant's Voronoi weight is sqrt(plant size in people), so at
+  # equal density its area grows in proportion to its people. Needs weight_func
+  # 'mult'. The other methods transform the detected area (create_weights).
+  weight_method: 'size'
+  weight_func: 'mult'
+  dynamic_buffering: true
+  # Plant size in people, used by the service radius and by weight_method 'size':
+  #   reported  - the first positive value in reported_size_columns, the
+  #               footprint estimate where there is none
+  #   footprint - the footprint estimate for every plant (detections only)
+  # GB catchments (not used for calibration), service-area / real population for
+  # catchments of <10k, 10k-100k, 100k-500k, >500k people:
+  #   reported  1.40, 1.09, 1.00, 1.01 (typical plant error x1.59)
+  #   footprint 2.21, 1.35, 0.97, 0.67 (x1.82): the detected footprint of the
+  #   largest plants is hardly larger than that of mid-size ones.
+  # See notes/service_radius_size_rule_2026-11-05.md.
+  size_measure: 'reported'
+  max_workers: 16
+  n_points: 100
+  # Sites closer than this (m) are merged before the Voronoi run. Was
+  # inherited from final_data_merge.threshold; same value, now explicit.
+  threshold: 500
+  sigma: 3
+  percent_threshold: 10
+  basin_column_name: 'HYBAS_ID'
+  country_output_column: 'ISO_2'
+  country_boundary_column: 'country'
+  site_id_column: 'WASTE_ID'
+  old_site_id_column: 'OLD_WASTE_ID'
+  calculate_area_fn: 'calculate_area'
+  calculate_buffer_fn: 'calculate_buffer'
+  area_fn_kwargs: {}
+  prepare_data_fn: 'prepare_data'
+  # Skip-if-exists gate on the final Voronoi output path. Distinct from
+  # temp_voronoi_overwrite below, which controls intra-op checkpoint files
+  # written *during* a single run, not whether to redo a run whose final
+  # output already exists.
+  overwrite_existing: true
+  temp_voronoi_overwrite: true
+  flush_size: 1000
+  # Largest service radius (m) in either mode: HydroFATE's largest
+  # allocation distance (Ehalt Macedo et al. 2024, GMD 17:2877, supplement S.1).
+  max_buffer: 50000
+  # Columns holding a plant's reported size, in order of preference: HydroWASTE
+  # people served, EPA CWNS 2022 people served (US), UWWTD load entering the
+  # plant in population equivalents (EU; GB plants: POP_SERVED = 0.91 x load).
+  reported_size_columns: ['POP_SERVED', 'EPA POP 2022', 'uwwLoadEnteringUWWTP']
+  # Values skipped: HydroWASTE QUAL_POP 4 is POP_SERVED estimated as the people
+  # within 11 km of the plant, not a record of the plant.
+  reported_size_skip: {POP_SERVED: {QUAL_POP: [4]}}
+  # Footprint estimate: log10 people = intercept + slope * log10 footprint_m2,
+  # footprint_m2 = detected tank circles + rectangles; fitted on the 24,505
+  # plants with both a footprint and a reported size (R2 0.31). Lagoon plants and
+  # plants without detections get unsized_people (median reported size of such
+  # plants, n 13,442).
+  footprint_to_people: {intercept: 1.523, slope: 0.7, unsized_people: 2580}
+  # Service radius (dynamic_buffering: true), per size_measure:
+  #   radius_km = radius_at_10k_people_km * (people / 10000) ** radius_exponent,
+  #   at most max_buffer
+  # Chosen on 2020 census block-group population in the 444 EPA sourced
+  # sewersheds of CT, KY, MA, NH, RI, UT and VT matched to our plants, with the
+  # same rule (sqrt(people) weights, circle): among the pairs whose total stays
+  # within 10 % of the census total, the one with the smallest typical error
+  # averaged over the size classes <10k, 10k-100k and >100k people, so that large
+  # plants count as much as small ones. US result (reported): typical error x1.38
+  # per class, 74 % of plants within a factor 2, total 0.99. GB catchments: not
+  # used.
+  # Regenerate with: python -m wwtp.calibration.service_radius --help
+  radius_calibration:
+    reported: {radius_exponent: 0.3, radius_at_10k_people_km: 3.75}
+    footprint: {radius_exponent: 0.5, radius_at_10k_people_km: 4.25}
+  scipy_true: false
+  cv2_true: false
+  city_voronoi: false
+  industrial_category_numbers: [2, 4]
+  # Mixed-use sites count as industrial in every consumer; declared here
+  # because create_voronoi is the earliest section that needs it.
+  mix_use_categories: [6]
+  csv_files: false
+  duckdb_cond: false
+  sindex_concurrency: true
+  remove_industrial: false
+  return_boolean: true
+  # Re-run the country spatial join even when the input already carries a country
+  # column. True preserves the previous unconditional behaviour; set false to
+  # trust an existing column and skip the join.
+  force_country_rejoin: true
+  # Read by create_voronoi.sh (not by Python) to pick array/sequential/parallel.
+  execution:
+    mode: 'sequential'
+  paths:
+    data_dir: null
+    bboxes: '{data_dir}/bboxes.csv'
+    hydrowaste: '{data_dir}/cleaned_hydrowaste.csv'
+    # Needs the annotated dataset: remove_industrial filters on category_number.
+    annotated_all_filepath: null
+    watershed: null
+    buffers_dir: '{data_dir}/buffers/v{version}/lvl{level}/bf{buffer}'
+    voronoi_dir: '{data_dir}/voronoi_layers/v{version}/lvl{level}/bf{buffer}/{weight_type}'
+    cities: '{data_dir}/cities.csv'
+    overture: null
+    overture_s3_url: null
+
+add_pop:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  add_pop_max_workers: 8
+  country_output_column: null
+  overwrite_existing: false
+  # Raster years read: those download_pop fetches (start_year..end_year, plus
+  # 2014 only with include_2014). Other years in pop_tif_dir are skipped.
+  start_year: null
+  end_year: null
+  include_2014: null
+  paths:
+    data_dir: null
+    voronoi_dir: null
+    pop_tif_dir: '{data_dir}/population/unzipped'
+    pop_output_dir: '{data_dir}/pop_voronoi_layers/v{version}/lvl{level}/bf{buffer}/{weight_type}'
+
+create_rasters:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  zoom_level: 8
+  min_pixels: 9
+  # A pixel counts as served when its centre lies in a service area
+  # (false), or when any part of it does (true). Used for both outputs.
+  served_all_touched: false
+  basin_column_name: null
+  country_boundary_column: null
+  country_output_column: null
+  annotations:
+    # Worker processes for rasterising countries. Was inherited from the
+    # OSM extraction step's annotations.max_workers; same value, now explicit.
+    max_workers: 8
+    random_seed: null
+    default_mode: 'array'
+  figures:
+    approach: 1
+  paths:
+    data_dir: null
+    buffers_dir: null
+    voronoi_dir: null
+    pop_output_dir: null
+    pop_tif_dir: null
+    WWTP_tif_dir: '{data_dir}/WWTP_tifs/v{version}/lvl{level}/bf{buffer}/{weight_type}'
+    non_served_outpath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/non_served_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
+    csv_output_filepath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/raster_country_stats_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.csv'
+    watershed: null
+    # A dedicated output for the country-enriched watershed, never the same
+    # path as `watershed`: writing back onto that path was a self-loop
+    # (mutating the asset combine_watersheds produces) that races under any
+    # concurrent/partitioned execution of this stage.
+    watershed_with_countries: '{data_dir}/hydroshed_river_levels/hydrobase_lvl{level}_combined_with_countries.gpkg'
+    overture: null
+    overture_s3_url: null
+
+find_unserved_pop:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  country_output_column: null
+  max_workers: null
+  is_parallel: true
+  zoom_level: null
+  threshold_value: 1000
+  urban_buffer: 15000
+  wwtp_buffer: 50000
+  tolerance: 30 # in meters
+  paths:
+    data_dir: null
+    non_served_outpath: null
+    urban_areas_filepath: '{data_dir}/urban_areas/GHS_UCDB_GLOBE_R2024A.gpkg'
+    non_served_above_threshold_outpath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/non_served_areas_above_threshold_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
+    # Downstream of merge_annotations in the pipeline: use the annotated dataset.
+    annotated_all_filepath: null
+    
+find_diff_pop:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  max_workers: null
+  basin_column_name: null
+  country_output_column: null
+  country_boundary_column: null
+  figures:
+    approach: null
+  paths:
+    data_dir: null
+    hydrowaste: null
+    watershed: null
+    buffers_dir: null
+    voronoi_dir: null
+    pop_tif_dir: null
+    pop_output_dir: null
+    # The uncovered basin parts get their country from the boundary layer:
+    # the HydroBASINS file has no country column.
+    overture: null
+    pop_dif_output_dir: '{data_dir}/pop_diff_voronoi_layers/v{version}/lvl{level}/bf{buffer}/{weight_type}'
+
+assign_rivers_to_basin:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  paths:
+    data_dir: null
+    watershed: null
+    rivershed: '{data_dir}/hydrorivers.gpkg'
+    rivershed_output_path: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/hydroshed_basin_assigned_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
+
+find_intersection_river:
+  level: null
+  version: null
+  buffer: null
+  x_distance: 5000
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  basin_column_name: null
+  paths:
+    data_dir: null
+    non_served_above_threshold_outpath: null
+    rivershed_output_path: null
+    non_served_nxt_river_outpath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/non_served_nxt_river_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
+
+impact_polygons_pop:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  impact_polygons_pop_params:
+    org_per_pop: 60.0
+    c_limit: 5.0
+    base_k: 0.23
+    theta: 1.047
+    step_m: 100.0
+    least_discharge_cms: 0.269
+    # Flow velocity used to turn distance into travel time for the decay
+    # (no discharge-velocity relation yet, so one constant for every river).
+    velocity_m_s: 1.0
+    # Water temperature at the equator; T(lat) = water_temp_equator_c * cos(lat).
+    water_temp_equator_c: 28.0
+    impact_radii: [1000, 2000]
+  paths:
+    data_dir: null
+    non_served_nxt_river_outpath: null
+    rivershed_output_path: null
+    impact_pop_polygons_outpath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/impact_pop_polygons_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
+
+find_pop_in_danger_pop:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  zoom_level: null
+  country_boundary_column: null
+  country_output_column: null
+  annotations:
+    # Same value as create_rasters, set explicitly instead of inherited.
+    max_workers: 8
+  paths:
+    data_dir: null
+    pop_tif_dir: null
+    impact_pop_polygons_outpath: null
+    pop_at_risk_output_filepath: '{data_dir}/results_pop_at_risk/v{version}/lvl{level}/bf{buffer}/{weight_type}/pop_at_risk_pop_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.parquet'
+    overture: null
+
+download_and_vectorize:
+  level: null
+  version: null
+  max_workers: null
+  industrial_batch_size: 2000
+  basin_column_name: null
+  country_boundary_column: null
+  country_output_column: null
+  industrial_zenodo_url: 'https://zenodo.org/records/14832219/files/Industrial_land_10m_1093cities_2023.zip'
+  industrial_download_chunk_size: 1048576
+  industrial_min_cells: 100
+  industrial_persist_rasters: true
+  industrial_simplify_tolerance: 0.001
+  overwrite_existing: false
+  sindex_concurrency: null
+  paths:
+    data_dir: null
+    watershed: null
+    overture: null
+    overture_s3_url: null
+    industrial_raster_persistent_dir: '{data_dir}/industrial_analysis/rasters'
+    industrial_merged_filepath: '{data_dir}/industrial_analysis/industrial_land_merged_v{version}_lvl{level}_mp{industrial_min_cells}.gpkg'
+
+find_unconnected_industrial_areas:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  max_workers: null
+  n_points: null
+  threshold: null
+  sigma: null
+  percent_threshold: null
+  basin_column_name: null
+  country_output_column: null
+  country_boundary_column: null
+  site_id_column: null
+  old_site_id_column: null
+  calculate_area_fn: null
+  calculate_buffer_fn: null
+  area_fn_kwargs: null
+  prepare_data_fn: null
+  flush_size: null
+  max_buffer: null
+  reported_size_columns: null
+  reported_size_skip: null
+  footprint_to_people: null
+  radius_calibration: null
+  industrial_min_cells: null
+  # null = the same category list create_voronoi uses for remove_industrial,
+  # so the two layers can never disagree. An empty list is rejected.
+  industrial_category_numbers: null
+  mix_use_categories: null
+  # Inherited from create_voronoi: run_voronoi_approach reads it, and the
+  # section used to lack it, so the industrial run stopped with a KeyError.
+  temp_voronoi_overwrite: null
+  overwrite_existing: false
+  scipy_true: null
+  cv2_true: null
+  csv_files: null
+  sindex_concurrency: null
+  # Previously absent from config.yaml entirely (silently guarded to 1, i.e.
+  # serial, in code) - now a real key so this actually parallelizes. The
+  # Python call site additionally falls back to utils.default_cpu_workers()
+  # (SLURM-allocation-aware) if this is ever overridden to a falsy value.
+  unconnected_sjoin_workers: 8
+  remove_industrial: null
+  return_boolean: null
+  force_country_rejoin: null
+  paths:
+    data_dir: null
+    bboxes: null
+    hydrowaste: null
+    # Filters by industrial/mixed-use category: needs the annotated dataset.
+    annotated_all_filepath: null
+    watershed: null
+    buffers_dir: null
+    voronoi_dir: null
+    overture: null
+    overture_s3_url: null
+    industrial_merged_filepath: null
+    # The industrial-plant Voronoi and its buffers get their own directories so
+    # this script never reads or overwrites the all-plant create_voronoi outputs.
+    industrial_voronoi_dir: '{data_dir}/industrial_results/voronoi'
+    industrial_buffers_dir: '{data_dir}/industrial_results/buffers'
+    industrial_unconnected_output: '{data_dir}/industrial_results/v{version}/lvl{level}/bf{buffer}/{weight_type}/unconnected_industrial_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}_mp{industrial_min_cells}.gpkg'
+
+verification_script:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  percent_verification: 0.8
+  paths:
+    data_dir: null
+    pop_output_dir: null
+    verification_dir: '{data_dir}/verification/v{version}/lvl{level}/bf{buffer}/{weight_type}'
+
+hw_comparison:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  paths:
+    data_dir: null
+    verification_dir: null
+    hw_plots_dir: '{data_dir}/verification/v{version}/lvl{level}/bf{buffer}/{weight_type}/plots/hw_plots'
+
+eu_comparison:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  # Max distance (m) between a service area and a UWWTD plant to pair them.
+  # Was inherited from final_data_merge.threshold; same value, now explicit.
+  threshold: 500
+  # Multiplier applied to uwwCapacity by the shared EU reference loader. Declared
+  # here because eu_comparison is the earliest of its three consumers.
+  eu_reference_factor: 1
+  paths:
+    data_dir: null
+    verification_dir: null
+    eu_plots_dir: '{data_dir}/verification/v{version}/lvl{level}/bf{buffer}/{weight_type}/plots/eu_plots'
+    eu_ref_filepath: '{data_dir}/extra_points/UWWTD_TreatmentPlants.gpkg'
+
+interactive_unconnected_industrial_map:
+  level: null
+  version: null
+  buffer: null
+  industrial_min_cells: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  initial_zoom: 2
+  vector_tiles:
+    enabled: true
+    min_zoom: 14
+    max_zoom: 16
+    min_render_zoom: 14
+    extent: 4096
+    layer_name: 'unconnected_industrial'
+    simplify_tolerance_deg: 0.0
+    zip_tiles: true
+  paths:
+    data_dir: null
+    industrial_unconnected_input: '{data_dir}/industrial_results/v{version}/lvl{level}/bf{buffer}/{weight_type}/unconnected_industrial_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}_mp{industrial_min_cells}.gpkg'
+    industrial_unconnected_output: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/industrial_unconnected_for_map_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
+    industrial_unconnected_tiles_dir: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/industrial_unconnected_tiles_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}'
+    industrial_unconnected_tiles_zip_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/industrial_unconnected_tiles_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.zip'
+    industrial_unconnected_html_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/interactive_unconnected_industrial_map_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.html'
+
+composite_area_population_plots:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  zonal_sum_default_column: '2024_zonal_sum'
+  min_country_facility_count: 25
+  # Earliest consumer of the shared outlier-clipping knobs; pop_at_risk_figures
+  # inherits them below.
+  plot_outlier_quantiles: [0.005, 0.995]
+  plot_outlier_iqr_factor: 3.0
+  figures:
+    approach: null
+  paths:
+    data_dir: null
+    buffers_dir: null
+    voronoi_dir: null
+    pop_output_dir: null
+    country_boundaries_filepath: '{data_dir}/boundaries/ne_110m_admin_0_countries.shp'
+    composite_histogram_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/composite_histograms_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.png'
+    composite_scatter_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/composite_scatter_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.png'
+
+piechart_figure:
+  level: null
+  version: null
+  buffer: null
+  min_total_size: 10000
+  # Declared here rather than on pop_at_risk_figures below: this is the earliest
+  # section that needs them, and inheritance only reads earlier sections.
+  nodata_country_color: '#bdbdbd'
+  nodata_country_label: 'NODATA'
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  zonal_sum_default_column: null
+  industrial_category_numbers: null
+  mix_use_categories: null
+  figures:
+    approach: null
+  paths:
+    data_dir: null
+    buffers_dir: null
+    voronoi_dir: null
+    pop_output_dir: null
+    country_boundaries_filepath: null
+    raster_country_stats_filepath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/raster_country_stats_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.csv'
+    static_piechart_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/WWTP_type_piechart_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.png'
+
+piechart_interactive:
+  level: null
+  version: null
+  buffer: null
+  min_total_size: 10000
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  zonal_sum_default_column: null
+  industrial_category_numbers: null
+  mix_use_categories: null
+  figures:
+    approach: null
+  paths:
+    data_dir: null
+    buffers_dir: null
+    voronoi_dir: null
+    pop_output_dir: null
+    country_boundaries_filepath: null
+    raster_country_stats_filepath: null
+    interactive_piechart_html_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/WWTP_type_interactive_piechart_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.html'
+
+sizes_interactive_map:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  figures:
+    approach: null
+  paths:
+    data_dir: null
+    buffers_dir: null
+    voronoi_dir: null
+    pop_output_dir: null
+    sizes_interactive_template_filepath: 'figures_scripts/sizes_interactive_map.html'
+    sizes_interactive_geojson_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/leaflet_size_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.geojson'
+    sizes_interactive_html_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/sizes_interactive_map_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.html'
+
+pop_at_risk_figures:
+  level: null
+  version: null
+  buffer: null
+  threshold_value: null
+  min_display_population: 1000
+  save_dpi: 1000
+  country_id_column: 'ISO_A2'
+  nodata_country_color: null
+  nodata_country_label: null
+  plot_outlier_quantiles: null
+  plot_outlier_iqr_factor: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  zoom_level: null
+  max_workers: null
+  paths:
+    data_dir: null
+    non_served_above_threshold_outpath: null
+    country_boundaries_filepath: null
+    figures_dir: '{data_dir}/figures'
+    non_served_outpath: null
+    pop_at_risk_output_filepath: null
+
+create_voronoi_parallel_sweep:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  # The sweep grid (create_voronoi_param_sweep.sh, add_pop_param_sweep.sh and
+  # industrial_analysis_sweep.sh read it through print_task_combinations).
+  # Each level needs its basin file from combine_watersheds.
+  sweep_levels: [5, 6, 7]
+  sweep_weight_methods: ['size', 'linear', 'logarithmic', 'square_root', 'sigmoid']
+  sweep_rigid_buffers: [9000, 11000, 13000, 15000]
+  sweep_size_measures: ['reported', 'footprint']
+  paths:
+    data_dir: null
+    buffers_dir: null
+    voronoi_dir: null
+
+compare_pop_sweep_hw_eu:
+  max_workers: null
+  threshold: 500  # UWWTD match distance (m), as in eu_comparison
+  hw_weight: 0.7
+  eu_reference_factor: null
+  paths:
+    data_dir: null
+    eu_ref_filepath: null
+
+# Ranks the 'ver'/'unver'/'single' splits of the create_voronoi_parallel_sweep grid.
+# Shares the sweep-aggregation shape, EU reference layer and hw_weight scoring of
+# compare_pop_sweep_hw_eu above, so it is declared after it and inherits from it.
+sweep_ver_ranking:
+  max_workers: null
+  threshold: 500  # UWWTD match distance (m), as in eu_comparison
+  hw_weight: null
+  eu_reference_factor: null
+  percent_verification: null
+  figures:
+    approach: null
+  paths:
+    data_dir: null
+    eu_ref_filepath: null
+    output_dir: '{data_dir}/sensitivity/ver_ranking'
+
+# Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
+# unit, and the served-population cartogram. Scripts read these through
+# figures/fig1/fig1_config.py; their outputs and inputs live under data_dir.
+figure1:
+  # Units with fewer matched plants than this are hatched instead of coloured.
+  min_plants: 5
+  # A HeiGIT and a reference plant closer than this are the same plant.
+  match_radius_m: 10000
+  paths:
+    data_dir: null
+    match_dir: '{data_dir}/figures/fig1/match'
+    cartogram_dir: '{data_dir}/figures/fig1/cartogram'
+    combined_dir: '{data_dir}/figures/fig1/combined'

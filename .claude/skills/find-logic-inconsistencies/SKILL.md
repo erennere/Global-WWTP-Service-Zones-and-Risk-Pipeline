@@ -1,6 +1,6 @@
 ---
 name: Find Logic Inconsistencies
-description: Search src/ for structurally-identical operations handled inconsistently (fail-fast vs fail-soft, silently diverged near-duplicate functions, tautological/inverted booleans) and propose explicit toggles or bug fixes.
+description: Search wwtp/ for structurally-identical operations handled inconsistently (fail-fast vs fail-soft, silently diverged near-duplicate functions, tautological/inverted booleans) and propose explicit toggles or bug fixes.
 disable-model-invocation: true
 ---
 

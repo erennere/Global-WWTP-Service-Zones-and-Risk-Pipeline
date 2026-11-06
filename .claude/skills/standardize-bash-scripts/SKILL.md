@@ -1,16 +1,16 @@
 ---
 name: Standardize Bash Scripts
-description: Converge all .sh wrappers under src/ onto one shared shape that works identically under sbatch and plain bash when launched from src/, deduplicating shared logic into src/lib/utils.sh.
+description: Converge all .sh wrappers under wwtp/ onto one shared shape that works identically under sbatch and plain bash when launched from wwtp/, deduplicating shared logic into wwtp/lib/utils.sh.
 disable-model-invocation: true
 ---
 
 # Standardize Bash Scripts
 
-Audit and converge every `.sh` wrapper under `src/` onto one shared shape that behaves identically whether launched via `sbatch` on HPC or plain `bash` from any directory.
+Audit and converge every `.sh` wrapper under `wwtp/` onto one shared shape that behaves identically whether launched via `sbatch` on HPC or plain `bash` from any directory.
 
 ## Scope
 
-Every `.sh` file under `src/`, including but not limited to: `add_pop.sh`, `create_voronoi.sh`, `combine_watersheds.sh`, `download_pop.sh`, and one or more per subsystem directory (`annotation_scripts/`, `data_merge/`, `figures_scripts/`, `industrial_analysis/`, `pop_at_risk_river_calculations/`, `pop_validation_scripts/`, `sensitivity_analysis_scripts/`). Check `src/lib/utils.sh` first — this is the existing shared-bash-helpers location; converge onto and extend it rather than proposing a new shared file.
+Every `.sh` file under `wwtp/`, including but not limited to: `add_pop.sh`, `create_voronoi.sh`, `combine_watersheds.sh`, `download_pop.sh`, and one or more per subsystem directory (`annotation_scripts/`, `data_merge/`, `figures_scripts/`, `industrial_analysis/`, `pop_at_risk_river_calculations/`, `pop_validation_scripts/`, `sensitivity_analysis_scripts/`). Check `wwtp/lib/utils.sh` first — this is the existing shared-bash-helpers location; converge onto and extend it rather than proposing a new shared file.
 
 ## The standard shape
 
@@ -19,12 +19,12 @@ Every `.sh` file under `src/`, including but not limited to: `add_pop.sh`, `crea
 - Consistent logging/echo style across scripts (pick one convention and apply it everywhere).
 - Executable bit set (`+x`) on every `.sh` file — flag any missing it; this is a known recurring issue (a filesystem/checkout artifact, not a logic problem, but it silently breaks direct invocation).
 
-## Every wrapper is launched from `src/`
+## Every wrapper is launched from `wwtp/`
 
-This repo has one invariant, and it is deliberate: **every `.sh` file is run from `src/` and nowhere else**, for both `bash` and `sbatch`:
+This repo has one invariant, and it is deliberate: **every `.sh` file is run from `wwtp/` and nowhere else**, for both `bash` and `sbatch`:
 
 ```bash
-cd src
+cd wwtp
 bash pop_at_risk_river_calculations/create_rasters.sh --level 8
 sbatch pop_at_risk_river_calculations/create_rasters.sh --level 8
 ```
@@ -39,11 +39,11 @@ What to enforce instead:
 
 ## Deduplicate bash logic itself
 
-Apply the same centralization-by-default principle used for Python (`find-duplication`) to bash: any logic repeated across multiple `.sh` scripts — argument validation, logging helpers, environment/conda activation, override-flag assembly, per-stage failure handling — should be extracted into `src/lib/utils.sh` (sourced by each script) rather than repeated per-script. Check what's already in `utils.sh` before proposing anything new; extend it, don't duplicate it.
+Apply the same centralization-by-default principle used for Python (`find-duplication`) to bash: any logic repeated across multiple `.sh` scripts — argument validation, logging helpers, environment/conda activation, override-flag assembly, per-stage failure handling — should be extracted into `wwtp/lib/utils.sh` (sourced by each script) rather than repeated per-script. Check what's already in `utils.sh` before proposing anything new; extend it, don't duplicate it.
 
 ## Method
 
-1. Read `src/lib/utils.sh` in full first, so you know what's already shared before flagging anything as "needs deduplicating."
+1. Read `wwtp/lib/utils.sh` in full first, so you know what's already shared before flagging anything as "needs deduplicating."
 2. Use `Explore` agents to inventory every `.sh` script's current header (shebang, `set` flags, SBATCH block, `PROJECT_ROOT` form and utils guard, executable bit) in parallel.
 3. Diff each script against the proposed standard shape and against `utils.sh`'s current contents.
 
