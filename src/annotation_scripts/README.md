@@ -45,7 +45,7 @@ Cluster-specific defaults for imagery and annotation outputs must be overridden 
 | `copy_falsy_images.sh` | shell launcher | Copies selected images for review | config values and named `--level`/`--version`/... overrides | copied review images |
 | `copy_falsy_images.py` | Python worker | Copies a filtered image subset for QA | annotated images and selection criteria | copied image subset |
 | `NEW_03_WASTEWATERJOIN_GEOJSON.py` | Python worker | Optional join helper for GeoJSON/parquet intermediates | OSM outputs and temp parquet files | joined geodata |
-| `NEW_04_EXPORTGEOTIFF.py` | Python worker | Optional geotiff export helper | prepared geospatial layers | GeoTIFF outputs |
+| `NEW_04_EXPORTGEOTIFF.py` | Python worker | Optional helper: renders `export_layer_filepath` into one image + `.wld` world file per grid cell (`python -m src.annotation_scripts.NEW_04_EXPORTGEOTIFF`) | NEW_01 grid, one vector layer | images in `export_patch_dir` |
 | `sample_annotations_by_class.py` | Python worker | Ad-hoc class-balanced sampling of annotated images | annotation results and annotated image directory | sampled image list (not yet wired into the pipeline - see Known Issues) |
 
 ## Execution Flow

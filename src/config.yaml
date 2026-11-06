@@ -182,7 +182,20 @@ NEW_03_WASTEWATERJOIN_GEOJSON:
     annotations_by_osm_dir: null
     annotations_temp_parquet_dir: null
 
-NEW_04_EXPORTGEOTIFF: {}
+NEW_04_EXPORTGEOTIFF:
+  version: null
+  export:
+    id_field: 'idx'
+    output_width_px: 3072
+    output_height_px: 3072
+    dpi: 96
+    image_format: 'tif'  # 'tif' or 'png'
+  paths:
+    data_dir: null
+    corrected_all_filepath: null
+    annotations_grid_dir: null
+    export_layer_filepath: '{data_dir}/annotations/data/wastewater_plant.geojson'
+    export_patch_dir: '{data_dir}/annotations/PATCH'
 
 download_pop:
   start_year: 2015

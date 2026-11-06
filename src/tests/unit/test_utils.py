@@ -3,20 +3,8 @@ from __future__ import annotations
 import pytest
 
 from src import utils
-import os
-from pathlib import Path
 import geopandas as gpd
-import numpy as np
-import pandas as pd
-from shapely.geometry import Point, box
-from src import download_pop as dp
-from src.figures_scripts import composite_area_population_plots as capp
-from src.figures_scripts import pop_at_risk_figures as prf
-import io
-import runpy
-from unittest.mock import mock_open, patch
-from shapely.geometry import Point, Polygon, box
-from src.pop_at_risk_river_calculations import create_rasters
+from shapely.geometry import box
 
 pytestmark = pytest.mark.unit
 
@@ -54,43 +42,34 @@ def test_quote_sql_identifier_escapes_embedded_quotes():
 # --- moved from the coverage-campaign files ---
 
 
+def test_new04_exports_one_georeferenced_patch_per_cell(tmp_path, monkeypatch):
+    import sys
 
-def test_new04_exportgeotiff_script_executes_with_dummy_data(monkeypatch):
-    grid = gpd.GeoDataFrame(
-        {"idx": [1], "geometry": [box(0, 0, 10, 10)]},
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
+    from src.annotation_scripts import NEW_04_EXPORTGEOTIFF as n4
 
-    class _Layer:
-        def plot(self, ax=None, color=None, edgecolor=None):
-            return ax
+    data = tmp_path / "data"
+    grid_dir = data / "annotations" / "GRID"
+    grid_dir.mkdir(parents=True)
+    gpd.GeoDataFrame({"idx": [7, 8]}, geometry=[box(0, 0, 100, 100), box(100, 0, 300, 100)],
+                     crs=3857).to_file(grid_dir / "grids_points.gpkg")
+    layer = data / "plants.geojson"
+    gpd.GeoDataFrame(geometry=[box(10, 10, 50, 50)], crs=3857).to_crs(4326).to_file(layer)
+    cfg = {"export": {"id_field": "idx", "output_width_px": 64, "output_height_px": 32, "dpi": 16,
+                      "image_format": "png"},
+           "paths": {"corrected_all_filepath": str(data / "points.gpkg"), "annotations_grid_dir": str(grid_dir),
+                     "export_layer_filepath": str(layer), "export_patch_dir": str(data / "PATCH")}}
+    monkeypatch.setattr(n4, "load_config", lambda **kw: cfg)
+    monkeypatch.setattr(sys, "argv", ["prog"])
+    n4.main()
+    assert sorted(p.name for p in (data / "PATCH").iterdir()) == ["7.png", "7.wld", "8.png", "8.wld"]
+    assert [float(v) for v in (data / "PATCH" / "8.wld").read_text().split()] == [200 / 64, 0, 0, -100 / 32, 100, 100]
 
-    calls = {"n": 0}
 
-    def fake_read_file(path):
-        calls["n"] += 1
-        return grid.copy() if calls["n"] == 1 else _Layer()
+def test_new04_rejects_unknown_id_field_and_format(tmp_path):
+    from src.annotation_scripts import NEW_04_EXPORTGEOTIFF as n4
 
-    class _Ax:
-        def set_xlim(self, a, b):
-            return None
-
-        def set_ylim(self, a, b):
-            return None
-
-        def axis(self, value):
-            return None
-
-    class _Fig:
-        def savefig(self, *args, **kwargs):
-            return None
-
-    monkeypatch.setattr("src.utils.ensure_output_dir_for_file", lambda path: None)
-    monkeypatch.setattr("geopandas.read_file", fake_read_file)
-    monkeypatch.setattr("matplotlib.pyplot.subplots", lambda *args, **kwargs: (_Fig(), _Ax()))
-    monkeypatch.setattr("matplotlib.pyplot.close", lambda fig: None)
-    monkeypatch.setattr("os.makedirs", lambda *args, **kwargs: None)
-
-    with patch("builtins.open", mock_open()):
-        runpy.run_module("src.annotation_scripts.NEW_04_EXPORTGEOTIFF", run_name="__main__")
+    grid = gpd.GeoDataFrame({"idx": [1]}, geometry=[box(0, 0, 1, 1)])
+    with pytest.raises(KeyError):
+        n4.export_patches(grid, [], str(tmp_path), "id", 8, 8, 8, "png")
+    with pytest.raises(ValueError):
+        n4.export_patches(grid, [], str(tmp_path), "idx", 8, 8, 8, "jpg")
