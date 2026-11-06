@@ -18,7 +18,7 @@ import numpy as np, pandas as pd, geopandas as gpd
 from shapely import affinity
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
 
 DATA, HB, AGG, OUT = sys.argv[1:5]
 TAG = sys.argv[5] if len(sys.argv) > 5 else TAG

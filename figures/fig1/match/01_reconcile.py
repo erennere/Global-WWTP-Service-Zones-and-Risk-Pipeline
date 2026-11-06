@@ -19,7 +19,7 @@ import numpy as np, pandas as pd, pycountry
 from sklearn.neighbors import BallTree
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import MATCH_RADIUS_M  # noqa: E402  (config.yaml, section figure1)
 
 R_EARTH = 6371008.8
 DATA, OUT = sys.argv[1], sys.argv[2]

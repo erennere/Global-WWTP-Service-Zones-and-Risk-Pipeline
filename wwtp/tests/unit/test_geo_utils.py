@@ -5,16 +5,6 @@ import pytest
 from shapely.geometry import LineString, Point, Polygon
 
 from wwtp import geo_utils
-import argparse
-import contextlib
-import runpy
-import sys
-from pathlib import Path
-import numpy as np
-import pandas as pd
-from pyproj import CRS
-from shapely.geometry import GeometryCollection, LineString, Point, Polygon, box
-from wwtp import create_voronoi as cv
 
 pytestmark = pytest.mark.unit
 

@@ -1,24 +1,13 @@
 """Tests for pop_at_risk_figures (moved from the coverage-campaign files)."""
-import json
-from pathlib import Path
 import geopandas as gpd
 import pandas as pd
+import duckdb
 import pytest
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as gen_grids
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as osm_extract
-from wwtp.figures_scripts import piechart_figure, piechart_interactive
+from shapely.geometry import Point, Polygon
 from wwtp.figures_scripts import pop_at_risk_figures
-import os
-import numpy as np
-from shapely.geometry import Point, box
-from wwtp import download_pop as dp
-from wwtp.figures_scripts import composite_area_population_plots as capp
+from shapely.geometry import box
 from wwtp.figures_scripts import pop_at_risk_figures as prf
 import runpy
-import matplotlib
-from shapely.geometry import MultiPolygon, Point, Polygon, box
-from wwtp.figures_scripts import piechart_interactive as pif
 
 pytestmark = pytest.mark.unit
 
@@ -342,7 +331,7 @@ def test_pop_at_risk_main_orchestrates_with_patched_io(monkeypatch, tmp_path):
         seen["duckdb_query"] = query
         return _DuckResult()
 
-    monkeypatch.setattr(prf.duckdb, "sql", _duckdb_sql)
+    monkeypatch.setattr(duckdb, "sql", _duckdb_sql)
 
     prf.main()
 

@@ -1,7 +1,6 @@
 import argparse
 import os
 import logging
-import duckdb
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -33,7 +32,7 @@ def create_single_plot(
     title,
     output_filename,
     output_dir="coverage_maps",
-    cmap=plt.get_cmap('viridis'),
+    cmap='viridis',
     scale_type='log',
     value_transform=None,
     value_label=None,
@@ -63,6 +62,7 @@ def create_single_plot(
     Parameters are intentionally generic so this helper can be reused for
     different geospatial completeness or risk metrics.
     """
+    cmap = plt.get_cmap(cmap)  # a name or a Colormap
     if column not in z8_stats.columns:
         raise KeyError(f"Column '{column}' not found in GeoDataFrame")
 
@@ -321,7 +321,6 @@ def main():
     nodata_country_color = cfg['nodata_country_color']
     nodata_country_label = cfg['nodata_country_label']
     min_display_value = float(cfg['min_display_population'])
-    threshold_value = float(cfg['threshold_value'])
 
     pop_at_risk_path = cfg['paths']['pop_at_risk_output_filepath']
     pop_at_risk_gdf = gpd.read_parquet(pop_at_risk_path)

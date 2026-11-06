@@ -1,9 +1,7 @@
 """Tests for verification_script (moved from the coverage-campaign files)."""
-import numpy as np
 import pandas as pd
 import pytest
-from wwtp.figures_scripts import composite_area_population_plots
-from wwtp.pop_validation_scripts import hw_comparison, verification_script
+from wwtp.pop_validation_scripts import verification_script
 
 pytestmark = pytest.mark.unit
 

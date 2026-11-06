@@ -6,7 +6,6 @@ markers to provide a lightweight interactive overview for communication outputs.
 
 import argparse
 import os
-import numpy as np
 import geopandas as gpd
 import pandas as pd
 import folium

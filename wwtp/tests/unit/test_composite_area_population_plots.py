@@ -1,16 +1,12 @@
 """Tests for composite_area_population_plots (moved from the coverage-campaign files)."""
 import os
-from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
 from shapely.geometry import Point, box
-from wwtp import download_pop as dp
 from wwtp.figures_scripts import composite_area_population_plots as capp
-from wwtp.figures_scripts import pop_at_risk_figures as prf
 from wwtp.figures_scripts import composite_area_population_plots
-from wwtp.pop_validation_scripts import hw_comparison, verification_script
 
 pytestmark = pytest.mark.unit
 

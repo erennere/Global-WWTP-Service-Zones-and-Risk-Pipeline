@@ -35,7 +35,7 @@ from ..service_areas import (
     intersects_with_country_db,
     intersect_with_polygon_sindex,
 )
-from ..geo_utils import estimate_utm_epsg, repair_geometry
+from ..geo_utils import repair_geometry
 from ..utils import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     configure_logging,

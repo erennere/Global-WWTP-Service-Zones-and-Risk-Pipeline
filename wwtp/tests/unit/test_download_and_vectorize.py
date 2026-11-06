@@ -8,49 +8,15 @@ from shapely.geometry import Point, Polygon
 
 from wwtp.industrial_analysis import download_and_vectorize
 import numpy as np
-import pandas as pd
-from PIL import Image, ImageDraw, ImageFont
 from rasterio.transform import from_origin
-from shapely.geometry import LineString, MultiPolygon, Polygon, box
-from wwtp.annotation_scripts import download_bing_annotate as dba
-from wwtp.figures_scripts import piechart_figure as pf
+from shapely.geometry import box
 from wwtp.industrial_analysis import download_and_vectorize as dav
-import argparse
-import runpy
-import sys
-import types
-import duckdb
-from shapely.geometry import LineString, Point, box
-from wwtp import download_pop as dp
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
-from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
-from wwtp import starter
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
-from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
 from wwtp.industrial_analysis import download_and_vectorize as dv
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, call
-from shapely.geometry import Point, Polygon, box
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import wwtp.download_pop as dp
+from unittest.mock import patch, MagicMock
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-from unittest.mock import Mock, patch, MagicMock
-try:
-    from wwtp import download_pop as dp
-    from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-    from wwtp.industrial_analysis import download_and_vectorize as dv
-except ImportError:
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    import download_pop as dp
-    from pop_at_risk_river_calculations import create_rasters as cr
-    from industrial_analysis import download_and_vectorize as dv
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
 
 
 pytestmark = pytest.mark.unit
@@ -765,7 +731,6 @@ class TestDownloadAndVectorizeLogic:
 
     def test_download_file_destination_path(self):
         """Test output destination path."""
-        url = "https://zenodo.org/record/12345/files/data.zip"
         dest_path = "/tmp/data.zip"
         
         assert os.path.dirname(dest_path) in ["/tmp", ""]
@@ -782,7 +747,6 @@ class TestDownloadAndVectorizeLogic:
     def test_vectorize_rasters_parallel_task_count(self):
         """Test parallel worker count."""
         max_workers = 8
-        raster_files = ["/path/to/r1.tif", "/path/to/r2.tif", "/path/to/r3.tif"]
         
         # Verify worker count is reasonable
         assert max_workers > 0
@@ -829,5 +793,5 @@ class TestDownloadAndVectorizeUtilities:
     
     def test_vectorize_raster_file_missing(self):
         """Test vectorize_raster_file with missing input."""
-        with pytest.raises(Exception):
+        with pytest.raises(OSError):  # rasterio's RasterioIOError
             dv.vectorize_raster_file("/nonexistent/raster.tif")

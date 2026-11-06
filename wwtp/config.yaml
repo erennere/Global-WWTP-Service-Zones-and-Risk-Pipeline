@@ -773,7 +773,6 @@ pop_at_risk_figures:
   level: null
   version: null
   buffer: null
-  threshold_value: null
   min_display_population: 1000
   save_dpi: 1000
   country_id_column: 'ISO_A2'

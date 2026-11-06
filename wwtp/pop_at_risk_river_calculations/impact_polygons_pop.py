@@ -229,7 +229,7 @@ def mix_downstream_concentration(downstream_conc, upstream_exit_conc, upstream_d
 
 
 def generate_single_segment_plume(rid, lat, start_load_ratio=None, step_m=100.0, c_limit=5.0, base_k=0.23, theta=1.047,
-                                  impact_radii=[1000, 2000], next_state_dict=None, velocity_m_s=1.0,
+                                  impact_radii=(1000, 2000), next_state_dict=None, velocity_m_s=1.0,
                                   water_temp_equator_c=28.0):
     """Generate plume polygons for one river segment and return the exit load.
 
@@ -445,7 +445,8 @@ def create_impact_polygons(pop_chunk, main_riv, nxt_dis_col, model_params=None):
         results = {}
         for index, radius in enumerate(impact_radii):
             pc = pop_chunk.copy() 
-            pc['geometry'] = pc[nxt_dis_col].map(result_geometries).apply(lambda geoms: geoms[index] if geoms is not None and len(geoms) > index else None)
+            pc['geometry'] = pc[nxt_dis_col].map(result_geometries).apply(
+                lambda geoms, i=index: geoms[i] if geoms is not None and len(geoms) > i else None)
             valid_returns = pc.dropna(subset=['geometry'])
             results[radius] = valid_returns[['geometry', 'utm', 'country', 'MAIN_RIV', nxt_dis_col]]
         return results

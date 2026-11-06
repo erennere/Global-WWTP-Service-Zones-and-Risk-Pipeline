@@ -12,7 +12,7 @@ Usage: python 08_plot_cartogram.py <level 3|4> <out_stem> [--width 88] [--varian
               continuous  one continuous ramp from 50 to 100 %
 """
 import argparse
-import numpy as np, geopandas as gpd, pandas as pd
+import numpy as np, geopandas as gpd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle

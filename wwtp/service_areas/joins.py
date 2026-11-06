@@ -200,7 +200,7 @@ def process_centroid(args):
     centroid, sidx, polygons, col = args
 
     if centroid is None or centroid.is_empty or not centroid.is_valid:
-        logger.debug(f"Skipping invalid centroid")
+        logger.debug("Skipping invalid centroid")
         return None
 
     possible_matches_index = list(sidx.intersection(centroid.bounds))
@@ -221,7 +221,7 @@ def process_centroid(args):
         logger.debug(f"Found polygon intersection for centroid: {col}={match_value}")
         return match_value
     else:
-        logger.debug(f"No precise polygon intersection found for centroid")
+        logger.debug("No precise polygon intersection found for centroid")
         return None
 
 

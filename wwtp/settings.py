@@ -478,7 +478,6 @@ class SizesInteractiveMap(RunParams):
 
 
 class PopAtRiskFigures(RunParams):
-    threshold_value: NonNegativeInt
     min_display_population: NonNegativeInt
     save_dpi: PositiveInt
     country_id_column: str

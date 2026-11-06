@@ -1,37 +1,12 @@
 """Tests for piechart_figure (moved from the coverage-campaign files)."""
-import json
-from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as gen_grids
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as osm_extract
-from wwtp.figures_scripts import piechart_figure, piechart_interactive
-from wwtp.figures_scripts import pop_at_risk_figures
+from shapely.geometry import MultiPolygon, Point, Polygon
+from wwtp.figures_scripts import piechart_figure
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-from rasterio.transform import from_origin
-from shapely.geometry import LineString, MultiPolygon, Polygon, box
-from wwtp.annotation_scripts import download_bing_annotate as dba
+from shapely.geometry import box
 from wwtp.figures_scripts import piechart_figure as pf
-from wwtp.industrial_analysis import download_and_vectorize as dav
-import argparse
-import os
-import runpy
-import sys
-import types
-import duckdb
-from shapely.geometry import LineString, Point, box
-from wwtp import download_pop as dp
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
-from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
-from wwtp import starter
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
-from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
-from wwtp.industrial_analysis import download_and_vectorize as dv
 
 pytestmark = pytest.mark.unit
 

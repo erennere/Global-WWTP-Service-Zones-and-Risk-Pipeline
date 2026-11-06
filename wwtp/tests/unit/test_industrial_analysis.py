@@ -566,7 +566,6 @@ def test_main_replaces_existing_output_atomically(
     cfg["paths"]["industrial_unconnected_output"] = str(tmp_path / "industrial.parquet")
     cfg["overwrite_existing"] = True
     cfg["prepare_data_fn"] = "prepare_data"
-    captured = {}
 
     industrial_gdf = gpd.GeoDataFrame(
         {"industrial_id": [1], "geometry": [box(0.0, 0.0, 0.1, 0.1)]},

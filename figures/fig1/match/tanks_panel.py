@@ -27,7 +27,7 @@ from matplotlib.patches import Rectangle, Wedge, Circle
 from shapely.geometry import box, Polygon, Point
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG, enough_plants  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import MIN_PLANTS, TAG, enough_plants  # noqa: E402  (config.yaml, section figure1)
 
 INK, INK2 = "#1a1a1a", "#5a5a5a"
 NODATA, HATCH_EDGE = "#dedede", "#9a9a9a"

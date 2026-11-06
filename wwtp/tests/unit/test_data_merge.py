@@ -1063,7 +1063,6 @@ def test_corr_locations_wosm_skips_missing_source_and_empty_candidates(monkeypat
 
 def test_correct_locations_script_entrypoint_runs_main_guard(monkeypatch):
     import runpy
-    from pathlib import Path
 
     import wwtp.starter as starter_mod
 

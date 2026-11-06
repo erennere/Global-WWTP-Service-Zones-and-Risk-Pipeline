@@ -63,7 +63,7 @@ def query_overpass(bbox, queries, url, retries=3, pause_seconds=0.1):
     default, so a call from inside the thread pool in ``main`` never depends
     on a global being set before the pool starts.
     """
-    q = f"""
+    q = """
     [out:json][timeout:180];
     ("""
     pairs = queries.items() if isinstance(queries, dict) else queries
@@ -76,7 +76,7 @@ def query_overpass(bbox, queries, url, retries=3, pause_seconds=0.1):
         way{filter_expr}({bbox});
         relation{filter_expr}({bbox});
         """
-    q += f"""
+    q += """
     );
     (._;>;);
     out body;

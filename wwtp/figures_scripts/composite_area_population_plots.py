@@ -230,7 +230,6 @@ def make_scatter_plot(country_df, color_col, out_path):
     fig, axes = plt.subplots(1, 2, figsize=(17, 7), dpi=300)
 
     color_map = make_category_color_map(country_df[color_col])
-    point_colors = country_df[color_col].map(color_map)
 
     x1_raw = pd.to_numeric(country_df["ratio_area_pop_agg"], errors="coerce")
     y1_raw = pd.to_numeric(country_df["ratio_area_pop_median"], errors="coerce")

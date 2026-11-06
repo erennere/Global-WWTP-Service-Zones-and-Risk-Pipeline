@@ -1,30 +1,15 @@
 """Tests for download_bing_annotate (moved from the coverage-campaign files)."""
 import geopandas as gpd
-import numpy as np
 import pandas as pd
 import pytest
 from PIL import Image, ImageDraw, ImageFont
-from rasterio.transform import from_origin
-from shapely.geometry import LineString, MultiPolygon, Polygon, box
+from shapely.geometry import LineString, box
 from wwtp.annotation_scripts import download_bing_annotate as dba
-from wwtp.figures_scripts import piechart_figure as pf
-from wwtp.industrial_analysis import download_and_vectorize as dav
 import argparse
-import os
 import runpy
-import sys
-import types
 import duckdb
-from shapely.geometry import LineString, Point, box
-from wwtp import download_pop as dp
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
-from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
+from shapely.geometry import Point
 from wwtp import starter
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
-from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
-from wwtp.industrial_analysis import download_and_vectorize as dv
 
 pytestmark = pytest.mark.unit
 

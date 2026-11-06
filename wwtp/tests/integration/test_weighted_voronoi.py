@@ -5,7 +5,6 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point, box
 
-from wwtp import create_voronoi
 from wwtp import service_areas as sa
 
 

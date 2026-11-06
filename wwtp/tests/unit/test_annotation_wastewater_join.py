@@ -6,30 +6,8 @@ import pytest
 from shapely.geometry import Point, Polygon
 from shapely import to_wkb
 from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww_join
-from wwtp import download_pop
-import concurrent.futures
-import os
-import runpy
 from pathlib import Path
-import wwtp.create_voronoi as create_voronoi
-import wwtp.starter as starter
 from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
-import argparse
-import sys
-import types
-import duckdb
-import numpy as np
-from shapely.geometry import LineString, Point, box
-from wwtp import download_pop as dp
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
-from wwtp.annotation_scripts import download_bing_annotate as dba
-from wwtp.figures_scripts import piechart_figure as pf
-from wwtp import starter
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
-from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
-from wwtp.industrial_analysis import download_and_vectorize as dv
 
 pytestmark = pytest.mark.unit
 

@@ -38,7 +38,7 @@ def from_wkb_modified(x):
     try:
         x = from_wkb(x)
         return x
-    except Exception as err:
+    except Exception:
         return None
     
 def load_geodata(path):
@@ -359,7 +359,7 @@ def merge_parquets_sql(
     
     conn.execute('DROP TABLE IF EXISTS dataset;')
     conn.execute(f'CREATE TABLE dataset ({", ".join(col_defs)});')
-    logger.info(f"✅ Created dataset table with unified schema")
+    logger.info("✅ Created dataset table with unified schema")
     
     # Phase 4: Load and insert from all parquets using controlled batched UNION ALL inserts.
     logger.info(f"⚙️  Inserting {len(parquet_files)} parquets into dataset...")
@@ -450,7 +450,7 @@ def merge_bboxes_sql(
         if not temp_parquet_files:
             logger.error("No parquet files were generated from input GeoJSON files")
             return
-        logger.info(f"✅ Converted all files. Starting merge...")
+        logger.info("✅ Converted all files. Starting merge...")
         
         # 2️⃣ Merge Parquets with parallel schema discovery and unified table creation
         merge_parquets_sql(
@@ -541,7 +541,7 @@ if __name__ == "__main__":
 
     output_filepath = os.path.join(output_dir, 'merged_polygons.parquet')
     output_path = os.path.join(output_dir, 'wastewater_plant.geojson')
-    prototype = f'*_polygons.geojson'
+    prototype = '*_polygons.geojson'
     
     
     # Run polygons and lines merges in parallel using separate processes (bypasses GIL)

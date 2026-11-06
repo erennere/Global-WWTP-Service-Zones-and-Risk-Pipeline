@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import io
 
 import geopandas as gpd
-import numpy as np
 import pytest
 from PIL import Image, ImageFont
-from shapely.geometry import LineString, Point, box
+from shapely.geometry import LineString, box
 
 from wwtp.annotation_scripts import download_bing_annotate as dba
 

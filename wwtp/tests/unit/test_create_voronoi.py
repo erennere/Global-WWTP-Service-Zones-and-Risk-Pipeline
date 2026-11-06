@@ -3,8 +3,6 @@ import argparse
 import contextlib
 import math
 import runpy
-import sys
-import types
 from pathlib import Path
 import geopandas as gpd
 import numpy as np
@@ -16,26 +14,9 @@ from wwtp import create_voronoi as cv
 from wwtp import geo_utils
 import os
 import tempfile
-from unittest.mock import Mock, patch, MagicMock
-from shapely.geometry import Point, Polygon, box
 from shapely import from_wkt
-import wwtp.create_voronoi as cv
-import wwtp.download_pop as dp
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-from wwtp.starter import parse_config_overrides, load_config
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-from shapely.geometry import Point, Polygon, LineString, MultiPolygon, box
-from unittest.mock import patch, MagicMock
-try:
-    from wwtp import create_voronoi as cv
-except ImportError:
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    import create_voronoi as cv
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
-from wwtp import create_voronoi
 from wwtp import service_areas as sa
 from wwtp.tests.helpers import patch_service_areas
 import shapely
@@ -1130,7 +1111,7 @@ def test_remaining_weighted_voronoi_and_worker_branches(monkeypatch):
     )
     assert isinstance(r2, gpd.GeoDataFrame)
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="not enough values to unpack"):
         sa.voronoi_worker(("bad",))
 
 
@@ -1802,7 +1783,6 @@ class TestCliArgumentParsing:
 
     def test_parse_config_overrides_empty(self):
         """Test with no overrides."""
-        argv = []
         
         overrides = {}
         assert len(overrides) == 0
@@ -1895,7 +1875,7 @@ class TestErrorPathsCoverage:
         invalid_wkt = "POLYGON((0 0, 1 1, 0 0))"  # Unclosed ring
         
         try:
-            geom = from_wkt(invalid_wkt)
+            from_wkt(invalid_wkt)
             # Shapely may auto-fix
         except Exception:
             pass  # Expected
@@ -1922,11 +1902,8 @@ class TestErrorPathsCoverage:
         df = pd.DataFrame({"a": [1, 2, 3]})
         
         # Should raise KeyError when accessing missing column
-        try:
+        with pytest.raises(KeyError):
             _ = df["nonexistent"]
-            assert False, "Should have raised KeyError"
-        except KeyError:
-            pass  # Expected
 
 
 class TestGeometryValidation:

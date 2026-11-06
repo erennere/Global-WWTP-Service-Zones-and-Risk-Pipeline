@@ -1,12 +1,9 @@
 """Tests for combine_watersheds (moved from the coverage-campaign files)."""
-import sys
 from pathlib import Path
 import geopandas as gpd
-import pandas as pd
 import pytest
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import Point
 from wwtp import combine_watersheds
-from wwtp.pop_at_risk_river_calculations import assign_rivers_to_basin
 
 pytestmark = pytest.mark.unit
 

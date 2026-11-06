@@ -16,7 +16,7 @@ import sys, json
 import numpy as np, pandas as pd, geopandas as gpd
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
 
 HB, AGG = sys.argv[1:3]
 TAG = sys.argv[3] if len(sys.argv) > 3 else TAG
@@ -81,7 +81,7 @@ for lev in (3, 4):
     h = pts[pts.cls != "missing"].copy()
     hb = pd.to_numeric(h.HYBAS_ID, errors="coerce")
     pf = hb.map(lambda v: pfaf9.get(int(v)) if pd.notna(v) else None)
-    h["pfaf_route"] = pf.map(lambda v: int(str(int(v))[:lev]) if pd.notna(v) else np.nan)
+    h["pfaf_route"] = pf.map(lambda v, k=lev: int(str(int(v))[:k]) if pd.notna(v) else np.nan)
     h["spatial_route"] = spatial(h, polys, key)
     both = h.pfaf_route.notna() & h.spatial_route.notna()
     agree = float((h.loc[both, "pfaf_route"] == h.loc[both, "spatial_route"]).mean())

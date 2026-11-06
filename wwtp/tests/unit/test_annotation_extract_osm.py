@@ -1,33 +1,11 @@
 """Tests for annotation_extract_osm (moved from the coverage-campaign files)."""
 import json
-from pathlib import Path
 import geopandas as gpd
-import pandas as pd
 import pytest
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as gen_grids
+from shapely.geometry import LineString, Point, Polygon
 from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as osm_extract
-from wwtp.figures_scripts import piechart_figure, piechart_interactive
-from wwtp.figures_scripts import pop_at_risk_figures
-import argparse
-import os
-import runpy
-import sys
-import types
-import duckdb
-import numpy as np
-from shapely.geometry import LineString, Point, box
-from wwtp import download_pop as dp
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
+from shapely.geometry import box
 from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
-from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
-from wwtp.annotation_scripts import download_bing_annotate as dba
-from wwtp.figures_scripts import piechart_figure as pf
-from wwtp import starter
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
-from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
-from wwtp.industrial_analysis import download_and_vectorize as dv
 
 pytestmark = pytest.mark.unit
 

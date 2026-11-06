@@ -75,3 +75,13 @@ packages = [
 wwtp = ["config.yaml", "config.cluster.example.yaml"]
 "wwtp.annotation_scripts" = ["assets/*.ttf"]
 "wwtp.figures_scripts" = ["*.html"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["notes", "data"]
+
+[tool.ruff.lint]
+# pyflakes, syntax errors, pylint errors and bugbear (without the zip(strict=) and unused-loop-variable style rules)
+select = ["F", "E9", "PLE", "B"]
+ignore = ["B905", "B007"]

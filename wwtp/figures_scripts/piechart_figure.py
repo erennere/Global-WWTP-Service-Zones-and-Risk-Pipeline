@@ -33,7 +33,7 @@ def aggregate_by_country(gdf, country_column, agg_column, industrial_column=None
 
 def plot_splitted_piechart(dist_tag1, dist_tag2, ax,
                             size_tag1, size_tag2, min_size,
-                            labels=False, labels_text = ['Paved', 'Unpaved', ''],
+                            labels=False, labels_text=('Paved', 'Unpaved', ''),
                             cmap="tab20c"):
     """Draw a two-sided donut pie chart comparing residential and industrial shares.
 
@@ -137,7 +137,6 @@ def main():
 
     pop_column = 'population_served_index'
     zonal_sum_col = cfg['zonal_sum_default_column']
-    filter_col = zonal_sum_col
     industrial_col = 'IND/RES'
     tag1 = 'round_area'
     tag2 = 'wwtp_area_rect_2'
@@ -161,7 +160,6 @@ def main():
     pop_gdf['country'] = pop_gdf['ISO_2']
     pop_gdf = pop_gdf.drop('geometry', axis=1)
     zonal_sum_col = resolve_zonal_sum_columns(pop_gdf, zonal_sum_col)
-    filter_col = zonal_sum_col
     agg_columns[True] = [zonal_sum_col]
     # Mixed-use counts as industrial here too, so this split matches the
     # unconnected-industrial layer instead of disagreeing with it.

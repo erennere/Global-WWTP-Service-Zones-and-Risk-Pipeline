@@ -2,58 +2,18 @@
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import Point, Polygon
-from shapely import to_wkb
-from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww_join
+from shapely.geometry import Point
 from wwtp import download_pop
 import os
 from pathlib import Path
 import numpy as np
-from shapely.geometry import Point, box
 from wwtp import download_pop as dp
-from wwtp.figures_scripts import composite_area_population_plots as capp
-from wwtp.figures_scripts import pop_at_risk_figures as prf
-import argparse
-import runpy
 import sys
 import types
-import duckdb
-from shapely.geometry import LineString, Point, box
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
-from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
-from wwtp.annotation_scripts import download_bing_annotate as dba
-from wwtp.figures_scripts import piechart_figure as pf
-from wwtp import starter
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
-from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
-from wwtp.industrial_analysis import download_and_vectorize as dv
 import tempfile
-from unittest.mock import Mock, patch, MagicMock
-from shapely.geometry import Point, Polygon, box
-from shapely import from_wkt
-import wwtp.create_voronoi as cv
-import wwtp.download_pop as dp
-from wwtp.starter import parse_config_overrides, load_config
+from unittest.mock import patch, MagicMock
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-from unittest.mock import Mock, patch, MagicMock, call
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from wwtp.industrial_analysis import download_and_vectorize as dav
-from shapely.geometry import Point
-try:
-    from wwtp import download_pop as dp
-    from wwtp.pop_at_risk_river_calculations import create_rasters as cr
-    from wwtp.industrial_analysis import download_and_vectorize as dv
-except ImportError:
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    import download_pop as dp
-    from pop_at_risk_river_calculations import create_rasters as cr
-    from industrial_analysis import download_and_vectorize as dv
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
 
 pytestmark = pytest.mark.unit
 
@@ -614,7 +574,6 @@ class TestCreateRastersSharding:
 
     def test_find_newest_country_tif_files_valid_structure(self):
         """Test tif file dict structure."""
-        countries = ["US", "CA"]
         
         # Simulate tif dict
         tif_dict = {

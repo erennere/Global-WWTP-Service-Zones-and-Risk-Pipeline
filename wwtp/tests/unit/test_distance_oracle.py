@@ -1,7 +1,6 @@
 """Metric distances where degrees would mislead: a 499 m pair matches at 500 m, a 501 m pair does not,
 at 0, 50 and 70 degrees, north-south and east-west."""
 import geopandas as gpd
-import numpy as np
 import pytest
 from pyproj import Geod
 from shapely.geometry import Point

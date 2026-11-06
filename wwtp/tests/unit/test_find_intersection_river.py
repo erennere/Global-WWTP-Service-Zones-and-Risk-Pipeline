@@ -1,26 +1,10 @@
 """Tests for find_intersection_river (moved from the coverage-campaign files)."""
-import argparse
 import os
-import runpy
 import sys
-import types
-import duckdb
 import geopandas as gpd
-import numpy as np
-import pandas as pd
 import pytest
-from shapely.geometry import LineString, Point, box
-from wwtp import download_pop as dp
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as n1
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as n2
-from wwtp.annotation_scripts import NEW_03_WASTEWATERJOIN_GEOJSON as ww3
-from wwtp.annotation_scripts import download_bing_annotate as dba
-from wwtp.figures_scripts import piechart_figure as pf
-from wwtp import starter
-from wwtp.pop_at_risk_river_calculations import create_rasters as cr
+from shapely.geometry import LineString, box
 from wwtp.pop_at_risk_river_calculations import find_intersection_river as fir
-from wwtp.pop_at_risk_river_calculations import impact_polygons_pop as ipp
-from wwtp.industrial_analysis import download_and_vectorize as dv
 
 pytestmark = pytest.mark.unit
 

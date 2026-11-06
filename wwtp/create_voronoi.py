@@ -152,7 +152,7 @@ EXAMPLES:
     logger.info(f"Running approaches: {', '.join(requested_approaches)}")
     logger.info(f"  weight_func={cfg['weight_func']!r}, weight_method={cfg['weight_method']!r}, only_round={only_round}, scale_weights={scale_weights}")
     print("=" * 80)
-    print(f"VORONOI ALLOCATION - APPROACH EXECUTION")
+    print("VORONOI ALLOCATION - APPROACH EXECUTION")
     print(f"Requested: {', '.join(requested_approaches)}")
     print(f"weight_func={cfg['weight_func']!r}  weight_method={cfg['weight_method']!r}  only_round={only_round}")
     print("=" * 80)

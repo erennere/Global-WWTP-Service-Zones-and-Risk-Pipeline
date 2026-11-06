@@ -8,7 +8,6 @@ up to N filenames per class.  The result is written as a JSON array of arrays
 
 import argparse
 import json
-import os
 import re
 
 import pandas as pd

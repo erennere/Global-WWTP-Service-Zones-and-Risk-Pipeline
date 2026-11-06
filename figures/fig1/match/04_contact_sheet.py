@@ -1,5 +1,5 @@
 """Stack all rendered variants of one or more aggregation levels into a labelled overview PNG."""
-import sys, glob, os
+import sys, os
 from matplotlib import font_manager
 from PIL import Image, ImageDraw, ImageFont
 

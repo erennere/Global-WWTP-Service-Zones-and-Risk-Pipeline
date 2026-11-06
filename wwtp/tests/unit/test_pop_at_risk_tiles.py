@@ -482,7 +482,6 @@ def test_main_writes_empty_tile_groups_when_grouping_drops_tile_column(monkeypat
 
 def test_find_pop_in_danger_script_entrypoint_runs_main_guard(monkeypatch):
     import runpy
-    from pathlib import Path
 
     import wwtp.starter as starter_mod
 

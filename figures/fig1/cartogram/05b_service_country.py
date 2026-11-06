@@ -17,7 +17,7 @@ service_report.json.
 import sys, json, os
 import numpy as np, pandas as pd, geopandas as gpd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
 
 DATA, AGG, OUT = sys.argv[1:4]
 TAG = sys.argv[4] if len(sys.argv) > 4 else TAG

@@ -331,7 +331,7 @@ def main():
     
     # Check if output exists and overwrite is disabled
     if os.path.exists(output_path) and not overwrite:
-        logger.info(f"Output file exists and overwrite=false. Skipping.")
+        logger.info("Output file exists and overwrite=false. Skipping.")
         return True
     
     try:

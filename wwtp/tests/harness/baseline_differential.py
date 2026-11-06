@@ -86,7 +86,6 @@ def normalize(value):
       "old computed nanmean, name/docstring said median; H4 made it nanmedian")
 def _auto_weight_scale(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
-    from wwtp import create_voronoi as new_cv
 
     rng = np.random.default_rng(0)
     # A deliberately skewed spread, so mean and median cannot coincide by luck.
@@ -103,7 +102,6 @@ def _auto_weight_scale(old_root):
       "is_valid=False, so this input never reached either coordinate check")
 def _is_valid_polygon_nan(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
-    from wwtp import create_voronoi as new_cv
 
     bad = Polygon([(0, 0), (1, 0), (1, float("nan")), (0, 1)])
     return old_cv.is_valid_geom(bad), sa.is_valid_geom(bad)
@@ -115,7 +113,6 @@ def _is_valid_polygon_nan(old_root):
       "baseline rejected EVERY polygon, not merely skipping the finite check")
 def _is_valid_polygon_clean(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
-    from wwtp import create_voronoi as new_cv
 
     good = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     return old_cv.is_valid_geom(good), sa.is_valid_geom(good)
@@ -125,7 +122,6 @@ def _is_valid_polygon_clean(old_root):
       "Point has .coords, so the old guard did run - must be unchanged")
 def _is_valid_point_nan(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
-    from wwtp import create_voronoi as new_cv
 
     bad = Point(float("nan"), 0)
     return old_cv.is_valid_geom(bad), sa.is_valid_geom(bad)
@@ -135,7 +131,6 @@ def _is_valid_point_nan(old_root):
       "the two pre-existing rejection paths must be untouched")
 def _is_valid_other(old_root):
     old_cv = load_baseline(old_root, "create_voronoi")
-    from wwtp import create_voronoi as new_cv
 
     bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
     return (
@@ -215,7 +210,7 @@ def _robust_bounds(old_root):
 
     rng = np.random.default_rng(7)
     values = np.concatenate([rng.normal(100, 15, 200), [1e6, -5.0, np.nan, np.inf]])
-    old_fn = getattr(old_pf, "_robust_bounds")
+    old_fn = old_pf._robust_bounds
     return (
         [normalize(v) for v in old_fn(values)],
         [normalize(v) for v in robust_bounds(values)],
@@ -230,7 +225,7 @@ def _robust_bounds_positive(old_root):
 
     rng = np.random.default_rng(11)
     values = np.concatenate([rng.lognormal(3, 1, 150), [0.0, -2.0, np.nan]])
-    old_fn = getattr(old_pf, "_robust_bounds")
+    old_fn = old_pf._robust_bounds
     return (
         [normalize(v) for v in old_fn(values, positive_only=True)],
         [normalize(v) for v in robust_bounds(values, positive_only=True)],
@@ -245,7 +240,7 @@ def _clip_outliers(old_root):
 
     rng = np.random.default_rng(13)
     series = pd.Series(np.concatenate([rng.normal(50, 8, 300), [900.0, -400.0]]))
-    old_fn = getattr(old_ca, "clip_outliers")
+    old_fn = old_ca.clip_outliers
     return (
         normalize(old_fn(series, 0.005, 0.995).to_numpy()),
         normalize(clip_to_robust_bounds(series, 0.005, 0.995).to_numpy()),
@@ -262,7 +257,7 @@ def _calculate_size_figure(old_root):
     old_pf = load_baseline(old_root, "figures_scripts/piechart_figure")
     from wwtp.figures_scripts.piechart_figure import calculate_size
 
-    old_fn = getattr(old_pf, "calculate_size")
+    old_fn = old_pf.calculate_size
     trials = [(50, 1, 1000, 5, 40), (1, 1, 1000, 5, 40), (1000, 1, 1000, 5, 40),
               (10, 10, 10, 5, 40)]
     return ([normalize(old_fn(*t)) for t in trials],
@@ -275,7 +270,7 @@ def _calculate_size_nan(old_root):
     old_pi = load_baseline(old_root, "figures_scripts/piechart_interactive")
     from wwtp.figures_scripts.piechart_interactive import calculate_size
 
-    old_fn = getattr(old_pi, "calculate_size")
+    old_fn = old_pi.calculate_size
     return normalize(old_fn(float("nan"), 1, 1000, 5, 40)), normalize(calculate_size(float("nan"), 1, 1000, 5, 40))
 
 

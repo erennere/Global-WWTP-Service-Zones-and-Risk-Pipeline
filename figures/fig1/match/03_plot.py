@@ -23,7 +23,7 @@ from shapely.geometry import box, Polygon
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MATCH_RADIUS_M, MIN_PLANTS, PATHS, TAG, enough_plants  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import MIN_PLANTS, TAG, enough_plants  # noqa: E402  (config.yaml, section figure1)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("units"); ap.add_argument("label"); ap.add_argument("out")

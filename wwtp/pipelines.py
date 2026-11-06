@@ -125,7 +125,6 @@ def create_output_paths(cfg):
     version = cfg['version']
     level = cfg['level']
     buffer = cfg['buffer_path_token']
-    weight_func = cfg['weight_func']
     weight_func_suffix = cfg['weight_func_suffix']
     weight_type = cfg['weight_type']
     buffers_dir = cfg['paths']['buffers_dir']

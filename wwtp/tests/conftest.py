@@ -6,7 +6,6 @@ from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
-import pandas as pd
 import pytest
 import yaml
 from rasterio.transform import from_origin

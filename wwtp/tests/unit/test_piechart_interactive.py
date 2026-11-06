@@ -1,19 +1,11 @@
 """Tests for piechart_interactive (moved from the coverage-campaign files)."""
-import json
-from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon
-from wwtp.annotation_scripts import NEW_01_GENERATEGRIDS as gen_grids
-from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as osm_extract
-from wwtp.figures_scripts import piechart_figure, piechart_interactive
-from wwtp.figures_scripts import pop_at_risk_figures
-import runpy
-import matplotlib
-from shapely.geometry import MultiPolygon, Point, Polygon, box
+from shapely.geometry import MultiPolygon, Polygon
+from wwtp.figures_scripts import piechart_interactive
+from shapely.geometry import box
 from wwtp.figures_scripts import piechart_interactive as pif
-from wwtp.figures_scripts import pop_at_risk_figures as prf
 
 pytestmark = pytest.mark.unit
 
