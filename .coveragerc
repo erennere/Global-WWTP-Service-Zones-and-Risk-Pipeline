@@ -8,5 +8,5 @@ omit =
 
 [report]
 skip_empty = true
-# Floor: branch coverage of pipeline code reached: 81.4 % (2026-11-06, after the dual imports), 87 % after the Phase 0-3 tests and typed settings. Raise it, never lower it.
-fail_under = 87
+# Floor: branch coverage of pipeline code reached: 81.4 % (2026-11-06, after the dual imports), 87 % after the Phase 0-3 tests and typed settings, 88 % with the workflow. Raise it, never lower it.
+fail_under = 88

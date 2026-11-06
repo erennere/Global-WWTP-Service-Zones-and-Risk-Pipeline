@@ -1,0 +1,12 @@
+# snakemake --profile workflow/profiles/slurm   (from the repository root, in the pipeline's environment)
+# Each stage becomes one SLURM job; threads, memory and runtime per stage come from
+# wwtp/config.yaml, section `workflow.resources`. Add `slurm_account=<account>` to
+# default-resources if the cluster needs one.
+executor: slurm
+jobs: 100
+latency-wait: 60
+retries: 1
+rerun-incomplete: true
+printshellcmds: true
+default-resources:
+  - slurm_partition=cpu-single

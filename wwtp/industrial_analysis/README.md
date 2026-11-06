@@ -21,33 +21,24 @@ It runs after the main Voronoi and population stages, but it uses the same confi
 ## Scripts in This Folder
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
-| `industrial_analysis.sh` | shell launcher | Runs the industrial analysis chain | config values and named `--level`/`--version`/... overrides | logs plus industrial outputs |
 | `download_and_vectorize.py` | Python worker | Downloads and vectorizes industrial raster data | Zenodo archive, basin data, country context | merged industrial GeoPackage |
 | `find_unconnected_industrial_areas.py` | Python worker | Finds industrial polygons outside service coverage | industrial polygons, corrected WWTP data, industrial categories | unconnected industrial parquet |
 
 ## Execution Flow
 ```mermaid
 graph TD
-  A([industrial_analysis.sh]) --> B[download_and_vectorize.py]
-  B --> C[(industrial merged GeoPackage)]
-  C --> D[find_unconnected_industrial_areas.py]
-  D --> E[(unconnected industrial parquet)]
+  B[download_and_vectorize, per basin level] --> C[(industrial merged GeoPackage)]
+  C --> D[find_unconnected_industrial_areas, per variant]
+  D --> E[(unconnected industrial areas)]
 ```
+Snakemake rules `download_and_vectorize_lvl<level>` and `find_unconnected_industrial_areas__<variant tag>`; target `sweep_industrial` runs the second for every sweep variant.
 
 ## Run Instructions
-### Local
 ```bash
-cd wwtp
-bash industrial_analysis/industrial_analysis.sh
+snakemake --profile workflow/profiles/slurm all               # configured variant
+snakemake --profile workflow/profiles/slurm sweep_industrial  # every variant of the sweep
+python -m wwtp.industrial_analysis.find_unconnected_industrial_areas --level 6
 ```
-
-### HPC
-```bash
-cd wwtp
-sbatch industrial_analysis/industrial_analysis.sh
-```
-
-A successful run writes the merged industrial layer and the unconnected-industrial parquet, with logs under `logs/industrial_analysis.log`.
 
 ## Smart Behaviors
 - `download_and_vectorize.py` caches rasters when `industrial_persist_rasters=true` and can reuse the merged industrial GeoPackage when overwrite is disabled.

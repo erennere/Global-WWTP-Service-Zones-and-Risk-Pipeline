@@ -42,11 +42,19 @@ dependencies = [
 calibration = [
   "pyreadr",
 ]
+workflow = [
+  "snakemake>=8",
+  "snakemake-executor-plugin-slurm",
+]
 test = [
   "pytest>=8",
   "pytest-cov>=5",
   "pytest-mock>=3.14",
   "hypothesis>=6",
+  "snakemake>=8",  # wwtp/tests/integration/test_workflow_mock.py runs the workflow
+]
+dev = [
+  "pre-commit",
 ]
 
 [tool.setuptools]
@@ -64,6 +72,6 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-wwtp = ["config.yaml", "config.cluster.example.yaml", "lib/*.sh"]
+wwtp = ["config.yaml", "config.cluster.example.yaml"]
 "wwtp.annotation_scripts" = ["assets/*.ttf"]
 "wwtp.figures_scripts" = ["*.html"]

@@ -260,8 +260,10 @@ def main():
     #cbar.set_label("Number of People Served by a WWTP (in thousands)", fontsize=20)
     cbar.set_label("Percentage of People Served by a WWTP", fontsize=20)
 
-    # Add coastlines for context
-    ax.coastlines(resolution='110m', color='black', linewidth=0.5)
+    # Coastlines from the configured Natural Earth countries (the outline of their union): cartopy's own
+    # coastlines are downloaded on first use, which fails on compute nodes without internet access.
+    if not gdf.empty:
+        gpd.GeoSeries([gdf.geometry.make_valid().union_all()], crs=gdf.crs).boundary.plot(ax=ax, color="black", linewidth=0.5)
     if not gdf_nodata.empty:
         nodata_patch = Patch(facecolor=nodata_country_color, edgecolor='white', label=nodata_country_label)
         ax.legend(handles=[nodata_patch], loc='upper left', frameon=True, fontsize=9)

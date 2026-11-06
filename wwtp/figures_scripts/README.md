@@ -24,7 +24,7 @@ Before running this stage, these outputs from prior stages must exist.
 
 | Data file | Why needed | Default path status |
 | --- | --- | --- |
-| Population-enriched Voronoi outputs | core layer for map export and plots | produced by `add_pop.sh` |
+| Population-enriched Voronoi outputs | core layer for map export and plots | produced by `add_pop` |
 | Risk calculation outputs | at-risk population and impact polygons | produced by `pop_at_risk_river_calculations/` stage |
 | Validation results | comparison summaries for reporting | produced by `pop_validation_scripts/` |
 | Country boundaries | spatial overlays for composite plots | `data/boundaries/ne_110m_admin_0_countries.shp` (present) |
@@ -33,62 +33,35 @@ Before running this stage, these outputs from prior stages must exist.
 ## Scripts in This Folder
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
-| `piechart.sh` | shell launcher | Runs static, interactive, and sizes map pie/HTML workflows | config values and named `--level`/`--version`/... overrides | PNG/HTML/GeoJSON outputs |
-| `composite_area_population_plots.sh` | shell launcher | Runs the composite plotting workflow | config values and named `--level`/`--version`/... overrides | histogram and scatter PNGs |
 | `composite_area_population_plots.py` | Python worker | Builds area/population composite plots | pop-Voronoi outputs and country boundaries | diagnostic figures |
 | `piechart_figure.py` | Python worker | Builds a static pie-chart summary figure | raster-country stats and country boundaries | PNG summary figure |
 | `piechart_interactive.py` | Python worker | Builds an interactive pie-chart HTML map | raster-country stats and country boundaries | interactive HTML output |
 | `sizes_interactive_map.py` | Python worker | Creates reduced centroid GeoJSON and versioned sizes interactive HTML | population-enriched Voronoi outputs and template HTML | map-ready GeoJSON and standalone HTML |
-| `pop_at_risk_figures.sh` | shell launcher | Runs the risk-figure workflow | config values and named `--level`/`--version`/... overrides | risk figures and logs |
 | `pop_at_risk_figures.py` | Python worker | Plots population-at-risk and impact summaries | risk outputs and tile overlays | risk-analysis figures |
-| `interactive_unconnected_industrial_map.sh` | shell launcher | Runs the unconnected-industrial map workflow | config values and named overrides | interactive HTML map and logs |
 | `interactive_unconnected_industrial_map.py` | Python worker | Builds a Folium map of industrial areas with no nearby WWTP | unconnected-industrial layer from `industrial_analysis/` | standalone HTML map |
 | `_shared.py` | shared helpers | Figure-layer column conventions used by both piechart scripts: `aggregate_by_country`, `calculate_size`, `ensure_population_percentage_column` | - | - |
 
 ## Execution Flow
 ```mermaid
 graph TD
-  A([piechart.sh]) --> B[piechart_figure.py]
-  A --> C[piechart_interactive.py]
-  A --> D[sizes_interactive_map.py]
-  D --> E[(sizes map geojson/html outputs)]
-
-  D([composite_area_population_plots.sh]) --> E[composite_area_population_plots.py]
-  E --> F[(composite figures)]
-
-  G([pop_at_risk_figures.sh]) --> H[pop_at_risk_figures.py]
-  H --> I[(risk figures)]
-
-  J([interactive_unconnected_industrial_map.sh]) --> K[interactive_unconnected_industrial_map.py]
-  K --> L[(unconnected-industrial HTML map)]
+  S[(population layer of figures.approach)] --> B[piechart_figure]
+  T[(raster country statistics)] --> B
+  T --> C[piechart_interactive]
+  S --> D[sizes_interactive_map]
+  S --> E[composite_area_population_plots]
+  R[(population at risk)] --> G[pop_at_risk_figures]
+  U[(unconnected industrial areas)] --> K[interactive_unconnected_industrial_map]
 ```
+Each figure is a Snakemake rule of the configured variant (`<figure>__<variant tag>`); target `all` builds them.
 
 ## Run Instructions
-### Common reporting run
 ```bash
-cd wwtp
-bash figures_scripts/piechart.sh sizes
-bash figures_scripts/composite_area_population_plots.sh
-bash figures_scripts/pop_at_risk_figures.sh
+snakemake --profile workflow/profiles/local all              # every figure (and whatever they need)
+python -m wwtp.figures_scripts.piechart_figure                # one figure on its own
+python -m wwtp.figures_scripts.composite_area_population_plots --approach 1
 ```
 
-### Interactive map or pie charts
-```bash
-cd wwtp
-python -m wwtp.figures_scripts.piechart_figure
-python -m wwtp.figures_scripts.piechart_interactive
-python -m wwtp.figures_scripts.sizes_interactive_map
-python -m wwtp.figures_scripts.interactive_unconnected_industrial_map
-```
-
-### HPC
-```bash
-cd wwtp
-sbatch figures_scripts/composite_area_population_plots.sh
-sbatch figures_scripts/pop_at_risk_figures.sh
-```
-
-A successful run produces PNG, HTML, and GeoJSON outputs under `data/figures/...`.
+Outputs go under `data/figures/...`; job logs under `{data_dir}/workflow/logs/`.
 
 ## Smart Behaviors
 - Figure scripts consume existing outputs and do not retrigger heavy upstream pipeline stages.
@@ -114,6 +87,6 @@ Delete the corresponding figure output directory to force a rerun.
 | `pop_at_risk_figures.paths.pop_at_risk_output_filepath` | null | At-risk parquet input |
 
 ## Known Issues / TODOs
-- `piechart_figure.py` and `piechart_interactive.py` are direct modules rather than being launched by shell wrappers.
+- `piechart_figure.py` draws coastlines from the configured Natural Earth countries, so it needs no download at run time.
 - The two piechart scripts deliberately keep different size mappings (log vs linear) and different aggregation depth; the divergence is parameterised in `_shared.py` rather than duplicated.
 - No explicit `TODO` or `FIXME` markers were found in this module.

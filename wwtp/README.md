@@ -7,20 +7,12 @@
 | `Code Entry Files In This Package` | Points to the code/config files most readers should open first |
 | `Required Starter Data Files` | Lists data artifacts the pipeline relies on before execution |
 | `Configuration at a Glance` | Highlights the shared settings that shape most runs |
-| `Shared Override Convention` | Shows how the shell wrappers pass runtime overrides |
+| `Shared Override Convention` | Shows how every stage takes runtime overrides |
 | `Core Root-Level Pipeline Scripts` | Explains the key top-level scripts in more detail |
 | `Section Guide` | Directs the reader to the stage-specific READMEs |
 
 ## Module Overview
-`wwtp/` is the executable heart of the project. Shell wrappers provide reproducible entry points and scheduler compatibility, while the Python modules hold the actual processing logic. Most scripts read `config.yaml` through `starter.py`, so the normal way to change paths or parameters is to edit config rather than code.
-
-> **Run every `.sh` wrapper from `wwtp/`, never from anywhere else** — for both `bash` and `sbatch`. Each wrapper sets `PROJECT_ROOT="."` and resolves `lib/utils.sh`, `config.yaml`, and `logs/` relative to it.
->
-> ```bash
-> cd wwtp
-> bash pop_at_risk_river_calculations/create_rasters.sh --level 8
-> sbatch pop_at_risk_river_calculations/create_rasters.sh --level 8
-> ```
+`wwtp/` is the executable heart of the project. Every stage is a module run as `python -m wwtp.<stage>`; the Snakemake workflow (`workflow/Snakefile`, see the root README) runs them in order, locally or as SLURM jobs, and `wwtp/workflow.py` tells it which files each stage reads and writes. Most scripts read `config.yaml` through `starter.py`, so the normal way to change paths or parameters is to edit config (or an overlay) rather than code.
 
 ## Code Entry Files In This Package
 
@@ -47,7 +39,7 @@ knowing they exist.
 `figures_scripts/_shared.py` is a third, narrower target: figure-layer column
 conventions shared by the two piechart scripts only.
 
-Shell launchers are execution wrappers, not starter dependencies. They are documented in the stage READMEs and in the root README canonical run order.
+`workflow.py` lists each stage's inputs and outputs for Snakemake from the same config and path helpers the stages use; `settings.py` holds the typed model of every config section.
 
 ## Required Starter Data Files
 
@@ -87,7 +79,6 @@ The full parameter tables now live in the relevant module READMEs. This file kee
 | `create_voronoi.weight_func` | `mult` | Global weighted-distance mode for Voronoi stages |
 | `create_voronoi.dynamic_buffering` | `true` | Enables per-site dynamic buffers |
 | `create_voronoi.size_measure` | `reported` | Plant size in people for the service radius and `size` weights: `reported` (reported size, footprint estimate where missing) or `footprint` |
-| `create_voronoi.execution.mode` | `sequential` | Launcher mode for the Voronoi stage |
 | `create_rasters.annotations.default_mode` | `sequential` | Launcher mode for raster preparation |
 | `create_rasters.zoom_level` | `8` | Tile zoom used in raster/risk stages |
 | `find_unserved_pop.threshold_value` | `1000` | Threshold for non-served population filtering |
@@ -110,12 +101,10 @@ Every entry point accepts the same seven named override flags, added by
 --level --version --buffer --weight-method --weight-func --dynamic-buffering --size-measure
 ```
 
-The shell wrappers collect whatever subset you pass and forward it verbatim as
-`"${OVERRIDE_ARGS[@]}"`:
+Pass any subset; the workflow passes all seven for each variant:
 
 ```bash
-cd wwtp
-bash create_voronoi.sh --level 8 --buffer 9000 --size-measure footprint
+python -m wwtp.create_voronoi --approach 1 --level 8 --buffer 9000 --size-measure footprint
 ```
 
 The older positional form (`level version buffer …`) has been removed: a stray
@@ -130,13 +119,13 @@ Four production scripts sit directly under `wwtp/` rather than inside a subpacka
 
 | Script | Python module | What it does | Main inputs | Main outputs | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `download_pop.sh` | `wwtp.download_pop` | Downloads and prepares WorldPOP population inputs used later by `add_pop.py` and the risk workflow | `download_pop.paths.pop_dir` and shared config overrides | population rasters under `data/population` | Installs the package in editable mode, logs to `logs/pop_run.log`, and supports the shared named override flags |
-| `create_voronoi.sh` | `wwtp.create_voronoi` | Runs the weighted Voronoi service-area stage across the configured approaches | canonical merged WWTP layer, watershed inputs, weighting settings, buffering settings | Voronoi GeoPackages under `create_voronoi.paths.voronoi_dir` and buffer outputs under `create_voronoi.paths.buffers_dir` | Supports `array`, `sequential`, and `parallel` execution modes via `create_voronoi.execution.mode` |
-| `add_pop.sh` | `wwtp.add_pop` | Intersects Voronoi outputs with population rasters and writes population-enriched service areas | one Voronoi file index, Voronoi outputs, population rasters | population-enriched GeoPackages under `add_pop.paths.pop_output_dir` | Runs either as a local single-index job or as a SLURM array task |
-| `combine_watersheds.sh` | `wwtp.combine_watersheds` | Unzips and merges the per-level HydroBASINS archives into one watershed layer per level | `../data/hydroshed_river_levels/lvl{level}/*.zip` | combined watershed GeoPackages consumed by `create_voronoi` and the risk stage | Iterates over the configured levels; raises naming any zip with no readable layer rather than skipping it |
+| `download_pop.py` | `wwtp.download_pop` | Downloads and prepares WorldPOP population inputs used later by `add_pop.py` and the risk workflow | `download_pop.paths.pop_dir` and shared config overrides | population rasters under `data/population` | Snakemake rule `download_pop` (leaves a stamp file, since its outputs are one folder per country) |
+| `create_voronoi.py` | `wwtp.create_voronoi` | Runs the weighted Voronoi service-area stage across the configured approaches | canonical merged WWTP layer, watershed inputs, weighting settings, buffering settings | Voronoi GeoPackages under `create_voronoi.paths.voronoi_dir` and buffer outputs under `create_voronoi.paths.buffers_dir` | One Snakemake job per approach and variant (`create_voronoi__<tag>__a<approach>`) |
+| `add_pop.py` | `wwtp.add_pop` | Intersects Voronoi outputs with population rasters and writes population-enriched service areas | the service areas of one approach (`--approach`), population rasters | population-enriched GeoPackages under `add_pop.paths.pop_output_dir` | One Snakemake job per approach and variant |
+| `combine_watersheds.py` | `wwtp.combine_watersheds` | Unzips and merges the per-level HydroBASINS archives into one watershed layer per level | `../data/hydroshed_river_levels/lvl{level}/*.zip` | combined watershed GeoPackages consumed by `create_voronoi` and the risk stage | Iterates over the configured levels; raises naming any zip with no readable layer rather than skipping it |
 
 ### `download_pop`
-`download_pop.sh` is the population-ingest entry point. Run it after the source WWTP and watershed inputs are in place and before `add_pop.sh`. Its job is to build the population raster store consumed by later stages.
+`download_pop` is the population-ingest stage. It runs before `add_pop`. Its job is to build the population raster store consumed by later stages.
 
 Workflow:
 - Build WorldPop download URLs for all countries and years used by the project.
@@ -154,18 +143,18 @@ Important outputs:
 Important behavior:
 - The module uses `get_urls()` as the default URL source and keeps the HDX-based helper as a fallback path rather than the main workflow.
 - CSV-based country inputs are projected to an estimated local UTM CRS for rasterization and then reprojected back to `EPSG:4326`.
-- The shell wrapper reinstalls the package in editable mode before execution and writes a consolidated run log to `logs/pop_run.log`.
 
 Key config:
 - `download_pop.paths.pop_dir`
 
 Typical run:
 ```bash
-bash download_pop.sh
+snakemake --profile workflow/profiles/slurm download_pop
+python -m wwtp.download_pop
 ```
 
 ### `create_voronoi`
-`create_voronoi.sh` is the central service-area launcher in the repository. It resolves `create_voronoi.execution.mode` from config and then executes one or more of the three supported approaches: WWTP-only Voronoi, watershed-aware Voronoi, and the city-based branch.
+`create_voronoi` is the central service-area stage. It runs one or more of the three supported approaches: WWTP-only Voronoi, watershed-aware Voronoi, and the city-based branch (`city_voronoi`); the workflow runs each approach as its own job.
 
 Approaches:
 - `0`: WWTP Voronoi without watershed grouping.
@@ -179,11 +168,6 @@ Workflow:
 - Skip completed approaches when outputs already exist and overwrite is disabled.
 - Prepare grouped inputs, compute weights, generate weighted Voronoi regions, resolve overlaps, and clip results to the relevant basin or country boundary.
 
-Execution modes:
-- `sequential`: run all selected approaches one after another.
-- `array`: run one approach per SLURM array task.
-- `parallel`: run the approaches concurrently in the background.
-
 Key controls:
 - `create_voronoi.level`
 - `create_voronoi.buffer`
@@ -191,7 +175,6 @@ Key controls:
 - `create_voronoi.weight_func`
 - `create_voronoi.dynamic_buffering`
 - `create_voronoi.size_measure`
-- `create_voronoi.execution.mode`
 - `create_voronoi.n_points`
 - `create_voronoi.threshold`
 - `create_voronoi.calculate_area_fn`
@@ -205,16 +188,15 @@ CLI details:
 
 Typical runs:
 ```bash
-bash create_voronoi.sh
 python -m wwtp.create_voronoi --approach 1 --verbose
-python -m wwtp.create_voronoi 8 2 15000 size mult true reported
+python -m wwtp.create_voronoi --approach 0 1 --level 8 --buffer 15000 --dynamic-buffering false
 ```
 
 ### `add_pop`
-`add_pop.sh` is the population-attachment bridge between geometric service areas and downstream analysis. It takes a Voronoi layer index, opens the configured rasters, and writes population-enriched service-area outputs to `add_pop.paths.pop_output_dir`.
+`add_pop` is the population-attachment bridge between geometric service areas and downstream analysis. It takes an approach, reads that approach's service areas, opens the configured rasters, and writes population-enriched service-area outputs to `add_pop.paths.pop_output_dir`.
 
 Workflow:
-- Select one Voronoi GeoPackage by zero-based index.
+- Read the service areas of the requested approach (`create_output_paths(cfg)['voronoi'][approach]`; missing: it fails).
 - Load the layer and read the country code column configured for the project.
 - Resolve the available population rasters for each country represented in that file.
 - Use `exactextract` to compute zonal statistics for every polygon.
@@ -222,8 +204,7 @@ Workflow:
 - Write the enriched result as `pop_added_<original_filename>.gpkg`.
 
 Important behavior:
-- The script takes the Voronoi file index as the required `--index` flag, alongside the shared override flags.
-- It can run locally for a single index or in SLURM array mode via `SLURM_ARRAY_TASK_ID`.
+- The script takes the approach as the required `--approach` flag (0, 0_only_round, 1, 1_only_round, 2), alongside the shared override flags.
 - It processes all discovered raster years by default and restores the original CRS before writing outputs.
 - When `overwrite_existing` is false, existing outputs are skipped rather than regenerated.
 
@@ -231,14 +212,13 @@ Key config:
 - `add_pop.add_pop_max_workers`
 - `add_pop.country_output_column`
 - `add_pop.overwrite_existing`
-- `add_pop.paths.voronoi_dir`
+- `add_pop.paths.voronoi_dir`, `add_pop.paths.buffers_dir`
 - `add_pop.paths.pop_tif_dir`
 - `add_pop.paths.pop_output_dir`
 
 Typical runs:
 ```bash
-bash add_pop.sh 0
-sbatch add_pop.sh
+python -m wwtp.add_pop --approach 1
 ```
 
 These outputs are the direct inputs for validation, non-served population calculation, figure generation, and downstream risk propagation.
@@ -246,12 +226,12 @@ These outputs are the direct inputs for validation, non-served population calcul
 ## Section Guide
 The stage-specific READMEs carry the detailed script descriptions, execution diagrams, configuration tables, and practical notes for each part of the pipeline.
 
-| Stage | What it covers | Canonical launcher(s) | README |
+| Stage | What it covers | Snakemake rules / targets | README |
 | --- | --- | --- | --- |
-| Data merge | Builds the canonical WWTP dataset | `data_merge/combine_locations.sh` | `wwtp/data_merge/README.md` |
-| Annotation | Builds grid, OSM, image, and label context | `annotation_scripts/grid_generation_and_osm_extract.sh`, `annotation_scripts/run_download_bing_annotate_array.sh`, `annotation_scripts/merge_annotations.sh` | `wwtp/annotation_scripts/README.md` |
-| Population and risk | Creates risk intermediates and population-at-risk outputs | `pop_at_risk_river_calculations/create_rasters.sh`, `pop_at_risk_river_calculations/pop_differences_and_impact_polygons.sh`, `pop_at_risk_river_calculations/find_pop_in_danger_pop.sh` | `wwtp/pop_at_risk_river_calculations/README.md` |
-| Figures and exports | Produces GeoJSON, plots, and report assets | `figures_scripts/piechart.sh`, `figures_scripts/composite_area_population_plots.sh`, `figures_scripts/pop_at_risk_figures.sh` | `wwtp/figures_scripts/README.md` |
-| Validation | Compares outputs to HydroWASTE and EU references | `pop_validation_scripts/comparison.sh` | `wwtp/pop_validation_scripts/README.md` |
-| Sensitivity analysis | Runs parameter sweeps and comparison summaries | `sensitivity_analysis_scripts/create_voronoi_param_sweep.sh`, `sensitivity_analysis_scripts/add_pop_param_sweep.sh`, `sensitivity_analysis_scripts/compare_pop_sweep_hw_eu.sh` | `wwtp/sensitivity_analysis_scripts/README.md` |
-| Industrial analysis | Quantifies industrial land not covered by eligible WWTPs | `industrial_analysis/industrial_analysis.sh` | `wwtp/industrial_analysis/README.md` |
+| Data merge | Builds the canonical WWTP dataset | `combine_locations` | `wwtp/data_merge/README.md` |
+| Annotation | Builds grid, OSM, image, and label context | `annotation_grids`, `wastewater_join`, `download_bing_annotate`, `merge_annotations`; target `annotations` | `wwtp/annotation_scripts/README.md` |
+| Population and risk | Creates risk intermediates and population-at-risk outputs | `create_rasters__<tag>` (+ shards), `find_unserved_pop__<tag>`, `assign_rivers_to_basin__<tag>`, `find_intersection_river__<tag>`, `impact_polygons_pop__<tag>`, `find_pop_in_danger_pop__<tag>`, `find_diff_pop__<tag>` | `wwtp/pop_at_risk_river_calculations/README.md` |
+| Figures and exports | Produces GeoJSON, plots, and report assets | `<figure>__<tag>`, `figures__<tag>` | `wwtp/figures_scripts/README.md` |
+| Validation | Compares outputs to HydroWASTE and EU references | `verification_script__<tag>`, `hw_comparison__<tag>`, `eu_comparison__<tag>` | `wwtp/pop_validation_scripts/README.md` |
+| Sensitivity analysis | Runs the parameter sweep and its scoring | targets `sweep`, `sweep_scores`, `sweep_industrial` | `wwtp/sensitivity_analysis_scripts/README.md` |
+| Industrial analysis | Quantifies industrial land not covered by eligible WWTPs | `download_and_vectorize_lvl<level>`, `find_unconnected_industrial_areas__<tag>` | `wwtp/industrial_analysis/README.md` |

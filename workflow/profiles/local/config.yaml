@@ -1,0 +1,4 @@
+# snakemake --profile workflow/profiles/local   (this machine; jobs share its cores)
+cores: all
+rerun-incomplete: true
+printshellcmds: true

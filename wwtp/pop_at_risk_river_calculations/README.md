@@ -24,8 +24,8 @@ Before running this stage, these inputs must exist.
 
 | Data file | Why needed | Default path status |
 | --- | --- | --- |
-| Population-enriched Voronoi outputs | core service-area layer with population | produced by prior `add_pop.sh` stage |
-| WorldPOP rasters | exposure surface for aggregation | `data/population/unzipped/` (populated by `download_pop.sh`) |
+| Population-enriched Voronoi outputs | core service-area layer with population | produced by `add_pop` |
+| WorldPOP rasters | exposure surface for aggregation | `data/population/unzipped/` (populated by `download_pop`) |
 | HydroBASINS watershed layer | basin grouping and clipping | `data/hydroshed_river_levels/hydrobase_lvl*.gpkg` (missing for default level=7) |
 | HydroRIVERS network | river assignment and downstream propagation | `data/hydrorivers.gpkg` (missing) |
 | HydroWASTE or reference dataset | validation comparison input | `data/cleaned_hydrowaste.csv` (present) |
@@ -35,7 +35,6 @@ Note: `find_intersection_river.py` reads the river search distance from `find_in
 ## Scripts in This Folder
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
-| `create_rasters.sh` | shell launcher | Runs raster preparation in the configured execution mode | config values and named `--level`/`--version`/... overrides | raster-country stats and non-served intermediates |
 | `create_rasters.py` | Python worker | Builds raster inputs for the non-served analysis | population-enriched Voronoi layers, rasters, basin data | served/non-served raster products |
 | `find_unserved_pop.py` | Python worker | Thresholds and vectorizes non-served areas | raster products and threshold settings | non-served GeoPackages |
 | `find_diff_pop.py` | Python worker | Computes population differences for later impact logic | served/unserved products and references | difference layers and tables |
@@ -43,58 +42,33 @@ Note: `find_intersection_river.py` reads the river search distance from `find_in
 | `find_intersection_river.py` | Python worker | Links non-served polygons to nearby rivers | non-served polygons and basin-linked rivers | river-linked non-served polygons |
 | `impact_polygons_pop.py` | Python worker | Propagates downstream impact and builds polygons | river-linked non-served features and propagation parameters | impact polygons and summaries |
 | `find_pop_in_danger_pop.py` | Python worker | Aggregates final at-risk population results | impact polygons and population rasters | final at-risk parquet |
-| `pop_differences_and_impact_polygons.sh` | shell launcher | Chains the middle risk stages | non-served outputs and config overrides | difference, river, and impact outputs |
-| `find_unserved_pop.sh` | shell launcher | Runs `find_unserved_pop.py` on its own | raster products and threshold settings | non-served GeoPackages |
-| `assign_rivers_to_basin.sh` | shell launcher | Runs `assign_rivers_to_basin.py` on its own | river and watershed layers | basin-linked river GeoPackage |
-| `find_intersection_river.sh` | shell launcher | Runs `find_intersection_river.py` on its own | non-served polygons and basin-linked rivers | river-linked non-served polygons |
-| `find_pop_in_danger_pop.sh` | shell launcher | Runs the final aggregation stage | impact outputs and config defaults | final risk logs and outputs |
-
-The three single-stage wrappers cover the same work as
-`pop_differences_and_impact_polygons.sh`; use them to rerun one stage (with its
-own SLURM resource profile) instead of repeating the whole chain.
 
 ## Execution Flow
 ```mermaid
 graph TD
-  A([create_rasters.sh]) --> B{mode from create_rasters.annotations.default_mode}
-  B -->|array| C[create_rasters.py shard]
-  B -->|sequential| D[create_rasters.py single job]
-  B -->|parallel| E[create_rasters.py multi-job]
-  C --> F[(data/risk_calculation/*)]
-  D --> F
-  E --> F
-
-  G([pop_differences_and_impact_polygons.sh]) --> H[find_unserved_pop.py]
-  H --> I[find_diff_pop.py]
-  I --> J[assign_rivers_to_basin.py]
-  J --> K[find_intersection_river.py]
-  K --> L[impact_polygons_pop.py]
-  L --> M[(impact polygon outputs)]
-
-  N([find_pop_in_danger_pop.sh]) --> O[find_pop_in_danger_pop.py]
+  A[(population layer of figures.approach)] --> B[create_rasters, one job per shard]
+  B --> C[create_rasters --merge-shards]
+  C --> H[find_unserved_pop]
+  A --> I[find_diff_pop]
+  J[assign_rivers_to_basin] --> K[find_intersection_river]
+  H --> K
+  K --> L[impact_polygons_pop]
+  L --> O[find_pop_in_danger_pop]
   O --> P[(results_pop_at_risk/*.parquet)]
 ```
+`create_rasters` splits the countries into `create_rasters.shards` jobs (`--job-index i --total-jobs N`); each writes `<name>_shard<i>of<N>.csv` and a last job (`--merge-shards N`) concatenates them.
 
 ## Run Instructions
-### Standard sequence
 ```bash
-cd wwtp
-bash pop_at_risk_river_calculations/create_rasters.sh
-bash pop_at_risk_river_calculations/pop_differences_and_impact_polygons.sh
-bash pop_at_risk_river_calculations/find_pop_in_danger_pop.sh
+snakemake --profile workflow/profiles/slurm all                       # the whole chain for the configured variant
+python -m wwtp.pop_at_risk_river_calculations.create_rasters --job-index 0 --total-jobs 1   # one stage, unsharded
+python -m wwtp.pop_at_risk_river_calculations.impact_polygons_pop --max-workers 8 --radius 1000
 ```
 
-### HPC
-```bash
-cd wwtp
-sbatch pop_at_risk_river_calculations/create_rasters.sh
-sbatch pop_at_risk_river_calculations/find_pop_in_danger_pop.sh
-```
-
-A successful run writes files under `data/risk_calculation/...` and `data/results_pop_at_risk/...`, with logs under `logs/create_rasters.log`, `logs/pop_differences_and_impact_polygons.log`, and `logs/find_pop_in_danger_pop.log`.
+Outputs go under `data/risk_calculation/...` and `data/results_pop_at_risk/...`; job logs under `{data_dir}/workflow/logs/`.
 
 ## Smart Behaviors
-- `create_rasters.sh` resolves `annotations.default_mode` from config and falls back to `array` or `sequential` depending on the wrapper logic.
+- `create_rasters` shards never write the same file; a shard rerun resumes from its own CSV (countries already listed are skipped).
 - `create_rasters.py` skips countries that already have completed outputs.
 - `assign_rivers_to_basin.py` skips assignment work if one of the join inputs is empty.
 - `find_intersection_river.py` uses `find_intersection_river.x_distance` to control river matching distance.

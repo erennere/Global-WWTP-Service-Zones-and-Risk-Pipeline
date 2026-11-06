@@ -109,6 +109,10 @@ def write_config(code_root, data_dir, out_path, settings=None):
     if n != 1:
         raise RuntimeError(f"Could not set data_dir in {code_root}/{package_of(code_root)}/config.yaml")
     text = re.sub(r"^(\s*\w*(?:max_workers|_workers|concurrency)): \d+", r"\1: 2", text, flags=re.M)
+    # Other relative paths point into the package (templates); the copy lives elsewhere, so make them absolute.
+    package_dir = code_root / package_of(code_root)
+    text = re.sub(r"^(\s*\w+(?:_filepath|_dir|_path)): '(?![{/])([^']+)'",
+                  lambda m: f"{m.group(1)}: '{(package_dir / m.group(2)).resolve()}'", text, flags=re.M)
     if settings:
         import yaml
 

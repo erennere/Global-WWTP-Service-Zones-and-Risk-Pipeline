@@ -21,7 +21,6 @@ It runs after the population-enriched Voronoi stage. Its outputs are diagnostic 
 ## Scripts in This Folder
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
-| `comparison.sh` | shell launcher | Runs the validation sequence | config values and named `--level`/`--version`/... overrides | logs plus validation outputs |
 | `verification_script.py` | Python worker | Builds general verification summaries | pipeline outputs and reference layers | verification tables and diagnostics |
 | `hw_comparison.py` | Python worker | Compares outputs against HydroWASTE | verification subsets and HydroWASTE references | comparison figures and metrics |
 | `eu_comparison.py` | Python worker | Compares outputs against the EU reference layer | verification subsets and EU WWTP reference | comparison figures and metrics |
@@ -29,38 +28,26 @@ It runs after the population-enriched Voronoi stage. Its outputs are diagnostic 
 ## Execution Flow
 ```mermaid
 graph TD
-  A([comparison.sh]) --> B[verification_script.py]
-  B --> C[hw_comparison.py]
-  B --> D[eu_comparison.py]
+  A[(population layers)] --> B[verification_script]
+  B --> C[hw_comparison]
+  B --> D[eu_comparison]
   C --> E[(HW validation plots)]
   D --> F[(EU validation plots)]
 ```
+Snakemake rules `verification_script__<variant tag>`, `hw_comparison__...`, `eu_comparison__...` (target `all`).
 
 ## Run Instructions
-### Standard
 ```bash
-cd wwtp
-bash pop_validation_scripts/comparison.sh
-```
-
-### Direct module runs
-```bash
-cd wwtp
+snakemake --profile workflow/profiles/local all
 python -m wwtp.pop_validation_scripts.verification_script
 python -m wwtp.pop_validation_scripts.hw_comparison
 python -m wwtp.pop_validation_scripts.eu_comparison
 ```
 
-### HPC
-```bash
-cd wwtp
-sbatch pop_validation_scripts/comparison.sh
-```
-
-A successful run writes outputs under `data/verification/.../plots` and logs under `logs/pop_validation_comparison.log`.
+Plots go under `data/verification/.../plots`.
 
 ## Smart Behaviors
-- The comparison wrapper runs verification, HydroWASTE comparison, and EU comparison in one sequence.
+- Verification runs first; the HydroWASTE and EU comparisons then run as two independent jobs.
 - The comparison modules skip yearly columns that fail validity checks rather than hard-failing the entire run.
 - Verification coverage is controlled by `percent_verification`.
 

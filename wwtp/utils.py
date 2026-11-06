@@ -49,14 +49,11 @@ def requests_session_with_retries(total_retries=3, backoff_factor=0.5,
 
 
 def default_cpu_workers():
-    """Return the SLURM-allocated CPU count, mirroring lib/utils.sh's export_thread_vars.
+    """Return the SLURM-allocated CPU count (``SLURM_CPUS_PER_TASK``), else the machine's.
 
-    That bash helper does ``${SLURM_CPUS_PER_TASK:-$(nproc 2>/dev/null || echo 8)}``
-    so numerical libraries (OMP/OpenBLAS/MKL) size their thread pools to the actual
-    SLURM allocation rather than the whole node. This is the same contract for
-    Python-side CPU-bound worker pools (ProcessPoolExecutor etc.), which previously
-    each hardcoded their own divergent literal (1/2/4/8/12/16/32/64) or called bare
-    ``os.cpu_count()`` with no SLURM awareness at all.
+    The Snakemake workflow sets OMP/OpenBLAS/MKL/NUMEXPR thread counts to a job's
+    threads the same way, so numerical libraries and Python worker pools size
+    themselves to the allocation rather than the whole node.
     """
     slurm_cpus = os.environ.get("SLURM_CPUS_PER_TASK")
     if slurm_cpus:

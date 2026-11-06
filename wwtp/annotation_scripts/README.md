@@ -24,7 +24,7 @@ Before running this stage, these inputs must be available.
 
 | Data file | Why needed | Default path status |
 | --- | --- | --- |
-| Corrected and merged WWTP layer | points for grid generation | produced by `data_merge/combine_locations.sh` |
+| Corrected and merged WWTP layer | points for grid generation | produced by the `combine_locations` rule (`wwtp/data_merge/`) |
 | Satellite imagery directory | source for annotation download | `download_bing_annotate.paths.annotations_images_dir` (cluster-specific path by default) |
 | Annotation inference results | CSV with AI labels for merge-back | `merge_annotations.paths.annotations_results_filepath` (cluster-specific path by default) |
 
@@ -33,16 +33,11 @@ Cluster-specific defaults for imagery and annotation outputs must be overridden 
 ## Scripts in This Folder
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
-| `grid_generation_and_osm_extract.sh` | shell launcher | Runs grid generation and OSM extraction in sequence | config values and named `--level`/`--version`/... overrides | grid files and OSM context files |
 | `NEW_01_GENERATEGRIDS.py` | Python worker | Builds annotation grids around corrected WWTP points | corrected WWTP layer, grid parameters | grid GeoPackages |
 | `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.py` | Python worker | Extracts OSM context for each grid | grid files, OSM settings, retries | per-grid OSM GeoJSON |
-| `run_download_bing_annotate_array.sh` | shell launcher | Launches image rendering as a SLURM array | array task id, split seed, config overrides | per-task logs and annotated images |
 | `download_bing_annotate.py` | Python worker | Draws annotation overlays on pre-downloaded imagery | imagery directory, OSM context, tile ids | annotated image assets |
-| `merge_annotations.sh` | shell launcher | Runs the merge-back stage | config values and named `--level`/`--version`/... overrides | merge logs and updated corrected-all file |
 | `merge_annotations.py` | Python worker | Parses annotation text and merges labels into WWTP points | annotation CSV, annotated images, corrected layer | updated corrected-all GeoPackage |
-| `annotations_inspection.sh` | shell launcher | Runs QA sampling and inspection | config values and named `--level`/`--version`/... overrides | QA logs and review images |
 | `annotations_inspection.py` | Python worker | Builds class summaries and inspection samples | annotated images and annotation results | QA sample set |
-| `copy_falsy_images.sh` | shell launcher | Copies selected images for review | config values and named `--level`/`--version`/... overrides | copied review images |
 | `copy_falsy_images.py` | Python worker | Copies a filtered image subset for QA | annotated images and selection criteria | copied image subset |
 | `NEW_03_WASTEWATERJOIN_GEOJSON.py` | Python worker | Optional join helper for GeoJSON/parquet intermediates | OSM outputs and temp parquet files | joined geodata |
 | `NEW_04_EXPORTGEOTIFF.py` | Python worker | Optional helper: renders `export_layer_filepath` into one image + `.wld` world file per grid cell (`python -m wwtp.annotation_scripts.NEW_04_EXPORTGEOTIFF`) | NEW_01 grid, one vector layer | images in `export_patch_dir` |
@@ -51,43 +46,31 @@ Cluster-specific defaults for imagery and annotation outputs must be overridden 
 ## Execution Flow
 ```mermaid
 graph TD
-  A([grid_generation_and_osm_extract.sh]) --> B[NEW_01_GENERATEGRIDS.py]
-  B --> C[NEW_02_EXTRACTOSMDATAFULL_GEOJSON.py]
-  C --> D[(data/annotations/osm_by_idx/*)]
-
-  E([run_download_bing_annotate_array.sh]) --> F[download_bing_annotate.py]
-  F --> G[(annotated image outputs)]
-
-  H([merge_annotations.sh]) --> I[merge_annotations.py]
-  I --> J[(annotation-enriched WWTP layer)]
-
-  K([annotations_inspection.sh]) --> L[annotations_inspection.py]
-  M([copy_falsy_images.sh]) --> N[copy_falsy_images.py]
+  A[(merged plants)] --> B[NEW_01_GENERATEGRIDS]
+  B --> C[NEW_02_EXTRACTOSMDATAFULL_GEOJSON]
+  C --> D[NEW_03_WASTEWATERJOIN_GEOJSON]
+  D --> E[download_bing_annotate x workflow.bing_annotate_shards]
+  E --> F[(annotated images)]
+  F -. external inference .-> G[merge_annotations]
+  G --> H[(annotation-enriched WWTP layer)]
 ```
+Snakemake rules: `annotation_grids` (NEW_01 + NEW_02), `wastewater_join` (NEW_03), `download_bing_annotate` (one job per shard), `merge_annotations`; target `annotations`.
 
 ## Run Instructions
-### Core flow
 ```bash
-cd wwtp
-bash annotation_scripts/grid_generation_and_osm_extract.sh
-sbatch annotation_scripts/run_download_bing_annotate_array.sh
-bash annotation_scripts/merge_annotations.sh
+snakemake --profile workflow/profiles/slurm annotations     # the whole chain, shards as separate jobs
+python -m wwtp.annotation_scripts.merge_annotations           # one stage on its own
+python -m wwtp.annotation_scripts.annotations_inspection      # QA sampling (not part of the workflow)
+python -m wwtp.annotation_scripts.copy_falsy_images
 ```
 
-### QA utilities
-```bash
-cd wwtp
-bash annotation_scripts/annotations_inspection.sh
-bash annotation_scripts/copy_falsy_images.sh
-```
-
-A successful run produces grid files, OSM GeoJSON, annotated images, and a merged corrected-all file. The QA scripts write sampled review outputs and logs under `logs/`.
+Job logs are in `{data_dir}/workflow/logs/`.
 
 ## Smart Behaviors
 - `annotations_inspection.py` uses `annotations.n_sample_size` with a default fallback of `1000` and saves figures in headless runs instead of relying on an interactive display.
 - `merge_annotations.py` parses the image index defensively from filenames and drops any existing annotation columns before re-merging to avoid duplicate `_x`/`_y` columns.
 - `download_bing_annotate.py` reads `annotations_images_dir` and `annotated_images_output_dir` from config, so local imagery paths can be swapped without touching code.
-- The SLURM array wrapper partitions rendering work by array task and split seed.
+- `download_bing_annotate` runs as `workflow.bing_annotate_shards` jobs; each takes its share of the tiles (seeded shuffle, `annotations.random_seed`).
 
 Delete the grid, annotation, or merged outputs to force a rerun of the corresponding stage.
 
@@ -120,13 +103,6 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | `annotations_inspection.paths.annotations_verf_image_outpath_dir` | ⚠️ path | QA image output directory |
 
 ## Known Issues / TODOs
-- `NEW_03_WASTEWATERJOIN_GEOJSON.py` and `NEW_04_EXPORTGEOTIFF.py` exist as optional helpers but are not part of the primary shell chain.
-- `sample_annotations_by_class.py` is an ad-hoc class-checking script and is **not
-  currently runnable from config**: its section is the only one in `config.yaml`
-  that fails to resolve, because `paths.sampled_images_output_filepath` is `null`
-  with no earlier section to inherit it from. Wiring it in would take three steps:
-  declare that path concretely in its own section, give it the standard CLI
-  (`add_standard_override_arguments` + `parse_config_overrides`) like every other
-  entry point, and slot it after `merge_annotations` in the annotation flow with a
-  shell wrapper. Recorded here so the next audit does not re-report it as a bug.
+- `NEW_03_WASTEWATERJOIN_GEOJSON.py` is part of the workflow (rule `wastewater_join`; `download_bing_annotate` reads its merged layers). `NEW_04_EXPORTGEOTIFF.py` is an optional helper outside it.
+- `sample_annotations_by_class.py` (QA sampling) and `annotations_inspection.py` / `copy_falsy_images.py` run by hand; they are not rules of the workflow.
 - No explicit `TODO` or `FIXME` markers were found in this module.

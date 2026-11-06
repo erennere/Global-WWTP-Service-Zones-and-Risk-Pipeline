@@ -1,0 +1,408 @@
+"""The WWTP pipeline as a Snakemake workflow.
+
+Every stage runs through its own command line (python -m wwtp.<stage>); the
+files each rule declares come from wwtp/workflow.py, which computes them with
+the same config resolution and path helpers the stages use. Settings live in
+wwtp/config.yaml and its layers (WWTP_CONFIG_OVERLAYS, wwtp/config.local.yaml),
+SLURM resources in its `workflow` section.
+
+Targets (run from the repository root):
+    snakemake -n                                   what would run for the configured variant
+    snakemake --profile workflow/profiles/local    the configured variant on this machine
+    snakemake --profile workflow/profiles/slurm    the same as SLURM jobs
+    snakemake sweep                                service areas + population for the whole sweep grid
+    snakemake sweep_scores                         ... and their HydroWASTE/UWWTD scores and ranking
+    snakemake sweep_industrial                     industrial areas outside the service areas, per sweep variant
+    snakemake annotations                          grids, OSM context, annotated images, merged labels
+    snakemake fig1                                 Figure 1 (see workflow/rules/fig1.smk)
+
+The first time on outputs made by the old shell wrappers, `snakemake --touch`
+marks them as up to date instead of recomputing them.
+"""
+import sys
+
+from wwtp import workflow as wf
+from wwtp.sensitivity_analysis_scripts.sweep_ver_ranking import NUM_TASKS as RANKING_TASKS
+
+PY = sys.executable
+DEFAULT = wf.default_variant()
+SWEEP = wf.sweep_variants()
+VARIANTS = list({v.tag: v for v in [DEFAULT, *SWEEP]}.values())  # the configured run is usually in the grid too
+
+
+# One shell template for every stage. The module and arguments are params, because a
+# shell string is only formatted when the job runs: a loop variable used in it would
+# already hold its last value by then.
+# Numerical libraries get the job's CPUs, not the whole node's.
+THREADS = "export OMP_NUM_THREADS={threads} OPENBLAS_NUM_THREADS={threads} MKL_NUM_THREADS={threads} " \
+          "NUMEXPR_NUM_THREADS={threads}; "
+STAGE = THREADS + PY + " -m wwtp.{params.module} {params.cli:q} > {log} 2>&1"
+
+
+def then(module, *extra):
+    """A further stage in the same job, appending to the job's log."""
+    return " && " + " ".join([PY, "-m", f"wwtp.{module}", *extra, "{params.cli:q}", ">> {log} 2>&1"])
+
+
+def res(stage):
+    r = wf.resources(stage)
+    return {"mem_mb": r["mem_mb"], "runtime": r["runtime"]}
+
+
+def threads(stage):
+    return wf.resources(stage)["threads"]
+
+
+rule all:
+    input:
+        wf.population_layer(DEFAULT, wf.figure_approach(DEFAULT)),
+        wf.config("find_pop_in_danger_pop", DEFAULT)["paths"]["pop_at_risk_output_filepath"],
+        wf.diff_layer(DEFAULT),
+        wf.stamp("hw_comparison", DEFAULT),
+        wf.stamp("eu_comparison", DEFAULT),
+        wf.config("find_unconnected_industrial_areas", DEFAULT)["paths"]["industrial_unconnected_output"],
+        wf.stamp("figures", DEFAULT),
+
+
+# --------------------------------------------------------------------------- #
+# Inputs shared by all variants                                               #
+# --------------------------------------------------------------------------- #
+MERGE = wf.config("final_data_merge")["paths"]
+rule combine_locations:
+    """Corrected plant locations: OSM-snapped, segmentation results, national datasets (one job, in order)."""
+    output:
+        MERGE["corrected_all_filepath"],
+        MERGE["new_points_filepath"],
+    params: module="data_merge.correct_locations_w_OSM", cli=[]
+    log: wf.log("combine_locations")
+    threads: threads("combine_locations")
+    resources: **res("combine_locations")
+    shell:
+        STAGE + then("data_merge.merge_seg_results", "--variant old") + then("data_merge.final_data_merge") + \
+        then("data_merge.merge_seg_results", "--variant new")
+
+
+ANNOT = wf.config("download_bing_annotate")["paths"]
+GRIDS = wf.annotation_grid()
+rule annotation_grids:
+    """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02)."""
+    input: MERGE["corrected_all_filepath"]
+    output:
+        GRIDS,
+        touch(wf.stamp("osm_extract")),
+    params: module="annotation_scripts.NEW_01_GENERATEGRIDS", cli=[]
+    log: wf.log("annotation_grids")
+    threads: threads("annotation_grids")
+    resources: **res("annotation_grids")
+    shell: STAGE + then("annotation_scripts.NEW_02_EXTRACTOSMDATAFULL_GEOJSON")
+
+
+rule wastewater_join:
+    """The OSM tiles merged into polygon and line layers (NEW_03), read by the image annotation."""
+    input: GRIDS, wf.stamp("osm_extract")
+    output: wf.osm_layers()
+    params: module="annotation_scripts.NEW_03_WASTEWATERJOIN_GEOJSON", cli=[]
+    log: wf.log("wastewater_join")
+    threads: threads("wastewater_join")
+    resources: **res("wastewater_join")
+    shell: STAGE
+
+
+BING_SHARDS = wf.config("workflow")["bing_annotate_shards"]
+rule download_bing_annotate:
+    """Annotated imagery, one job per share of the tiles."""
+    input: GRIDS, wf.osm_layers()
+    output: touch(wf.stamp("bing_annotate_{shard}"))
+    params:
+        module="annotation_scripts.download_bing_annotate",
+        cli=lambda w: [w.shard, "--num-instances", str(BING_SHARDS)],
+    log: wf.log("bing_annotate_{shard}")
+    threads: threads("download_bing_annotate")
+    resources: **res("download_bing_annotate")
+    shell: STAGE
+
+
+rule merge_annotations:
+    """Plant types from the image labels (inference results come from outside this workflow)."""
+    input:
+        MERGE["corrected_all_filepath"],
+        wf.config("merge_annotations")["paths"]["annotations_results_filepath"],
+        expand(wf.stamp("bing_annotate_{shard}"), shard=range(BING_SHARDS)),
+    output: wf.config("merge_annotations")["paths"]["annotated_all_filepath"]
+    params: module="annotation_scripts.merge_annotations", cli=[]
+    log: wf.log("merge_annotations")
+    threads: threads("merge_annotations")
+    resources: **res("merge_annotations")
+    shell: STAGE
+
+
+rule annotations:
+    input: rules.merge_annotations.output
+
+
+rule download_pop:
+    """WorldPop rasters of every country, start_year..end_year (one folder per country)."""
+    output: touch(wf.stamp("download_pop"))
+    params: module="download_pop", cli=[]
+    log: wf.log("download_pop")
+    threads: threads("download_pop")
+    resources: **res("download_pop")
+    shell: STAGE
+
+
+for level in sorted({v.level for v in VARIANTS}):
+    rule:
+        name: f"combine_watersheds_lvl{level}"
+        output: wf.watershed(level)
+        params: module="combine_watersheds", cli=["--level", level]
+        log: wf.log(f"combine_watersheds_lvl{level}")
+        threads: threads("combine_watersheds")
+        resources: **res("combine_watersheds")
+        shell: STAGE
+
+    rule:
+        name: f"download_and_vectorize_lvl{level}"
+        input: wf.watershed(level)
+        output: wf.industrial_land(level, DEFAULT.version)
+        params:
+            module="industrial_analysis.download_and_vectorize",
+            cli=["--level", level, "--version", DEFAULT.version],
+        log: wf.log(f"download_and_vectorize_lvl{level}")
+        threads: threads("download_and_vectorize")
+        resources: **res("download_and_vectorize")
+        shell: STAGE
+
+
+# --------------------------------------------------------------------------- #
+# Service areas and population, per variant                                   #
+# --------------------------------------------------------------------------- #
+ANNOTATED = wf.config("create_voronoi")["paths"]["annotated_all_filepath"]
+for v in VARIANTS:
+    for a in wf.approaches(v):
+        rule:
+            name: f"create_voronoi__{v.tag}__a{a}"
+            input: ANNOTATED, wf.watershed(v.level)
+            output: wf.service_areas(v, a)
+            params: module="create_voronoi", cli=["--approach", a, *v.cli()]
+            log: wf.log(f"create_voronoi_a{a}", v)
+            threads: threads("create_voronoi")
+            resources: **res("create_voronoi")
+            shell: STAGE
+
+        rule:
+            name: f"add_pop__{v.tag}__a{a}"
+            input: wf.service_areas(v, a), wf.stamp("download_pop")
+            output: wf.population_layer(v, a)
+            params: module="add_pop", cli=["--approach", a, *v.cli()]
+            log: wf.log(f"add_pop_a{a}", v)
+            threads: threads("add_pop")
+            resources: **res("add_pop")
+            shell: STAGE
+
+
+    rule:
+        name: f"find_unconnected_industrial_areas__{v.tag}"
+        input: wf.industrial_land(v.level, v.version), ANNOTATED, wf.watershed(v.level)
+        output: wf.config("find_unconnected_industrial_areas", v)["paths"]["industrial_unconnected_output"]
+        params: module="industrial_analysis.find_unconnected_industrial_areas", cli=v.cli()
+        log: wf.log("find_unconnected_industrial_areas", v)
+        threads: threads("find_unconnected_industrial_areas")
+        resources: **res("find_unconnected_industrial_areas")
+        shell: STAGE
+
+
+rule sweep:
+    input: [wf.population_layer(v, a) for v in SWEEP for a in wf.approaches(v)]
+
+
+rule sweep_industrial:
+    """Industrial areas outside every service area, for each variant of the sweep."""
+    input: [wf.config("find_unconnected_industrial_areas", v)["paths"]["industrial_unconnected_output"] for v in SWEEP]
+
+
+SCORES = wf.config("sweep_ver_ranking")["paths"]["output_dir"]
+rule compare_pop_sweep_hw_eu:
+    """HydroWASTE and UWWTD agreement of every population layer of the sweep."""
+    input: rules.sweep.input
+    output: touch(wf.stamp("compare_pop_sweep_hw_eu"))
+    params: module="sensitivity_analysis_scripts.compare_pop_sweep_hw_eu", cli=[]
+    log: wf.log("compare_pop_sweep_hw_eu")
+    threads: threads("compare_pop_sweep_hw_eu")
+    resources: **res("compare_pop_sweep_hw_eu")
+    shell: STAGE
+
+
+rule sweep_ver_ranking_task:
+    input: rules.sweep.input
+    output: f"{SCORES}/partial/task_{{task}}_metrics.csv"
+    params: module="sensitivity_analysis_scripts.sweep_ver_ranking", cli=lambda w: ["--task-id", str(int(w.task))]
+    log: wf.log("sweep_ver_ranking_{task}")
+    threads: threads("sweep_ver_ranking")
+    resources: **res("sweep_ver_ranking")
+    shell: STAGE
+
+
+rule sweep_scores:
+    """Verified / unverified / single-plant ranking of the sweep, merged from its tasks."""
+    input:
+        wf.stamp("compare_pop_sweep_hw_eu"),
+        expand(f"{SCORES}/partial/task_{{task:02d}}_metrics.csv", task=range(RANKING_TASKS)),
+    output: f"{SCORES}/sweep_ver_ranking_full_metrics.csv"
+    params: module="sensitivity_analysis_scripts.sweep_ver_ranking", cli=["--merge"]
+    log: wf.log("sweep_ver_ranking_merge")
+    threads: threads("sweep_ver_ranking")
+    resources: **res("sweep_ver_ranking")
+    shell: STAGE
+
+
+# --------------------------------------------------------------------------- #
+# Non-served population and downstream risk, configured variant               #
+# --------------------------------------------------------------------------- #
+v = DEFAULT
+SHARDS = wf.raster_shards(v)
+FIG = wf.population_layer(v, wf.figure_approach(v))
+RISK = {s: wf.config(s, v)["paths"] for s in ("find_unserved_pop", "assign_rivers_to_basin", "find_intersection_river",
+                                              "find_pop_in_danger_pop", "find_unconnected_industrial_areas")}
+
+for i in range(SHARDS if SHARDS > 1 else 0):
+    rule:
+        name: f"create_rasters__{v.tag}__shard{i}"
+        input: FIG, wf.watershed(v.level), wf.stamp("download_pop")
+        output: wf.raster_shard_files(v, i)
+        params:
+            module="pop_at_risk_river_calculations.create_rasters",
+            cli=["--job-index", str(i), "--total-jobs", str(SHARDS), *v.cli()],
+        log: wf.log(f"create_rasters_shard{i}", v)
+        threads: threads("create_rasters")
+        resources: **res("create_rasters")
+        shell: STAGE
+
+rule:
+    name: f"create_rasters__{v.tag}"
+    input: [f for i in range(SHARDS) for f in wf.raster_shard_files(v, i)] if SHARDS > 1 else \
+        [FIG, wf.watershed(v.level), wf.stamp("download_pop")]
+    output: wf.raster_stats(v)
+    params:
+        module="pop_at_risk_river_calculations.create_rasters",
+        cli=(["--merge-shards", str(SHARDS)] if SHARDS > 1 else []) + v.cli(),
+    log: wf.log("create_rasters", v)
+    threads: threads("create_rasters")
+    resources: **res("create_rasters")
+    shell: STAGE
+
+rule:
+    name: f"find_unserved_pop__{v.tag}"
+    input: wf.raster_stats(v)[1], ANNOTATED
+    output: RISK["find_unserved_pop"]["non_served_above_threshold_outpath"]
+    params: module="pop_at_risk_river_calculations.find_unserved_pop", cli=v.cli()
+    log: wf.log("find_unserved_pop", v)
+    threads: threads("find_unserved_pop")
+    resources: **res("find_unserved_pop")
+    shell: STAGE
+
+rule:
+    name: f"assign_rivers_to_basin__{v.tag}"
+    input: wf.watershed(v.level)
+    output: RISK["assign_rivers_to_basin"]["rivershed_output_path"]
+    params:
+        module="pop_at_risk_river_calculations.assign_rivers_to_basin",
+        cli=["--max-workers", str(threads("assign_rivers_to_basin")), *v.cli()],
+    log: wf.log("assign_rivers_to_basin", v)
+    threads: threads("assign_rivers_to_basin")
+    resources: **res("assign_rivers_to_basin")
+    shell: STAGE
+
+rule:
+    name: f"find_intersection_river__{v.tag}"
+    input:
+        RISK["find_unserved_pop"]["non_served_above_threshold_outpath"],
+        RISK["assign_rivers_to_basin"]["rivershed_output_path"],
+    output: RISK["find_intersection_river"]["non_served_nxt_river_outpath"]
+    params:
+        module="pop_at_risk_river_calculations.find_intersection_river",
+        cli=["--max-workers", str(threads("find_intersection_river")), *v.cli()],
+    log: wf.log("find_intersection_river", v)
+    threads: threads("find_intersection_river")
+    resources: **res("find_intersection_river")
+    shell: STAGE
+
+rule:
+    name: f"impact_polygons_pop__{v.tag}"
+    input:
+        RISK["find_intersection_river"]["non_served_nxt_river_outpath"],
+        RISK["assign_rivers_to_basin"]["rivershed_output_path"],
+    output: wf.impact_polygons(v)
+    params:
+        module="pop_at_risk_river_calculations.impact_polygons_pop",
+        cli=["--max-workers", str(threads("impact_polygons_pop")), *v.cli()],
+    log: wf.log("impact_polygons_pop", v)
+    threads: threads("impact_polygons_pop")
+    resources: **res("impact_polygons_pop")
+    shell: STAGE
+
+rule:
+    name: f"find_pop_in_danger_pop__{v.tag}"
+    input: wf.impact_polygons(v), wf.stamp("download_pop")
+    output: RISK["find_pop_in_danger_pop"]["pop_at_risk_output_filepath"]
+    params: module="pop_at_risk_river_calculations.find_pop_in_danger_pop", cli=v.cli()
+    log: wf.log("find_pop_in_danger_pop", v)
+    threads: threads("find_pop_in_danger_pop")
+    resources: **res("find_pop_in_danger_pop")
+    shell: STAGE
+
+rule:
+    name: f"find_diff_pop__{v.tag}"
+    input: FIG, wf.watershed(v.level), wf.stamp("download_pop")
+    output: wf.diff_layer(v)
+    params: module="pop_at_risk_river_calculations.find_diff_pop", cli=["--is-parallel", "true", *v.cli()]
+    log: wf.log("find_diff_pop", v)
+    threads: threads("find_diff_pop")
+    resources: **res("find_diff_pop")
+    shell: STAGE
+
+# Validation against HydroWASTE and the UWWTD: split, then plots (their file lists depend on the data).
+rule:
+    name: f"verification_script__{v.tag}"
+    input: [wf.population_layer(v, a) for a in wf.approaches(v)]
+    output: touch(wf.stamp("verification_script", v))
+    params: module="pop_validation_scripts.verification_script", cli=v.cli()
+    log: wf.log("verification_script", v)
+    threads: threads("verification_script")
+    resources: **res("verification_script")
+    shell: STAGE
+
+for comparison in ("hw_comparison", "eu_comparison"):
+    rule:
+        name: f"{comparison}__{v.tag}"
+        input: wf.stamp("verification_script", v)
+        output: touch(wf.stamp(comparison, v))
+        params: module=f"pop_validation_scripts.{comparison}", cli=v.cli()
+        log: wf.log(comparison, v)
+        threads: threads(comparison)
+        resources: **res(comparison)
+        shell: STAGE
+
+FIGURE_INPUTS = {
+    "piechart_figure": [FIG, wf.raster_stats(v)[0]],
+    "piechart_interactive": [FIG, wf.raster_stats(v)[0]],
+    "sizes_interactive_map": [FIG],
+    "composite_area_population_plots": [FIG],
+    "pop_at_risk_figures": [RISK["find_unserved_pop"]["non_served_above_threshold_outpath"],
+                            RISK["find_pop_in_danger_pop"]["pop_at_risk_output_filepath"]],
+    "interactive_unconnected_industrial_map": [RISK["find_unconnected_industrial_areas"]["industrial_unconnected_output"]],
+}
+for figure, figure_inputs in FIGURE_INPUTS.items():
+    rule:
+        name: f"{figure}__{v.tag}"
+        input: figure_inputs
+        output: touch(wf.stamp(figure, v))
+        params: module=f"figures_scripts.{figure}", cli=v.cli()
+        log: wf.log(figure, v)
+        threads: threads(figure)
+        resources: **res(figure)
+        shell: STAGE
+
+rule:
+    name: f"figures__{v.tag}"
+    input: [wf.stamp(figure, v) for figure in FIGURE_INPUTS]
+    output: touch(wf.stamp("figures", v))

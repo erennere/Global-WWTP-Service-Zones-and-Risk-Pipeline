@@ -302,9 +302,6 @@ create_voronoi:
   # column. True preserves the previous unconditional behaviour; set false to
   # trust an existing column and skip the join.
   force_country_rejoin: true
-  # Read by create_voronoi.sh (not by Python) to pick array/sequential/parallel.
-  execution:
-    mode: 'sequential'
   paths:
     data_dir: null
     bboxes: '{data_dir}/bboxes.csv'
@@ -354,6 +351,9 @@ create_rasters:
   # A pixel counts as served when its centre lies in a service area
   # (false), or when any part of it does (true). Used for both outputs.
   served_all_touched: false
+  # Countries are split into this many jobs (create_rasters --job-index/--total-jobs);
+  # each writes its own CSVs and a final job merges them (--merge-shards).
+  shards: 10
   basin_column_name: null
   country_boundary_column: null
   country_output_column: null
@@ -362,7 +362,6 @@ create_rasters:
     # OSM extraction step's annotations.max_workers; same value, now explicit.
     max_workers: 8
     random_seed: null
-    default_mode: 'array'
   figures:
     approach: 1
   paths:
@@ -796,25 +795,17 @@ pop_at_risk_figures:
     non_served_outpath: null
     pop_at_risk_output_filepath: null
 
-create_voronoi_parallel_sweep:
-  level: null
-  version: null
-  buffer: null
-  weight_method: null
-  weight_func: null
-  dynamic_buffering: null
-  size_measure: null
-  # The sweep grid (create_voronoi_param_sweep.sh, add_pop_param_sweep.sh and
-  # industrial_analysis_sweep.sh read it through print_task_combinations).
-  # Each level needs its basin file from combine_watersheds.
+# The sensitivity grid. `snakemake sweep` (workflow/Snakefile) builds the service
+# areas and population layers of every combination (wwtp.workflow.sweep_variants);
+# compare_pop_sweep_hw_eu and sweep_ver_ranking score them. Each level needs its
+# basin file from combine_watersheds. Without distance weighting (weight_func '')
+# only 'linear' runs, and 'size' weights only run with 'mult'; 'add' is available.
+sweep:
   sweep_levels: [5, 6, 7]
+  sweep_weight_funcs: ['mult', '']
   sweep_weight_methods: ['size', 'linear', 'logarithmic', 'square_root', 'sigmoid']
   sweep_rigid_buffers: [9000, 11000, 13000, 15000]
   sweep_size_measures: ['reported', 'footprint']
-  paths:
-    data_dir: null
-    buffers_dir: null
-    voronoi_dir: null
 
 compare_pop_sweep_hw_eu:
   max_workers: null
@@ -825,7 +816,7 @@ compare_pop_sweep_hw_eu:
     data_dir: null
     eu_ref_filepath: null
 
-# Ranks the 'ver'/'unver'/'single' splits of the create_voronoi_parallel_sweep grid.
+# Ranks the 'ver'/'unver'/'single' splits of the sweep grid.
 # Shares the sweep-aggregation shape, EU reference layer and hw_weight scoring of
 # compare_pop_sweep_hw_eu above, so it is declared after it and inherits from it.
 sweep_ver_ranking:
@@ -854,3 +845,44 @@ figure1:
     match_dir: '{data_dir}/figures/fig1/match'
     cartogram_dir: '{data_dir}/figures/fig1/cartogram'
     combined_dir: '{data_dir}/figures/fig1/combined'
+
+# Snakemake (workflow/Snakefile): where it keeps its logs and stamp files, how
+# many jobs split download_bing_annotate, and the SLURM resources of every
+# stage's jobs (threads = CPUs per task, mem_mb, runtime in minutes). Every
+# stage the workflow runs needs an entry. A cluster overlay can tune any of them.
+workflow:
+  bing_annotate_shards: 10
+  resources:
+    combine_locations: {threads: 4, mem_mb: 65536, runtime: 2880}
+    annotation_grids: {threads: 16, mem_mb: 131072, runtime: 2880}
+    download_bing_annotate: {threads: 64, mem_mb: 239616, runtime: 2880}
+    wastewater_join: {threads: 16, mem_mb: 65536, runtime: 2880}
+    merge_annotations: {threads: 2, mem_mb: 4096, runtime: 2880}
+    download_pop: {threads: 16, mem_mb: 65536, runtime: 5760}
+    combine_watersheds: {threads: 4, mem_mb: 32768, runtime: 1440}
+    create_voronoi: {threads: 16, mem_mb: 196608, runtime: 2880}
+    add_pop: {threads: 8, mem_mb: 196608, runtime: 1440}
+    create_rasters: {threads: 16, mem_mb: 196608, runtime: 2880}
+    find_unserved_pop: {threads: 8, mem_mb: 32768, runtime: 2880}
+    assign_rivers_to_basin: {threads: 16, mem_mb: 65536, runtime: 2880}
+    find_intersection_river: {threads: 32, mem_mb: 131072, runtime: 2880}
+    impact_polygons_pop: {threads: 64, mem_mb: 239616, runtime: 5760}
+    find_diff_pop: {threads: 64, mem_mb: 239616, runtime: 5760}
+    find_pop_in_danger_pop: {threads: 16, mem_mb: 32768, runtime: 5760}
+    download_and_vectorize: {threads: 16, mem_mb: 65536, runtime: 5760}
+    find_unconnected_industrial_areas: {threads: 16, mem_mb: 65536, runtime: 5760}
+    verification_script: {threads: 4, mem_mb: 16384, runtime: 1440}
+    hw_comparison: {threads: 4, mem_mb: 16384, runtime: 1440}
+    eu_comparison: {threads: 4, mem_mb: 16384, runtime: 1440}
+    piechart_figure: {threads: 4, mem_mb: 8192, runtime: 1440}
+    piechart_interactive: {threads: 4, mem_mb: 8192, runtime: 1440}
+    sizes_interactive_map: {threads: 4, mem_mb: 8192, runtime: 1440}
+    composite_area_population_plots: {threads: 4, mem_mb: 8192, runtime: 1440}
+    pop_at_risk_figures: {threads: 8, mem_mb: 8192, runtime: 1440}
+    interactive_unconnected_industrial_map: {threads: 2, mem_mb: 4096, runtime: 120}
+    compare_pop_sweep_hw_eu: {threads: 8, mem_mb: 65536, runtime: 5760}
+    sweep_ver_ranking: {threads: 8, mem_mb: 65536, runtime: 5760}
+  paths:
+    data_dir: null
+    log_dir: '{data_dir}/workflow/logs'
+    stamp_dir: '{data_dir}/workflow/stamps'

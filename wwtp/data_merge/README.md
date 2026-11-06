@@ -37,7 +37,6 @@ If cluster-specific segmentation results are present, override `merge_seg_result
 ## Scripts in This Folder
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
-| `combine_locations.sh` | shell launcher | Runs the full merge chain in order | config values and named `--level`/`--version`/... overrides | logs plus the final merged WWTP dataset |
 | `correct_locations_w_OSM.py` | Python worker | Corrects WWTP geometries using OSM and corrected-source fallback | HydroWASTE, OSM geometry, Overture cache, radius | corrected point layer |
 | `merge_seg_results.py` | Python worker | Merges segmentation outputs into corrected points | segmentation CSV, corrected layers, legacy flag | segmentation-enriched layer(s) |
 | `final_data_merge.py` | Python worker | Produces the canonical merged WWTP layer | corrected sources and country-specific files | `all_merged_v*.gpkg` |
@@ -45,36 +44,23 @@ If cluster-specific segmentation results are present, override `merge_seg_result
 ## Execution Flow
 ```mermaid
 graph TD
-  A([combine_locations.sh]) --> B[correct_locations_w_OSM.py]
-  B --> C[merge_seg_results.py --variant old]
-  C --> D[final_data_merge.py]
-  D --> E[merge_seg_results.py --variant new]
+  B[correct_locations_w_OSM] --> C[merge_seg_results --variant old]
+  C --> D[final_data_merge]
+  D --> E[merge_seg_results --variant new]
   E --> F[(data/all_merged_v*.gpkg)]
 ```
+Snakemake runs the four steps as one job (rule `combine_locations`): they read and rewrite the same merged file in turn.
 
 ## Run Instructions
-### Local
 ```bash
-cd wwtp
-bash data_merge/combine_locations.sh
+snakemake --profile workflow/profiles/slurm combine_locations
+python -m wwtp.data_merge.final_data_merge --version 2       # one step on its own
 ```
 
-### HPC
-```bash
-cd wwtp
-sbatch data_merge/combine_locations.sh
-```
-
-### With overrides
-```bash
-cd wwtp
-bash data_merge/combine_locations.sh 7 2 9000 logarithmic mult true 0.5
-```
-
-A successful run updates the corrected and merged GeoPackages and writes logs under `logs/combine_locations.log` and `logs/merge_seg_results.log`.
+The log is `{data_dir}/workflow/logs/combine_locations.log`.
 
 ## Smart Behaviors
-- `combine_locations.sh` always runs the merge chain in a fixed order.
+- The `combine_locations` rule always runs the merge chain in a fixed order, as one job.
 - `merge_seg_results.py` uses `legacy_merge` to decide whether the old segmentation branch should run.
 - `final_data_merge.py` starts from the configured merged baseline and selects the corrected or segmentation-corrected source based on `legacy_merge`.
 - The segmentation input path is cluster-specific in `wwtp/config.yaml`, so this stage often needs a local override.

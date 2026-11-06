@@ -34,7 +34,6 @@ Version = Annotated[str, BeforeValidator(_digits), Field(pattern=r"^\w+$")]
 WeightMethod = Literal["linear", "square_root", "logarithmic", "sigmoid", "size"]
 WeightFunc = Literal["", "mult", "add"]
 SizeMeasure = Literal["reported", "footprint"]
-ExecutionMode = Literal["array", "sequential", "parallel"]
 Paths = dict[str, str]  # resolved path templates; every key must have a value by now
 Fraction = Annotated[float, Field(ge=0, le=1)]
 
@@ -289,14 +288,9 @@ class DownloadPop(Section, YearRange):
     paths: Paths
 
 
-class Execution(Strict):
-    mode: ExecutionMode  # read by create_voronoi.sh
-
-
 class CreateVoronoi(ServiceAreaParams):
     city_voronoi: bool
     duckdb_cond: bool
-    execution: Execution
 
 
 class AddPop(RunParams, YearRange):
@@ -309,13 +303,13 @@ class AddPop(RunParams, YearRange):
 class RasterAnnotations(Strict):
     max_workers: PositiveInt
     random_seed: int
-    default_mode: ExecutionMode  # read by create_rasters.sh
 
 
 class CreateRasters(RunParams):
     zoom_level: PositiveInt
     min_pixels: PositiveInt
     served_all_touched: bool
+    shards: PositiveInt
     basin_column_name: str
     country_boundary_column: str
     country_output_column: str
@@ -506,12 +500,12 @@ class Figure1(Section):
 # --------------------------------------------------------------------------- #
 # Sensitivity sweeps                                                          #
 # --------------------------------------------------------------------------- #
-class CreateVoronoiParallelSweep(RunParams):
+class Sweep(Section):
     sweep_levels: list[Annotated[int, Field(ge=1, le=12)]] = Field(min_length=1)
+    sweep_weight_funcs: list[WeightFunc] = Field(min_length=1)
     sweep_weight_methods: list[WeightMethod] = Field(min_length=1)
     sweep_rigid_buffers: list[NonNegativeInt] = Field(min_length=1)
     sweep_size_measures: list[SizeMeasure] = Field(min_length=1)
-    paths: Paths
 
 
 class ComparePopSweepHwEu(Section):
@@ -525,6 +519,21 @@ class ComparePopSweepHwEu(Section):
 class SweepVerRanking(ComparePopSweepHwEu):
     percent_verification: Fraction
     figures: Figures
+
+
+# --------------------------------------------------------------------------- #
+# Snakemake                                                                   #
+# --------------------------------------------------------------------------- #
+class JobResources(Strict):
+    threads: PositiveInt
+    mem_mb: PositiveInt
+    runtime: PositiveInt  # minutes
+
+
+class Workflow(Section):
+    bing_annotate_shards: PositiveInt
+    resources: dict[str, JobResources]
+    paths: Paths
 
 
 SECTIONS: dict[str, type[Section]] = {
@@ -563,10 +572,11 @@ SECTIONS: dict[str, type[Section]] = {
     "piechart_interactive": PiechartInteractive,
     "sizes_interactive_map": SizesInteractiveMap,
     "pop_at_risk_figures": PopAtRiskFigures,
-    "create_voronoi_parallel_sweep": CreateVoronoiParallelSweep,
+    "sweep": Sweep,
     "compare_pop_sweep_hw_eu": ComparePopSweepHwEu,
     "sweep_ver_ranking": SweepVerRanking,
     "figure1": Figure1,
+    "workflow": Workflow,
 }
 
 

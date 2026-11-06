@@ -19,9 +19,8 @@ is usually an *older lineage*, not last week's HEAD, and the gap is wider than y
 
 **The baseline is read-only.** Never write, `chmod`, or `git add` it. Never import it as a package —
 load modules by file path under a private alias, because the live package is installed and
-`import <name>` silently resolves to the wrong tree. Never execute a wrapper inside it: `init_log`
-does `rm -f "${LOG_DIR}/<name>.log"`, so a snapshot run would edit it. Copy it to scratch and run
-there.
+`import <name>` silently resolves to the wrong tree. Never run anything inside it (old shell wrappers
+deleted logs, Snakemake writes `.snakemake/`); copy it to scratch and run there.
 
 Read-only includes **bytecode**: loading a baseline module writes `__pycache__` beside its source.
 Set `sys.dont_write_bytecode = True` before the first baseline import and export
@@ -37,12 +36,12 @@ touched; layer 5 is not a comparison at all.
 
 1. **Static surfaces** — `wwtp/tests/harness/baseline_diff.py <baseline>`. Per-module top-level API
    with signatures, config sections and dotted leaf keys (both directions *and* values changed in
-   place), module-level constants, and per-wrapper `set` line / `lib/utils.sh` sourcing / parsed
+   place), module-level constants, and (for baselines that still have them) per-wrapper `set` line / parsed
    flags. Crucially, a name missing from its old module is matched against every new module before
    being called a deletion — **moved is not deleted**, and that distinction is most of the value.
-2. **Wrapper argv** — `wwtp/tests/harness/wrapper_argv_snapshot.sh <out>`, run once per tree, then
-   diff the `-m <module> …` lines. This is what proves a wrapper still invokes the same thing with
-   the same overrides. Lay the baseline out as `<scratch>/wwtp` (`<scratch>/src` for a baseline from before the rename) and run with `PYTHONPATH=<scratch>`
+2. **Stage commands** — `snakemake -n -p` in each tree (old trees: the wrappers' `-m <module> …`
+   lines) prints every job's command; diff them. This is what proves a stage is still invoked with
+   the same arguments and overrides. Lay the baseline out as `<scratch>/wwtp` (`<scratch>/src` for a baseline from before the rename) and run with `PYTHONPATH=<scratch>`
    (see Traps).
 3. **Resolved config** — `wwtp/tests/harness/baseline_config_diff.py <baseline>`. Compares config as
    `resolve_config` delivers it, after null-inheritance and `{placeholder}` interpolation. A key can
@@ -52,7 +51,7 @@ touched; layer 5 is not a comparison at all.
    implementations, feed identical seeded inputs, compare. The only layer that catches a consolidated
    helper computing a different *number*. Each case declares `expect="same"` or `expect="differ"`, so
    the report flags both a regression **and** a fix that silently did not land.
-5. **Runnability** — `bash -n` every wrapper; `compileall`; import every module; **`--help` must exit
+5. **Runnability** — `snakemake -n` on the mock world; `compileall`; import every module; **`--help` must exit
    0 for every `__main__` module**; `pyflakes` for undefined names; `pytest` from the repo root,
    diffed against the recorded failure list.
 

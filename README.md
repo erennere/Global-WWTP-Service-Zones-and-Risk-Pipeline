@@ -2,7 +2,7 @@
 
 The repository is a pipeline developed to explore whether AI can fill data gaps regarding Wastewater Treatment Plants (WWTPs) globally, for example the population served and the type of WWTP (residential, industrial, etc.). The core idea is to approximate WWTP service areas via Voronoi tessellations, provided that WWTP coverage is adequate enough that cells do not erroneously extend into areas served by uncovered WWTPs absent from the dataset.
 
-WWTPs are not just point infrastructure in this project: they are spatial service units whose catchments can be approximated, refined, and compared against reference datasets. This pipeline is designed to run at multi-country scale and combines correction, harmonization, Voronoi allocation, population attribution, river-linked risk propagation, validation, industrial coverage analysis, and reporting. Most runtime behavior is controlled from `wwtp/config.yaml`, with shell wrappers providing reproducible local and SLURM entry points.
+WWTPs are not just point infrastructure in this project: they are spatial service units whose catchments can be approximated, refined, and compared against reference datasets. This pipeline is designed to run at multi-country scale and combines correction, harmonization, Voronoi allocation, population attribution, river-linked risk propagation, validation, industrial coverage analysis, and reporting. Most runtime behavior is controlled from `wwtp/config.yaml`; a Snakemake workflow (`workflow/Snakefile`) runs every stage on one machine or as SLURM jobs.
 
 ## Table of Contents
 
@@ -12,7 +12,7 @@ WWTPs are not just point infrastructure in this project: they are spatial servic
 - [Clipping / Buffering](#clipping--buffering)
 - [Analyses](#analyses)
 - [What This Repository Contains](#what-this-repository-contains)
-- [Canonical Script Run Order](#canonical-script-run-order)
+- [Running the Pipeline](#running-the-pipeline)
 - [Project Data Flow](#project-data-flow)
 - [Environment Creation](#environment-creation)
 - [Starter Data Files You Need Before Running](#starter-data-files-you-need-before-running)
@@ -130,107 +130,101 @@ The repository is organized around one canonical processing chain and several op
 | Main technical index | `wwtp/README.md` | Stage index and cross-stage settings |
 | Merge stage | `wwtp/data_merge/` | Build the canonical WWTP dataset |
 | Annotation stage | `wwtp/annotation_scripts/` | Generate grids, OSM context, and annotation merges |
-| Voronoi stage | `wwtp/create_voronoi.py` (command line), `wwtp/service_areas/` (size, weights, solver, contours, joins, overlaps, orchestrate), `wwtp/create_voronoi.sh` | Create service areas |
-| Population stage | `wwtp/add_pop.py`, `wwtp/add_pop.sh` | Attach WorldPOP counts to service areas |
+| Workflow | `workflow/Snakefile`, `workflow/profiles/`, `wwtp/workflow.py` | Run the stages in order, locally or on SLURM; sweeps |
+| Voronoi stage | `wwtp/create_voronoi.py` (command line), `wwtp/service_areas/` (size, weights, solver, contours, joins, overlaps, orchestrate) | Create service areas |
+| Population stage | `wwtp/add_pop.py` | Attach WorldPOP counts to service areas |
 | Risk stage | `wwtp/pop_at_risk_river_calculations/` | Compute non-served population and downstream risk |
 | Validation stage | `wwtp/pop_validation_scripts/` | Compare outputs against HydroWASTE and Waterbase-UWWTD |
 | Industrial stage | `wwtp/industrial_analysis/` | Measure industrial land not covered by eligible WWTPs |
 | Figures stage | `wwtp/figures_scripts/` | Build maps, plots, and publication outputs |
-| Sweep stage | `wwtp/sensitivity_analysis_scripts/` | Run parameter sweeps and compare results |
+| Sweep stage | `wwtp/sensitivity_analysis_scripts/` | Score and rank the parameter sweep |
 
 Each major processing directory has its own README that explains the role of the stage, the purpose of each script, the local data flow, and the configuration settings that matter for that part of the pipeline.
 
-## Canonical Script Run Order
+## Running the Pipeline
 
-The standard end-to-end order is the following.
+Snakemake runs every stage through its own command line (`python -m wwtp.<stage>`) and knows each stage's input and output files, so it runs only what is missing or out of date, in order, in parallel where it can. From the repository root, in the pipeline's environment (`pip install -e ".[workflow]"`):
 
-1. `wwtp/data_merge/combine_locations.sh`
-2. `wwtp/combine_watersheds.sh`
-3. `wwtp/annotation_scripts/grid_generation_and_osm_extract.sh`
-4. `wwtp/annotation_scripts/run_download_bing_annotate_array.sh`
-5. `wwtp/annotation_scripts/merge_annotations.sh`
-6. `wwtp/download_pop.sh`
-7. `wwtp/create_voronoi.sh`
-8. `wwtp/add_pop.sh`
-9. `wwtp/pop_at_risk_river_calculations/create_rasters.sh`
-10. `wwtp/pop_at_risk_river_calculations/pop_differences_and_impact_polygons.sh`
-    — chains `find_unserved_pop` → `find_diff_pop` → `assign_rivers_to_basin` →
-    `find_intersection_river` → `impact_polygons_pop`. Each of the first four also
-    has a standalone wrapper
-    (`find_unserved_pop.sh`, `assign_rivers_to_basin.sh`, `find_intersection_river.sh`)
-    for rerunning one stage without repeating the whole chain.
-11. `wwtp/pop_at_risk_river_calculations/find_pop_in_danger_pop.sh`
-12. `wwtp/pop_validation_scripts/comparison.sh`
-13. `wwtp/industrial_analysis/industrial_analysis.sh`
-14. `wwtp/figures_scripts/composite_area_population_plots.sh`
-15. `wwtp/figures_scripts/pop_at_risk_figures.sh`
+```bash
+snakemake -n                                     # what would run for the configured variant
+snakemake --profile workflow/profiles/local      # run it on this machine
+snakemake --profile workflow/profiles/slurm      # run it as SLURM jobs (one job per stage and shard)
+snakemake --profile workflow/profiles/slurm sweep             # service areas + population, whole sweep grid
+snakemake --profile workflow/profiles/slurm sweep_scores      # ... plus HydroWASTE/UWWTD scores and ranking
+snakemake --profile workflow/profiles/slurm sweep_industrial  # unconnected industrial areas per sweep variant
+snakemake --profile workflow/profiles/slurm annotations       # grids, OSM context, annotated images, merged labels
+snakemake --profile workflow/profiles/slurm fig1              # Figure 1
+```
 
-The sensitivity-analysis launchers under `wwtp/sensitivity_analysis_scripts/` are optional and sit outside the canonical production run.
+- The configured variant is the one `create_voronoi` sets in `wwtp/config.yaml` (level, version, buffer, weighting, size measure); the sweep grid is the `sweep` section. Change either there or in an overlay, not on the command line, so the files Snakemake expects match what the stages write.
+- The default target `all` builds, for that variant: the merged plants and annotations if missing, basins, WorldPop rasters, service areas (approaches 0 and 1, and 2 with `city_voronoi`), population layers, the non-served population (`create_rasters` as `workflow`-configured country shards plus a merge), rivers, impact polygons, population at risk, the population differences, the HydroWASTE/UWWTD comparisons, unconnected industrial areas and the figures.
+- SLURM threads, memory and runtime per stage are in `wwtp/config.yaml`, section `workflow.resources`; job logs go to `{data_dir}/workflow/logs/`. Stages whose outputs cannot be listed in advance (downloads, plots) leave a marker in `{data_dir}/workflow/stamps/`.
+- On outputs made before the workflow existed (by the former shell wrappers), run `snakemake --touch` once: it marks them as up to date instead of recomputing them.
+- A single stage still runs on its own, e.g. `python -m wwtp.create_voronoi --approach 1 --weight-func add` for a one-off additive run.
 
 ## Project Data Flow
 
 ```mermaid
 graph TD
-	A[(HydroWASTE and country additions)] --> B[combine_locations.sh]
+	A[(HydroWASTE and country additions)] --> B[combine_locations]
 	B --> C[(Canonical merged WWTP layer)]
 
-	D[(HydroBASINS zip archives)] --> E[combine_watersheds.sh]
+	D[(HydroBASINS zip archives)] --> E[combine_watersheds]
 	E --> F[(Combined watershed layers)]
 
-	C --> G[grid_generation_and_osm_extract.sh]
+	C --> G[annotation_grids]
 	G --> H[(annotation grids and OSM context)]
-	H --> I[run_download_bing_annotate_array.sh]
+	H --> I[download_bing_annotate]
 	I --> J[(annotated imagery)]
-	J --> K[merge_annotations.sh]
+	J --> K[merge_annotations]
 	K --> L[(annotation-enriched WWTP layer)]
 
-	M[(WorldPOP rasters)] --> N[download_pop.sh]
-	L --> O[create_voronoi.sh]
+	M[(WorldPOP rasters)] --> N[download_pop]
+	L --> O[create_voronoi]
 	F --> O
 	O --> P[(Voronoi service areas)]
 	N --> Q[(population raster store)]
-	P --> R[add_pop.sh]
+	P --> R[add_pop]
 	Q --> R
 	R --> S[(population-enriched Voronoi layers)]
 
-	S --> T[create_rasters.sh]
+	S --> T[create_rasters]
 	T --> T1[(raster country statistics)]
-	T --> U[pop_differences_and_impact_polygons.sh]
-	F --> U
-	V[(HydroRIVERS)] --> U
-	U --> U1[find_unserved_pop.sh]
+	T --> U1[find_unserved_pop]
+	F --> U3
+	V[(HydroRIVERS)] --> U3
 	U1 --> U2[find_diff_pop]
-	U1 --> U3[assign_rivers_to_basin.sh]
-	U3 --> U4[find_intersection_river.sh]
+	U1 --> U3[assign_rivers_to_basin]
+	U3 --> U4[find_intersection_river]
 	U4 --> U5[impact_polygons_pop]
-	U5 --> W[find_pop_in_danger_pop.sh]
+	U5 --> W[find_pop_in_danger_pop]
 	W --> X[(population-at-risk outputs)]
 
-	S --> Y[comparison.sh]
+	S --> Y[verification_script, hw_comparison, eu_comparison]
 	Y --> Z[(validation outputs)]
 
-	AZ[(Zenodo industrial land-cover source)] --> AA[download_and_vectorize.sh]
+	AZ[(Zenodo industrial land-cover source)] --> AA[download_and_vectorize]
 	AA --> AA1[(vectorized industrial areas)]
-	L --> AA2[find_unconnected_industrial_areas.sh]
+	L --> AA2[find_unconnected_industrial_areas]
 	F --> AA2
 	AA1 --> AA2
 	AA2 --> AB[(industrial coverage outputs)]
 
-	S --> AC[composite_area_population_plots.sh]
-	X --> AD[pop_at_risk_figures.sh]
-	T1 --> AG[piechart.sh]
+	S --> AC[composite_area_population_plots]
+	X --> AD[pop_at_risk_figures]
+	T1 --> AG[piechart_figure, piechart_interactive]
 	AG --> AH[(static and interactive piecharts)]
-	S --> AI[sizes_interactive_map.py]
+	S --> AI[sizes_interactive_map]
 	AI --> AJ[(interactive size map)]
-	AB --> AE[interactive_unconnected_industrial_map.sh]
+	AB --> AE[interactive_unconnected_industrial_map]
 	AE --> AF[(unconnected-industrial HTML map)]
 ```
 
 Notes on this diagram:
-- `find_diff_pop` is a dead end sequenced after `find_unserved_pop.sh` (see `pop_differences_and_impact_polygons.sh`) — nothing downstream depends on its output, so it does not feed `assign_rivers_to_basin.sh`.
-- Only `find_unconnected_industrial_areas.sh` reads the annotation-enriched WWTP layer; `download_and_vectorize.sh` has no annotation dependency, so the two industrial-analysis stages are shown as gated separately.
-- `composite_area_population_plots.sh` reads the population-enriched Voronoi layers directly and does not consume validation or population-at-risk outputs.
-- `piechart.sh` (static and interactive) reads the raster country statistics produced by `create_rasters.sh`; `sizes_interactive_map.py` reads the population-enriched Voronoi layers directly, not the raster statistics.
+- `find_diff_pop` is a dead end: nothing downstream depends on its output.
+- Only `find_unconnected_industrial_areas` reads the annotation-enriched WWTP layer; `download_and_vectorize` has no annotation dependency, so the two industrial-analysis stages are shown as gated separately.
+- `composite_area_population_plots` reads the population-enriched Voronoi layers directly and does not consume validation or population-at-risk outputs.
+- `piechart_figure, piechart_interactive` (static and interactive) reads the raster country statistics produced by `create_rasters`; `sizes_interactive_map` reads the population-enriched Voronoi layers directly, not the raster statistics.
 
 ## Environment Creation
 
@@ -260,9 +254,9 @@ python -m pip install -e ".[test]"
 
 Practical prerequisites:
 - Python 3.11 or newer.
-- A shell that can run the repository wrappers. Most canonical entry points are `.sh` launchers.
+- Snakemake for the workflow (`pip install -e ".[workflow]"`, which also brings the SLURM executor plugin).
 - Access to the geospatial inputs under `data/`.
-- Optional SLURM access if you intend to use the cluster-oriented wrappers.
+- SLURM access for `workflow/profiles/slurm`.
 
 ## Starter Data Files You Need Before Running
 
@@ -332,19 +326,15 @@ An overlay can only change keys the base already has, so a typo fails at load. `
 
 ### Typed settings
 
-Each section has a pydantic model in `wwtp/settings.py`. After the layers and CLI overrides are applied, `load_config` checks the section against it: types, allowed values (`weight_method`, `weight_func`, `size_measure`, execution modes, ...), positive counts and sizes, and cross-field rules (`weight_method: size` needs `weight_func: mult`; `dynamic_buffering` needs a `size_measure` with a `radius_calibration` entry; `start_year` ≤ `end_year`). A failure names every bad key, e.g. `create_voronoi.n_points: Input should be greater than 0`. A new config key goes into config.yaml and into its model; `wwtp/tests/unit/test_settings.py` fails while the two disagree. Stages still receive a dict; `settings.parse(section, cfg)` gives the model for attribute access.
+Each section has a pydantic model in `wwtp/settings.py`. After the layers and CLI overrides are applied, `load_config` checks the section against it: types, allowed values (`weight_method`, `weight_func`, `size_measure`, ...), positive counts and sizes, and cross-field rules (`weight_method: size` needs `weight_func: mult`; `dynamic_buffering` needs a `size_measure` with a `radius_calibration` entry; `start_year` ≤ `end_year`). A failure names every bad key, e.g. `create_voronoi.n_points: Input should be greater than 0`. A new config key goes into config.yaml and into its model; `wwtp/tests/unit/test_settings.py` fails while the two disagree. Stages still receive a dict; `settings.parse(section, cfg)` gives the model for attribute access.
 
-The canonical shared override order used across the wrappers is:
-
-```bash
-[level] [version] [buffer] [weight_method] [weight_func] [dynamic_buffering] [size_measure]
-```
+Every stage takes the same named overrides of the run parameters: `--level`, `--version`, `--buffer`, `--weight-method`, `--weight-func`, `--dynamic-buffering`, `--size-measure` (the workflow passes all seven).
 
 ## What Is Missing Or External To The Repository
 
 The repository is not fully self-contained. Several required inputs are expected to exist outside the code.
 
-- Satellite imagery for annotation is not downloaded by the repository wrappers; the code expects an existing image directory.
+- Satellite imagery for annotation is not downloaded by the pipeline; the code expects an existing image directory.
 - Annotation inference CSV outputs are treated as external inputs to the merge-back stage.
 - Some default paths in `wwtp/config.yaml` point to cluster-local storage and must be replaced for local execution.
 - HydroBASINS zip archives must be placed manually under `data/hydroshed_river_levels/lvl{level}` before watershed combination.

@@ -46,8 +46,8 @@ def test_every_problem_is_listed_with_its_key():
     ("create_voronoi", {"weight_func": "add"}, "needs weight_func 'mult'"),
     ("create_voronoi", {"dynamic_buffering": True, "size_measure": None}, "size_measure must be configured"),
     ("download_pop", {"start_year": 2030, "end_year": 2020}, "start_year 2030 is after end_year 2020"),
-    ("create_voronoi_parallel_sweep", {"sweep_size_measures": ["capacity"]}, "sweep_size_measures.0"),
-    ("create_voronoi", {"execution": {"mode": "slurm"}}, "execution.mode"),
+    ("sweep", {"sweep_size_measures": ["capacity"]}, "sweep_size_measures.0"),
+    ("create_rasters", {"shards": 0}, "create_rasters.shards"),
     ("impact_polygons_pop", {"impact_polygons_pop_params": {"org_per_pop": 1}}, "c_limit: Field required"),
 ])
 def test_cross_field_and_allowed_value_rules(section, change, message):

@@ -1,0 +1,53 @@
+"""wwtp.workflow: the variants and file lists the Snakemake workflow is built from."""
+import re
+from pathlib import Path
+
+import pytest
+
+from wwtp import starter
+from wwtp import workflow as wf
+
+pytestmark = pytest.mark.unit
+SNAKEFILE = Path(__file__).resolve().parents[3] / "workflow" / "Snakefile"
+
+
+def test_the_sweep_grid_comes_from_config():
+    variants = wf.sweep_variants()
+    assert {v.level for v in variants} == {"5", "6", "7"}
+    assert {v.weight_func for v in variants} == {"mult", ""}  # 'add' only when sweep_weight_funcs lists it
+    assert not [v for v in variants if v.weight_func == "" and v.weight_method != "linear"]
+    assert not [v for v in variants if v.weight_method == "size" and v.weight_func != "mult"]
+    assert {v.size_measure for v in variants if v.dynamic_buffering} == {"reported", "footprint"}
+    assert len({v.tag for v in variants}) == len(variants) == 108
+    assert {v.weight_func for v in wf.sweep_variants(["add"])} == {"add"}
+
+
+def test_default_variant_is_the_configured_run_at_basin_level_6():
+    v = wf.default_variant()
+    assert (v.level, v.weight_method, v.weight_func, v.dynamic_buffering, v.size_measure) == \
+        ("6", "size", "mult", True, "reported")
+    assert v.tag == "v2_lvl6_bfrep_sz_mult"
+
+
+@pytest.mark.parametrize("variant", [wf.default_variant(), *wf.sweep_variants()[::17]], ids=lambda v: v.tag)
+def test_command_line_flags_give_back_the_same_variant(variant):
+    """Every stage parses Variant.cli(); an empty weight_func must stay '' (not fall back to the config's 'mult')."""
+    overrides = starter.parse_config_overrides(argv=["prog", *variant.cli()])
+    cfg = starter.load_config(script_name="create_voronoi", **overrides)
+    assert wf.Variant.from_section(cfg) == variant
+
+
+def test_file_names_carry_the_tag():
+    v = wf.sweep_variants()[0]
+    assert v.tag in Path(wf.service_areas(v, "1")).name and v.tag in Path(wf.population_layer(v, "1")).name
+    assert all(v.tag in Path(p).name for p in wf.raster_stats(v) + wf.impact_polygons(v))
+    assert Path(wf.raster_shard_files(v, 3)[0]).name.endswith(f"_shard3of{wf.raster_shards(v)}.csv")
+    assert "lvl7" in wf.watershed(7)
+
+
+def test_every_stage_of_the_snakefile_has_resources():
+    stages = set(re.findall(r'(?:res|threads)\("(\w+)"\)', SNAKEFILE.read_text()))
+    stages |= {"hw_comparison", "eu_comparison", "piechart_figure", "piechart_interactive", "sizes_interactive_map",
+               "composite_area_population_plots", "pop_at_risk_figures", "interactive_unconnected_industrial_map"}
+    for stage in stages:
+        assert set(wf.resources(stage)) == {"threads", "mem_mb", "runtime"}, stage

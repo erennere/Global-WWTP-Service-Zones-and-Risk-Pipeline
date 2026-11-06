@@ -1,9 +1,8 @@
-"""Sweep verification ranking across the create_voronoi_param_sweep_parallel grid.
+"""Sweep verification ranking across the sweep grid of config.yaml.
 
-The parameter space mirrors ``generate_parameter_combinations()`` from
-``create_voronoi_parallel_sweep.py`` — the same grid used by the sweep bash
-scripts.  For each combination the expected pop-output path is resolved via
-``load_config(script_name="add_pop", ...)`` + ``create_pop_output_paths``.
+The combinations are ``wwtp.workflow.sweep_variants()`` - the grid the
+Snakemake ``sweep`` target builds - and each population layer is
+``wwtp.workflow.population_layer``, the path add_pop writes.
 
 Execution modes
 ---------------
@@ -39,7 +38,7 @@ from ..starter import add_standard_override_arguments, load_config, parse_config
 from ..utils import configure_logging, default_cpu_workers, reported_population_mask
 from ..geo_utils import load_eu_reference_layer
 from ..pop_validation_scripts.verification_script import find_verification_watersheds
-from ..sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
+from .. import workflow
 from ..sensitivity_analysis_scripts.compare_pop_sweep_hw_eu import (
     get_latest_year_column,
     compute_sensitivity_metrics,
@@ -69,67 +68,40 @@ _PERCENT_VERIFICATION = None
 
 # ── Combo enumeration ─────────────────────────────────────────────────────────
 
-def enumerate_sweep_records(approach, weight_func_filter="all"):
-    """Resolve expected pop-output paths for every combination in the sweep grid.
-
-    Calls ``load_config(script_name="add_pop", ...)`` per combination so that
-    version, buffer token, weight_type, and weight_func_suffix are resolved
-    through the same config machinery used by the sweep scripts.
+def enumerate_sweep_records(approach, weight_funcs=None):
+    """The expected population layer of ``approach`` for every combination of the sweep grid.
 
     Parameters
     ----------
     approach : str
         Voronoi approach key, e.g. ``"1"``.
-    weight_func_filter : str
-        Forwarded to ``generate_parameter_combinations``.
+    weight_funcs : list[str] | None
+        Distance weightings to include; ``sweep.sweep_weight_funcs`` when None.
 
     Returns
     -------
     list[dict]
-        One record per combo. Includes ``exists`` flag; missing files are not
-        skipped here so callers can report pending combinations.
+        One record per combination. Includes an ``exists`` flag; missing files
+        are kept so callers can report pending combinations.
     """
-    combos = generate_parameter_combinations(weight_func_filter=weight_func_filter)
     records = []
-    for idx, (level, version, buffer, weight_method, weight_func,
-               dynamic_buffering, size_measure) in enumerate(combos, start=1):
-        cfg = load_config(
-            script_name="add_pop",
-            level=level,
-            version=version or None,
-            buffer=buffer,
-            weight_method=weight_method,
-            weight_func=weight_func or None,
-            dynamic_buffering=dynamic_buffering,
-            size_measure=size_measure or None,
-        )
-        # Build the pop-output path directly from resolved config values.
-        # create_pop_output_paths -> create_output_paths requires buffers_dir,
-        # which is absent from the add_pop config section.  The filename
-        # pattern is the same regardless: pop_added_appr_{a}_v{v}_lvl{l}_bf{b}_{wt}{wfs}.gpkg
-        filename = (
-            f"pop_added_appr_{approach}"
-            f"_v{cfg['version']}"
-            f"_lvl{cfg['level']}"
-            f"_bf{cfg['buffer_path_token']}"
-            f"_{cfg['weight_type']}"
-            f"{cfg['weight_func_suffix']}.gpkg"
-        )
-        filepath = os.path.join(cfg["paths"]["pop_output_dir"], filename)
+    for idx, variant in enumerate(workflow.sweep_variants(weight_funcs), start=1):
+        cfg = workflow.config("add_pop", variant)
+        filepath = workflow.population_layer(variant, approach)
         records.append({
             "alias": f"F{idx:03d}",
             "filepath": filepath,
             "exists": os.path.isfile(filepath),
-            "level": level,
-            "version": cfg["version"],
-            "buffer": buffer,
+            "level": int(variant.level),
+            "version": variant.version,
+            "buffer": variant.buffer,
             "buffer_path_token": cfg["buffer_path_token"],
-            "weight_method": weight_method,
+            "weight_method": variant.weight_method,
             "weight_type": cfg["weight_type"],
-            "weight_func": weight_func,
+            "weight_func": variant.weight_func,
             "weight_func_suffix": cfg["weight_func_suffix"],
-            "dynamic_buffering": dynamic_buffering,
-            "size_measure": size_measure,
+            "dynamic_buffering": str(variant.dynamic_buffering).lower(),
+            "size_measure": variant.size_measure if variant.dynamic_buffering else "",
             "approach": approach,
         })
     return records

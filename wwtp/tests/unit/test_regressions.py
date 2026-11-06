@@ -455,28 +455,6 @@ def test_R13_overpass_query_requests_streams_and_rivers(monkeypatch):
     assert '["waterway"="river"]' in sent["q"]
 
 
-def test_additive_weighting_is_not_in_the_default_sweep():
-    from wwtp.sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
-
-    default_funcs = {combo[4] for combo in generate_parameter_combinations()}
-    assert default_funcs == {"mult", ""}
-    assert {combo[4] for combo in generate_parameter_combinations("add")} == {"add"}
-
-
-def test_sweep_grid_comes_from_config_and_default_basins_are_level_6():
-    from wwtp.sensitivity_analysis_scripts.create_voronoi_parallel_sweep import generate_parameter_combinations
-    from wwtp.starter import load_config
-
-    combos = generate_parameter_combinations()
-    assert {combo[0] for combo in combos} == {5, 6, 7}
-    assert {combo[6] for combo in combos if combo[5] == "true"} == {"reported", "footprint"}
-    assert not [c for c in combos if c[3] == "size" and c[4] != "mult"]  # size weights need 'mult'
-    custom = {"sweep_levels": [8], "sweep_weight_methods": ["linear"], "sweep_rigid_buffers": [9000],
-              "sweep_size_measures": ["footprint"]}
-    assert {combo[0] for combo in generate_parameter_combinations(cfg=custom)} == {8}
-    assert str(load_config(script_name="create_voronoi")["level"]) == "6"
-
-
 # --------------------------------------------------------------------------- #
 # R8  reported-population filter and one-to-one reference matching            #
 # --------------------------------------------------------------------------- #
@@ -667,14 +645,3 @@ def test_find_diff_pop_can_resolve_its_country_layer():
     assert cfg["paths"]["overture"] and cfg["country_boundary_column"]
 
 
-def test_sweep_tasks_partition_the_grid():
-    from wwtp.sensitivity_analysis_scripts.create_voronoi_parallel_sweep import (
-        filter_combinations_by_task, generate_parameter_combinations, split_combinations_into_jobs)
-
-    combos = generate_parameter_combinations()
-    tasks = [filter_combinations_by_task(combos, t, num_tasks=10, shuffle_seed=42) for t in range(10)]
-    flat = [c for t in tasks for c in t]
-    assert sorted(flat) == sorted(combos) and len(set(flat)) == len(flat)  # every run once, in one task
-    assert tasks == [filter_combinations_by_task(combos, t, num_tasks=10, shuffle_seed=42) for t in range(10)]
-    jobs = split_combinations_into_jobs(tasks[0], num_jobs=4)
-    assert sorted(c for j in jobs for c in j) == sorted(tasks[0]) and max(map(len, jobs)) - min(map(len, jobs)) <= 1
