@@ -351,7 +351,7 @@ def test_create_rasters_main_requires_watershed_crs(monkeypatch, tmp_path):
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(create_rasters, "parse_args", lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1})())
+    monkeypatch.setattr(create_rasters, "parse_args", lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1, "merge_shards": None})())
     monkeypatch.setattr(create_rasters.os, "chdir", lambda path: None)
     monkeypatch.setattr(create_rasters, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(create_rasters, "load_config", lambda **overrides: cfg)
@@ -407,7 +407,7 @@ def test_create_rasters_main_enriches_watershed_when_country_column_missing(monk
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(create_rasters, "parse_args", lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1})())
+    monkeypatch.setattr(create_rasters, "parse_args", lambda: type("_Args", (), {"job_index": 0, "total_jobs": 1, "merge_shards": None})())
     monkeypatch.setattr(create_rasters.os, "chdir", lambda path: None)
     monkeypatch.setattr(create_rasters, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(create_rasters, "load_config", lambda **overrides: cfg)

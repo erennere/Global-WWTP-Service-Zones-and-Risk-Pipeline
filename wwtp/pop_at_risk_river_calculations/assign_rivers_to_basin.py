@@ -6,7 +6,6 @@ features to the configured output path. It expects HydroRIVERS-style river IDs
 (`HYRIV_ID`) and HydroBASINS basin IDs (`HYBAS_ID`).
 """
 
-import os
 import argparse
 import logging
 import geopandas as gpd
@@ -15,7 +14,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from .. import provenance
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +228,8 @@ def main():
     )
 
     logger.info("Saving %s results to %s", len(final_rivers), output_path)
-    ensure_output_dir_for_file(output_path)
-    final_rivers.to_file(output_path, driver='GPKG', index=False)
+    with atomic_output(output_path) as tmp_path:
+        final_rivers.to_file(tmp_path, driver='GPKG', index=False)
     logger.info("Process complete")
 
 if __name__ == '__main__':

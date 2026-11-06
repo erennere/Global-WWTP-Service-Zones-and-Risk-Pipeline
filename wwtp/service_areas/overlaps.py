@@ -12,7 +12,7 @@ import networkx as nx
 import shapely.affinity
 import shapely
 from ..geo_utils import apply_in_utm_zones, buffer_geometry
-from ..utils import default_cpu_workers, ensure_output_dir_for_file
+from ..utils import atomic_output, default_cpu_workers
 
 logger = logging.getLogger(__name__)
 
@@ -180,8 +180,8 @@ def orchestrate_overlaps(df, max_workers, buffers_filepath, radius, convex=False
     if 'centroid' in dissolved_buffers:
         dissolved_buffers = dissolved_buffers.drop(labels='centroid', axis=1)
     try:
-        ensure_output_dir_for_file(buffers_filepath)
-        dissolved_buffers.to_file(buffers_filepath, driver='GPKG', index=False)
+        with atomic_output(buffers_filepath) as tmp_path:
+            dissolved_buffers.to_file(tmp_path, driver='GPKG', index=False)
         logger.info(f"Saved dissolved buffers to {buffers_filepath}")
     except Exception as err:
         logger.warning(f"Failed to cache dissolved buffers: {err}")

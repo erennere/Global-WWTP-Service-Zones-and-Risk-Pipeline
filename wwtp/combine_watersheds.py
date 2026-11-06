@@ -13,7 +13,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 from .starter import add_standard_override_arguments, load_config, parse_config_overrides
-from .utils import configure_logging, ensure_output_dir_for_file
+from .utils import atomic_output, configure_logging
 
 def extract_and_merge_geodata(zip_dir, output_path, output_filename="merged.gpkg"):
     """Extract readable geospatial files from zip archives and merge them."""
@@ -71,8 +71,8 @@ def extract_and_merge_geodata(zip_dir, output_path, output_filename="merged.gpkg
         crs=merged_frames[0].crs,
     )
     out_file = output_path / output_filename
-    ensure_output_dir_for_file(out_file)
-    merged_gdf.to_file(os.path.abspath(out_file), driver="GPKG")
+    with atomic_output(out_file) as tmp_path:
+        merged_gdf.to_file(tmp_path, driver="GPKG")
     print(f"\n✅ Merged GeoDataFrame written to {out_file}")
 
 def parse_args():

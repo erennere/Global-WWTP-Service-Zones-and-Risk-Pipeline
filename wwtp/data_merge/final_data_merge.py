@@ -5,14 +5,13 @@ applies confidence-aware enrichment, and deduplicates nearby facilities.
 """
 
 import argparse
-import os
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 from shapely import Point, from_wkt
 from .correct_locations_w_OSM import coordinate_corr_locations_wOSM
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging
 from ..geo_utils import (
     cluster_point_indices as _cluster_point_indices,
     estimate_utm_epsg_for_geom,
@@ -197,10 +196,10 @@ def main():
         merged_df = merged_df.drop(columns=['fid'], errors='ignore')
 
     rest = merged_df[~merged_df['geometry'].isin(set(old_df['geometry'].tolist()))].reset_index(drop=True)
-    ensure_output_dir_for_file(paths["new_points_filepath"])
-    rest.to_file(paths["new_points_filepath"], driver='GPKG', index=False)
-    ensure_output_dir_for_file(paths["corrected_all_filepath"])
-    merged_df.to_file(paths["corrected_all_filepath"], driver='GPKG', index=False)
+    with atomic_output(paths["new_points_filepath"]) as tmp_path:
+        rest.to_file(tmp_path, driver='GPKG', index=False)
+    with atomic_output(paths["corrected_all_filepath"]) as tmp_path:
+        merged_df.to_file(tmp_path, driver='GPKG', index=False)
 
 if __name__ == '__main__':
     configure_logging()

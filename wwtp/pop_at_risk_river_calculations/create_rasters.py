@@ -32,7 +32,7 @@ from ..starter import add_standard_override_arguments, load_config, parse_config
 from .. import provenance
 from ..service_areas import download_overture_maps, intersects_with_country_db
 from ..pipelines import create_pop_output_paths
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging, ensure_output_dir_for_file
 from ..geo_utils import repair_geometry
 from .find_pop_in_danger_pop import find_bbox, finding_tiles
 
@@ -363,8 +363,7 @@ def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path, all_tou
             sum_positive = 0.0
             sum_negative = 0.0
 
-            ensure_output_dir_for_file(output_path)
-            with rasterio.open(output_path, "w", **profile) as dst:
+            with atomic_output(output_path) as tmp_path, rasterio.open(tmp_path, "w", **profile) as dst:
                 for _, window in src.block_windows(1):
                     # Get geographic bounds of the current window
                     win_bounds = windows.bounds(window, transform)
@@ -501,7 +500,7 @@ def orchestrate_intersections(tif_dict, gdf, watershed_gdf, output_dir, csv_outp
         countries = list(tif_dict.keys())  # convert dict keys to a list
         random.shuffle(countries)          # shuffle in-place
 
-        if os.path.exists(csv_output_filepath):
+        if os.path.exists(csv_output_filepath) and os.path.getsize(csv_output_filepath) > 0:
             stats = pd.read_csv(csv_output_filepath).country.unique()
             countries = [c for c in countries if c not in stats]
             logger.info("Skipping %s previously processed countries", len(tif_dict) - len(countries))
@@ -585,10 +584,40 @@ def parse_args():
                         help="Index of this shard, in [0, total-jobs-1] (default: 0).")
     parser.add_argument("--total-jobs", type=int, default=1,
                         help="Total number of shards the country list is split into (default: 1).")
+    parser.add_argument("--merge-shards", type=int, default=None, metavar="N",
+                        help="Only concatenate the CSVs of shards 0..N-1 into the final CSVs and exit.")
     add_standard_override_arguments(parser)
 
     args = parser.parse_args()
     return args
+
+def shard_path(path, job_index, total_jobs):
+    """Where shard ``job_index`` of ``total_jobs`` writes the CSV ``path``; ``path`` itself for a single shard.
+
+    Shards never append to a shared file (two array tasks used to write
+    interleaved rows and two headers); ``merge_shards`` concatenates them.
+    """
+    if total_jobs == 1:
+        return path
+    stem, ext = os.path.splitext(path)
+    return f"{stem}_shard{job_index}of{total_jobs}{ext}"
+
+
+def merge_shards(paths, total_jobs):
+    """Concatenate the shard CSVs of each of ``paths`` into ``path`` (empty shards contribute nothing)."""
+    for path in paths:
+        parts = [shard_path(path, i, total_jobs) for i in range(total_jobs)]
+        missing = [part for part in parts if not os.path.exists(part)]
+        if missing:
+            raise FileNotFoundError(f"shards not finished: {missing}")
+        frames = [pd.read_csv(part) for part in parts if os.path.getsize(part) > 0]
+        with atomic_output(path) as tmp_path:
+            if frames:
+                pd.concat(frames, ignore_index=True).to_csv(tmp_path, index=False)
+            else:
+                open(tmp_path, "w").close()
+        logger.info("Merged %s shards into %s", total_jobs, path)
+
 
 def shard_tif_dict(tif_dict, job_index, total_jobs, seed):
     """Split the country-to-raster mapping into a deterministic worker shard."""
@@ -624,6 +653,11 @@ def main():
     output_tif_dir = cfg['paths']['WWTP_tif_dir']
     non_served_outpath = os.path.abspath(cfg['paths']['non_served_outpath'].replace('.gpkg', '.csv'))
     csv_output_filepath = os.path.abspath(cfg['paths']['csv_output_filepath'].replace('.gpkg', '.csv'))
+    if args.merge_shards is not None:
+        merge_shards([csv_output_filepath, non_served_outpath], args.merge_shards)
+        return
+    non_served_outpath = shard_path(non_served_outpath, args.job_index, args.total_jobs)
+    csv_output_filepath = shard_path(csv_output_filepath, args.job_index, args.total_jobs)
 
     approach = str(cfg['figures']['approach'])
     voronoi_map = create_pop_output_paths(cfg)['voronoi']
@@ -671,12 +705,20 @@ def main():
         # Persist to a dedicated path, never back onto cfg['paths']['watershed']:
         # that was a self-loop that mutated the asset combine_watersheds
         # produces and would race under concurrent/partitioned execution.
-        ensure_output_dir_for_file(cfg['paths']['watershed_with_countries'])
-        watershed_gdf.to_file(cfg['paths']['watershed_with_countries'], driver='GPKG', index=False)
+        # Every variant of one level writes the same file; the rename keeps concurrent writers from tearing it.
+        with atomic_output(cfg['paths']['watershed_with_countries']) as tmp_path:
+            watershed_gdf.to_file(tmp_path, driver='GPKG', index=False)
     
     logger.info("Starting country intersection workflow with max_workers=%s", max_workers)
     orchestrate_intersections(tif_dict, gdf, watershed_gdf, output_tif_dir, csv_output_filepath, non_served_outpath, max_workers, min_pixels=min_pixels, zoom_level=zoom_level, country_col=country_output_col, basin_col=cfg['basin_column_name'],
                               all_touched=bool(cfg['served_all_touched']))
+    if args.total_jobs > 1:
+        for path in (csv_output_filepath, non_served_outpath):  # a shard without rows still reports that it finished
+            if not os.path.exists(path):
+                ensure_output_dir_for_file(path)
+                open(path, "w").close()
+
+
 if __name__ == '__main__':
     configure_logging()
     main()

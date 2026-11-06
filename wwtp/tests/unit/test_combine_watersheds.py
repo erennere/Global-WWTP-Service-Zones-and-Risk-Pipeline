@@ -77,7 +77,7 @@ def test_extract_and_merge_geodata_merges_first_readable_layer_per_zip(monkeypat
     monkeypatch.setattr(combine_watersheds.zipfile, "ZipFile", _FakeZip)
     monkeypatch.setattr(combine_watersheds.os, "walk", fake_walk)
     monkeypatch.setattr(combine_watersheds.gpd, "read_file", fake_read_file)
-    monkeypatch.setattr(combine_watersheds, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", str(path)))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", str(path)))
 
     try:
         monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
@@ -225,7 +225,7 @@ def test_extract_and_merge_geodata_reads_only_one_layer_per_zip_across_subdirs(m
     monkeypatch.setattr(combine_watersheds.zipfile, "ZipFile", _FakeZip)
     monkeypatch.setattr(combine_watersheds.os, "walk", fake_walk)
     monkeypatch.setattr(combine_watersheds.gpd, "read_file", fake_read_file)
-    monkeypatch.setattr(combine_watersheds, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     try:
         monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)

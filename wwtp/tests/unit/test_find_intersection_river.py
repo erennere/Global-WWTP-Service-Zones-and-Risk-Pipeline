@@ -100,7 +100,7 @@ def test_find_intersection_orchestration_and_main_smoke(monkeypatch, tmp_path):
             "non_served_nxt_river_outpath": str(tmp_path / "out.gpkg"),
         }
     }
-    monkeypatch.setattr(fir.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(fir, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(fir, "load_config", lambda **kwargs: cfg)
 
@@ -127,7 +127,7 @@ def test_find_intersection_orchestration_and_main_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(fir, "orchestrate_settlement_river_intersections", lambda p, r, x_distance, max_workers=1: p.assign(river_list=[[10]]))
     monkeypatch.setattr(fir, "assign_main_riv", lambda p, r: p.assign(MAIN_RIV=[100]))
     monkeypatch.setattr(fir, "orchestrate_river_assignment", lambda p, r, max_workers=1: p.assign(NXT_DIS=[10]))
-    monkeypatch.setattr(fir, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, path, driver="GPKG", index=False: None)
     monkeypatch.setattr(sys, "argv", ["prog"])
 
@@ -144,7 +144,7 @@ def test_find_intersection_main_raises_when_missing_crs(monkeypatch, tmp_path):
             "non_served_nxt_river_outpath": str(tmp_path / "out.gpkg"),
         }
     }
-    monkeypatch.setattr(fir.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(fir, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(fir, "load_config", lambda **kwargs: cfg)
 
@@ -172,7 +172,7 @@ def test_find_intersection_main_rejects_non_positive_workers(monkeypatch, tmp_pa
             "non_served_nxt_river_outpath": str(tmp_path / "out.gpkg"),
         }
     }
-    monkeypatch.setattr(fir.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(fir, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(fir, "load_config", lambda **kwargs: cfg)
     monkeypatch.setattr(sys, "argv", ["prog", "--max-workers", "0"])

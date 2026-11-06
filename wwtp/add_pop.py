@@ -29,7 +29,7 @@ from shapely.ops import unary_union
 from shapely.validation import explain_validity
 from .starter import load_config, parse_config_overrides, add_standard_override_arguments
 from . import provenance
-from .utils import configure_logging, ensure_output_dir_for_file, get_iso_codes
+from .utils import atomic_output, configure_logging, get_iso_codes
 from .geo_utils import repair_geometry
 from exactextract import exact_extract
 
@@ -506,8 +506,8 @@ def orchestrate_intersections(data_dir, tif_dir, output_dir, index, max_workers=
         
         gdf = intersect_all_files(gdf, tif_dir, max_workers, all_years=True, country_col=country_col, years=years)
 
-        ensure_output_dir_for_file(output_path)
-        gdf.to_file(output_path, driver='GPKG', index=False)
+        with atomic_output(output_path) as tmp_path:
+            gdf.to_file(tmp_path, driver='GPKG', index=False)
         logger.info(f"Successfully saved population-enhanced file to {output_path}")
     except Exception as err:
         logger.error(f"Failed to process {voronoi_file}: {err}", exc_info=True)

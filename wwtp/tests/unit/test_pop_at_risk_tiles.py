@@ -219,7 +219,7 @@ def test_main_writes_output_when_final_merge_has_cross_radius_nan(monkeypatch, m
     monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda gdf, *args, **kwargs: gdf.assign(ISO_2="DE"))
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda gdf, *args, **kwargs: gdf.copy())
     monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda gdf: next(grouped_results))
-    monkeypatch.setattr(find_pop_in_danger_pop, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
     original_to_parquet = gpd.GeoDataFrame.to_parquet
@@ -256,7 +256,7 @@ def test_main_writes_empty_output_when_no_input_files_match(monkeypatch, mock_cf
     monkeypatch.setattr(find_pop_in_danger_pop, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(find_pop_in_danger_pop, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(find_pop_in_danger_pop, "glob", lambda pattern: [])
-    monkeypatch.setattr(find_pop_in_danger_pop, "ensure_output_dir_for_file", lambda path: saved.setdefault("ensured", path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: saved.setdefault("ensured", path))
 
     original_to_parquet = gpd.GeoDataFrame.to_parquet
 
@@ -299,7 +299,7 @@ def test_main_rejects_missing_annotations_max_workers(monkeypatch, mock_cfg, tmp
     monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE"))
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda frame, tif_dir, max_workers, all_years=False, country_col=None: frame.copy())
     monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}))
-    monkeypatch.setattr(find_pop_in_danger_pop, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
     original_to_parquet = gpd.GeoDataFrame.to_parquet
@@ -340,7 +340,7 @@ def test_main_uses_configured_annotations_max_workers(monkeypatch, mock_cfg, tmp
     monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE"))
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda frame, *args, **kwargs: frame.copy())
     monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}))
-    monkeypatch.setattr(find_pop_in_danger_pop, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
     original_to_parquet = gpd.GeoDataFrame.to_parquet
@@ -383,7 +383,7 @@ def test_main_uses_at_least_one_worker_for_intersections(monkeypatch, mock_cfg, 
 
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", _intersect)
     monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"tile": ["0-0-1"], "2020_zonal_sum": [1.0]}))
-    monkeypatch.setattr(find_pop_in_danger_pop, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
     original_to_parquet = gpd.GeoDataFrame.to_parquet
@@ -457,7 +457,7 @@ def test_main_writes_empty_tile_groups_when_grouping_drops_tile_column(monkeypat
     monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE"))
     monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", lambda frame, *args, **kwargs: frame.copy())
     monkeypatch.setattr(find_pop_in_danger_pop, "group_tile_population_sums", lambda frame: pd.DataFrame({"2020_zonal_sum": [1.0]}))
-    monkeypatch.setattr(find_pop_in_danger_pop, "ensure_output_dir_for_file", lambda path: saved.setdefault("ensured", []).append(path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: saved.setdefault("ensured", []).append(path))
 
     original_to_file = gpd.GeoDataFrame.to_file
     original_to_parquet = gpd.GeoDataFrame.to_parquet

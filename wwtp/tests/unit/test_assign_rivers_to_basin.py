@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 import geopandas as gpd
 import pandas as pd
+import os
 import pytest
 from shapely.geometry import LineString, Point, Polygon
 from wwtp import combine_watersheds
@@ -288,11 +289,11 @@ def test_assign_rivers_main_uses_default_workers_for_non_digit_argv(monkeypatch,
     )
 
     monkeypatch.setattr(sys, "argv", ["assign_rivers_to_basin.py"])
-    monkeypatch.setattr(assign_rivers_to_basin.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(assign_rivers_to_basin, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(assign_rivers_to_basin, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(assign_rivers_to_basin.gpd, "read_file", lambda path: gdf.copy())
-    monkeypatch.setattr(assign_rivers_to_basin, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
 
     def fake_orchestrate(hybas_gdf, rivers_gdf, hybas_col, hyshed_col, new_col, max_workers=2):
         captured["workers"] = max_workers

@@ -448,7 +448,7 @@ def test_main_rejects_non_positive_workers(monkeypatch, tmp_path):
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(ipp.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(ipp, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(ipp, "load_config", lambda **kwargs: cfg)
     monkeypatch.setattr(
@@ -513,7 +513,7 @@ def _radius_override_main(monkeypatch, tmp_path, argv):
             for radius in model_params["impact_radii"]
         }
 
-    monkeypatch.setattr(ipp.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(ipp, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(ipp, "load_config", lambda **kwargs: cfg)
     monkeypatch.setattr(
@@ -524,7 +524,7 @@ def _radius_override_main(monkeypatch, tmp_path, argv):
     monkeypatch.setattr(ipp, "batch_estimate_utm_epsg", lambda gdf: (np.array([32632]), np.array([50.0])))
     monkeypatch.setattr(ipp, "create_dicts", lambda *args, **kwargs: None)
     monkeypatch.setattr(ipp, "orchestrate_logic", fake_orchestrate)
-    monkeypatch.setattr(ipp, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
     monkeypatch.setattr(
         gpd.GeoDataFrame, "to_file", lambda self, path, driver="GPKG": written.append(str(path))
     )
@@ -623,7 +623,7 @@ def test_impact_polygons_main_smoke_writes_outputs(monkeypatch, tmp_path):
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(ipp.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(ipp, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(ipp, "load_config", lambda **kwargs: cfg)
 
@@ -643,7 +643,7 @@ def test_impact_polygons_main_smoke_writes_outputs(monkeypatch, tmp_path):
             2000.0: gpd.GeoDataFrame({"geometry": [box(0, 0, 2, 2)]}, geometry="geometry", crs="EPSG:4326"),
         },
     )
-    monkeypatch.setattr(ipp, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     written = []
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, path, driver="GPKG": written.append(str(path)))
@@ -699,7 +699,7 @@ def test_impact_polygons_main_no_output_branch(monkeypatch, tmp_path):
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(ipp.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(ipp, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(ipp, "load_config", lambda **kwargs: cfg)
     monkeypatch.setattr(ipp.gpd, "read_file", lambda path, columns=None, **kwargs: pop_gdf.copy() if str(path).endswith("non_served.gpkg") else river_gdf.copy())

@@ -9,12 +9,12 @@ import os
 import geopandas as gpd
 import pandas as pd
 import numpy as np
-from shapely import Point, Polygon, LineString, MultiPolygon, MultiLineString, to_wkt, from_wkt
+from shapely import Point, Polygon, LineString, MultiPolygon, MultiLineString, to_wkt
 from shapely.geometry.base import BaseGeometry
 from ..service_areas import intersects_with_country_db, download_overture_maps
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..geo_utils import buffer_geometry, estimate_utm_epsg, estimate_utm_epsg_for_geom
-from ..utils import configure_logging, ensure_output_dir_for_file, get_iso_codes
+from ..geo_utils import estimate_utm_epsg_for_geom
+from ..utils import atomic_output, configure_logging, get_iso_codes
 
 def corr_locations_wOSM(rad, pdf, df):
     """Match each input geometry to the nearest OSM geometry within a radius.
@@ -225,16 +225,16 @@ def main():
         )
 
     final_df = gpd.GeoDataFrame(final_df, geometry='geometry', crs=4326)
-    ensure_output_dir_for_file(paths['corrected_south'])
-    final_df.to_file(paths['corrected_south'], driver='GeoJSON', index=False)
+    with atomic_output(paths['corrected_south']) as tmp_path:
+        final_df.to_file(tmp_path, driver='GeoJSON', index=False)
 
     old_file = gpd.read_file(old_filename)
     new_points = final_df[~final_df.geometry.isin(old_file.geometry)]
     new_points = gpd.GeoDataFrame(new_points, geometry='geometry', crs=4326)
 
     missing_output = os.path.abspath(os.path.join(paths['data_dir'], 'missing_WWTPs.geojson'))
-    ensure_output_dir_for_file(missing_output)
-    new_points.to_file(missing_output, driver='GeoJSON', index=False)
+    with atomic_output(missing_output) as tmp_path:
+        new_points.to_file(tmp_path, driver='GeoJSON', index=False)
     print(final_df.columns)
     print(len(final_df), len(pd.isna(final_df['geometry'])))
 

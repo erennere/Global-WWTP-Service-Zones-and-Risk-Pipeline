@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
+
+import geopandas as gpd
 import pytest
+from shapely.geometry import box
 
 from wwtp import utils
 
@@ -38,3 +42,17 @@ def test_quote_sql_identifier_escapes_embedded_quotes():
 
 
 # --- moved from the coverage-campaign files ---
+
+
+@pytest.mark.real_atomic_output
+def test_atomic_output_replaces_only_on_success(tmp_path):
+    target = tmp_path / "out" / "layer.gpkg"
+    with utils.atomic_output(target) as tmp:
+        assert os.path.basename(tmp) == "layer.gpkg" and not target.exists()  # same name: GPKG layer name kept
+        gpd.GeoDataFrame({"a": [1]}, geometry=[box(0, 0, 1, 1)], crs=4326).to_file(tmp, driver="GPKG")
+    assert gpd.list_layers(target)["name"].tolist() == ["layer"]
+    with pytest.raises(RuntimeError), utils.atomic_output(target) as tmp:
+        open(tmp, "w").write("half")
+        raise RuntimeError("writer failed")
+    assert len(gpd.read_file(target)) == 1  # the old file is untouched
+    assert sorted(p.name for p in target.parent.iterdir()) == ["layer.gpkg"]  # no temporary folder left

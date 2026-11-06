@@ -7,9 +7,7 @@ data, and writes a diff GeoPackage.
 
 import os
 import logging
-import random
 import argparse
-import duckdb
 import pandas as pd
 import geopandas as gpd
 from shapely import from_wkt, to_wkt
@@ -17,7 +15,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from .. import provenance
 from ..geo_utils import buffer_geometry, ensure_duckdb_spatial, estimate_utm_epsg_for_geom
-from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging, duckdb_connection
 from ..add_pop import intersect_all_files
 from ..pipelines import create_pop_output_paths
 from ..service_areas import intersects_with_country_db
@@ -229,8 +227,8 @@ def main():
         os.makedirs(pop_dif_output_dir, exist_ok=True)
 
     output_filepath = os.path.join(pop_dif_output_dir, f'diff_{filename}')
-    ensure_output_dir_for_file(output_filepath)
-    diff_gdf.to_file(output_filepath, driver='GPKG', index=False)
+    with atomic_output(output_filepath) as tmp_path:
+        diff_gdf.to_file(tmp_path, driver='GPKG', index=False)
     logger.info("Wrote output to %s", output_filepath)
 
 if __name__ == '__main__':

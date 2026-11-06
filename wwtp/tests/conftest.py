@@ -233,3 +233,30 @@ def _no_config_overlays(monkeypatch):
 
     monkeypatch.delenv(starter.OVERLAYS_ENV_VAR, raising=False)
     monkeypatch.setattr(starter, "LOCAL_OVERLAY_FILENAME", "__tests_ignore_config.local.yaml")
+
+
+@pytest.fixture(autouse=True)
+def _direct_writes_for_fake_writers(request, monkeypatch):
+    """Unit tests often replace ``to_file``/``to_parquet`` with fakes that never create a file.
+
+    ``utils.atomic_output`` would then fail to rename the missing temporary file, so
+    unit tests get a pass-through that yields the target path itself. The rename is
+    tested in test_utils (marker ``real_atomic_output``) and by the mock-world chain,
+    which runs every stage in a subprocess with the real helper.
+    """
+    if not request.node.get_closest_marker("unit") or request.node.get_closest_marker("real_atomic_output"):
+        return
+    from contextlib import contextmanager
+
+    from wwtp import utils
+
+    @contextmanager
+    def passthrough(filepath):
+        utils.ensure_output_dir_for_file(filepath)
+        yield filepath
+
+    real = utils.atomic_output
+    for name, module in list(sys.modules.items()):  # modules that imported it by name, then utils for later imports
+        if name.startswith("wwtp.") and name != "wwtp.utils" and getattr(module, "atomic_output", None) is real:
+            monkeypatch.setattr(module, "atomic_output", passthrough)
+    monkeypatch.setattr(utils, "atomic_output", passthrough)

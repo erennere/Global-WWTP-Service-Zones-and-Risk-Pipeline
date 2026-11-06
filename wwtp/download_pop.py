@@ -24,7 +24,6 @@ import os, re, shutil
 from concurrent.futures import as_completed, ProcessPoolExecutor
 from tqdm import tqdm
 import pandas as pd
-import geopandas as gpd
 from rasterio.transform import from_origin
 import numpy as np
 import rasterio
@@ -34,6 +33,7 @@ from .starter import add_standard_override_arguments, load_config, parse_config_
 from . import provenance
 from .utils import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    atomic_output,
     configure_logging,
     ensure_output_dir_for_file,
     get_iso_codes,
@@ -394,10 +394,10 @@ def rasterize_csv(df, output_path, res=30):
     grid = np.zeros((rows.max() + 1, cols.max() + 1), dtype=np.float64)
     np.add.at(grid, (rows, cols), pop)
 
-    ensure_output_dir_for_file(output_path)
-    with rasterio.open(output_path, "w", driver='GTiff', height=grid.shape[0], width=grid.shape[1], count=1,
-                       dtype='float32', crs="EPSG:4326", transform=from_origin(west, north, cell, cell),
-                       compress='lzw') as dst:
+    with atomic_output(output_path) as tmp_path, \
+            rasterio.open(tmp_path, "w", driver='GTiff', height=grid.shape[0], width=grid.shape[1], count=1,
+                          dtype='float32', crs="EPSG:4326", transform=from_origin(west, north, cell, cell),
+                          compress='lzw') as dst:
         dst.write(grid.astype('float32'), 1)
     return output_path
 
@@ -444,7 +444,7 @@ def mosaic_large_rasters(raster_files, output_path):
     profile.pop('blockxsize', None)
     profile.pop('blockysize', None)
     profile.pop('tiled', None)
-    with rasterio.open(output_path, 'w', **profile) as dst:
+    with atomic_output(output_path) as tmp_path, rasterio.open(tmp_path, 'w', **profile) as dst:
         dst.write(data)
 
 

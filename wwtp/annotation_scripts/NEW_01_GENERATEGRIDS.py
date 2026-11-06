@@ -13,7 +13,7 @@ from shapely.geometry import box
 from shapely import Point
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +57,8 @@ def main(cell_size, half, points_path, output_path):
     gdf_3857["geometry"] = gdf_3857.geometry.apply(lambda geom: point_to_square(geom, half))
     gdf_3857.set_crs(epsg=3857, inplace=True)
 
-    ensure_output_dir_for_file(output_path)
-    gdf_3857.to_file(
-        output_path,
-        driver="GPKG"
-    )
+    with atomic_output(output_path) as tmp_path:
+        gdf_3857.to_file(tmp_path, driver="GPKG")
     print(f"✅ Created {cell_size:.2f} m × {cell_size:.2f} m grid squares (Zoom 17, 3072×3072 px).")
 
 if __name__ == '__main__':

@@ -12,7 +12,7 @@ import pandas as pd
 import geopandas as gpd
 import zipfile
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging
 from ..geo_utils import nearest_within_threshold
 
 def assign_to_nearest(gdf_source, gdf_target, threshold=None, one_to_one=False):
@@ -117,12 +117,8 @@ def merge_old(cfg):
     main_data = assign_to_nearest(gdf[gdf['geometry'].notna()], data)
     main_data = pd.concat([main_data, not_valids], ignore_index=True)
     output_path = os.path.join(paths["data_dir"], paths["seg_corrected_south"])
-    ensure_output_dir_for_file(output_path)
-    main_data.to_file(
-        output_path,
-        driver='GPKG',
-        index=False,
-    )
+    with atomic_output(output_path) as tmp_path:
+        main_data.to_file(tmp_path, driver='GPKG', index=False)
 
 def merge_new(cfg):
     """Merge flat CSV segmentation outputs into the current corrected dataset.
@@ -159,8 +155,8 @@ def merge_new(cfg):
         geometry='geometry',
         crs=points_df.crs,
     )
-    ensure_output_dir_for_file(paths['corrected_all_filepath'])
-    merged_df.to_file(index=False, driver='GPKG', filename=paths['corrected_all_filepath'])
+    with atomic_output(paths['corrected_all_filepath']) as tmp_path:
+        merged_df.to_file(tmp_path, index=False, driver='GPKG')
 
 def parse_args():
     """Parse command-line arguments for merge workflow selection."""

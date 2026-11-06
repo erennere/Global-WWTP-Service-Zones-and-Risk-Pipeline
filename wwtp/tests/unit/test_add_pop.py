@@ -345,7 +345,7 @@ def test_orchestrate_intersections_reads_selected_file_and_writes_output(monkeyp
 
     monkeypatch.setattr(add_pop.gpd, "read_file", fake_read_file)
     monkeypatch.setattr(add_pop, "intersect_all_files", fake_intersect_all_files)
-    monkeypatch.setattr(add_pop, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
 
     original_to_file = gpd.GeoDataFrame.to_file
 
@@ -506,7 +506,7 @@ def test_orchestrate_intersections_reprocesses_when_overwrite_enabled(monkeypatc
         return gdf
 
     monkeypatch.setattr(add_pop, "intersect_all_files", _fake_intersect)
-    monkeypatch.setattr(add_pop, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, *a, **k: None)
 
     add_pop.orchestrate_intersections(str(data_dir), "tifs", str(output_dir), index=0, overwrite=True)

@@ -12,7 +12,7 @@ from shapely.geometry import LineString, Polygon
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..utils import configure_logging, ensure_output_dir_for_file, requests_session_with_retries
+from ..utils import atomic_output, configure_logging, requests_session_with_retries
 from ..geo_utils import repair_geometry
 
 # (key, value) pairs; a list, not a dict, because one key ("waterway") is
@@ -222,15 +222,15 @@ def row_operation(bbox, idx_val, url, output_folder, pause_seconds=0.1):
     if not all_lines.empty:
         all_lines = clean_columns(all_lines)
 
-        ensure_output_dir_for_file(line_path)
-        all_lines.to_file(line_path, driver="GeoJSON")
+        with atomic_output(line_path) as tmp_path:
+            all_lines.to_file(tmp_path, driver="GeoJSON")
         print(f"✅ Saved {line_path}")
 
     if not all_polys.empty:
         all_polys = clean_columns(all_polys)
         poly_path = os.path.join(output_folder, f"idx_{idx_val}_polygons.geojson")
-        ensure_output_dir_for_file(poly_path)
-        all_polys.to_file(poly_path, driver="GeoJSON")
+        with atomic_output(poly_path) as tmp_path:
+            all_polys.to_file(tmp_path, driver="GeoJSON")
         print(f"✅ Saved {poly_path}")
 
 def parse_args():

@@ -7,7 +7,6 @@ Workflow:
 4. Write enriched polygons to output.
 """
 
-import os
 import logging
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -22,7 +21,7 @@ from ..starter import add_standard_override_arguments, load_config, parse_config
 
 from .. import provenance
 from ..geo_utils import estimate_utm_epsg_for_geom
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -350,8 +349,8 @@ def main():
     )
 
     logger.info("Writing output to %s", output_path)
-    ensure_output_dir_for_file(output_path)
-    polygons_gdf.to_file(output_path, driver='GPKG', index=False)
+    with atomic_output(output_path) as tmp_path:
+        polygons_gdf.to_file(tmp_path, driver='GPKG', index=False)
     logger.info("Done")
 
 

@@ -12,7 +12,7 @@ import geopandas as gpd
 import pandas as pd
 
 from wwtp.starter import add_standard_override_arguments, load_config, parse_config_overrides
-from wwtp.utils import configure_logging, ensure_output_dir_for_file
+from wwtp.utils import atomic_output, configure_logging
 
 def decode_gen_text(text):
     """Parse model output text into category number/name and justification.
@@ -114,8 +114,8 @@ def main():
     # Write to a NEW path, never back onto corrected_all_filepath: that was a
     # self-loop (read and overwrite the same file) that destroyed the
     # distinction between annotated and unannotated data on every re-run.
-    ensure_output_dir_for_file(cfg['paths']['annotated_all_filepath'])
-    merged_df.to_file(index=False, driver='GPKG', filename=cfg['paths']['annotated_all_filepath'])
+    with atomic_output(cfg['paths']['annotated_all_filepath']) as tmp_path:
+        merged_df.to_file(tmp_path, index=False, driver='GPKG')
 
 if __name__ == "__main__":
     configure_logging()

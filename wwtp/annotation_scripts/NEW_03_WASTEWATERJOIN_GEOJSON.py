@@ -7,7 +7,6 @@ polygon features into bounding boxes used by downstream annotation steps.
 
 import argparse
 import os
-import random
 import glob
 import geopandas as gpd
 import pandas as pd
@@ -21,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExec
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from ..geo_utils import ensure_duckdb_spatial
-from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging, duckdb_connection, ensure_output_dir_for_file
 
 # Configure logging to flush output immediately (important for HPC batch jobs)
 logger = logging.getLogger(__name__)
@@ -66,8 +65,8 @@ def load_geodata(path):
 
 def write_geodata(gdf: gpd.GeoDataFrame, path: str, driver: str = "GeoJSON") -> None:
     """Write a GeoDataFrame to disk using the requested GDAL driver."""
-    ensure_output_dir_for_file(path)
-    gdf.to_file(path, driver=driver)
+    with atomic_output(path) as tmp_path:
+        gdf.to_file(tmp_path, driver=driver)
 
 # ============================================================
 # Geometry helpers

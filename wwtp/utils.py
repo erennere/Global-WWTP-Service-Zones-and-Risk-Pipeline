@@ -6,6 +6,7 @@ filesystem, SQL string-building, and reference-data lookups only.
 
 import logging
 import os
+import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -92,6 +93,29 @@ def ensure_output_dir_for_file(filepath):
     parent = Path(filepath).parent
     if str(parent) and str(parent) != ".":
         parent.mkdir(parents=True, exist_ok=True)
+
+
+@contextmanager
+def atomic_output(filepath):
+    """Yield a temporary path for ``filepath`` and move it onto ``filepath`` when the block succeeds.
+
+    A reader (another job, Snakemake, a crashed rerun) then sees either the old
+    file or the complete new one, never a half-written one. The temporary file
+    has the same name inside a private folder next to the target, so formats
+    and GeoPackage layer names (taken from the file name) stay as they were, and
+    the final rename stays on one filesystem. On an exception the folder is
+    removed and ``filepath`` is left as it was.
+    """
+    target = os.path.abspath(filepath)
+    ensure_output_dir_for_file(target)
+    directory, name = os.path.split(target)
+    tmpdir = tempfile.mkdtemp(prefix=f".{name}.tmp-", dir=directory)
+    try:
+        tmp = os.path.join(tmpdir, name)
+        yield tmp
+        os.replace(tmp, target)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def get_iso_codes():

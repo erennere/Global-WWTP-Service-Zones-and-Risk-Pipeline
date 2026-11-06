@@ -553,7 +553,8 @@ def test_main_returns_false_when_wwtps_empty(mock_cfg, monkeypatch, tmp_path):
     assert find_unconnected_industrial_areas.main() is False
 
 
-def test_main_removes_existing_output_before_parquet_write(
+@pytest.mark.real_atomic_output
+def test_main_replaces_existing_output_atomically(
     mock_cfg,
     monkeypatch,
     tmp_path,
@@ -591,23 +592,13 @@ def test_main_removes_existing_output_before_parquet_write(
         lambda *args, **kwargs: (lambda config: {"country_df": tiny_country_gdf.copy(), "basin_gdf": tiny_watershed_gdf.copy()}),
     )
     monkeypatch.setattr(find_unconnected_industrial_areas, "run_voronoi_for_wwtps", lambda *args, **kwargs: voronoi_gdf.copy())
-    monkeypatch.setattr(find_unconnected_industrial_areas.os, "makedirs", lambda path, exist_ok=False: captured.setdefault("makedirs", (path, exist_ok)))
-    monkeypatch.setattr(find_unconnected_industrial_areas.os, "remove", lambda path: captured.setdefault("removed", path))
-    monkeypatch.setattr(
-        find_unconnected_industrial_areas.os.path,
-        "exists",
-        lambda path: True if path == cfg["paths"]["industrial_unconnected_output"] else False,
-    )
-
-    def fake_to_parquet(self, path, index=False, **kwargs):
-        captured["write"] = (path, index, len(self))
-
-    monkeypatch.setattr(gpd.GeoDataFrame, "to_parquet", fake_to_parquet)
+    out = tmp_path / "industrial.parquet"
+    out.write_text("old output")
 
     assert find_unconnected_industrial_areas.main() is True
-    assert captured["removed"] == cfg["paths"]["industrial_unconnected_output"]
-    assert captured["write"][0] == cfg["paths"]["industrial_unconnected_output"]
-    assert captured["write"][1] is False
+    written = gpd.read_parquet(out)  # the old text file was replaced by a complete parquet
+    assert "geometry" in written.columns and not list(tmp_path.glob(".industrial.parquet.tmp-*"))
+
 
 def test_run_voronoi_for_wwtps_reads_output_back_in_boolean_mode(monkeypatch, tmp_path):
     """Boolean mode returns (None, None) on success - the file is the evidence.

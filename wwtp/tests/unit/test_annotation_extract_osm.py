@@ -138,7 +138,7 @@ def test_row_operation_skips_none_bbox_and_writes_outputs(monkeypatch, tmp_path)
         ),
     )
     monkeypatch.setattr(osm_extract, "clean_columns", lambda gdf: gdf)
-    monkeypatch.setattr(osm_extract, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
 

@@ -98,8 +98,7 @@ def test_merge_annotations_main_merges_by_idx_and_writes_output(monkeypatch, tmp
     monkeypatch.setattr(merge_annotations.pd, "read_csv", lambda path: annotations_df.copy())
     monkeypatch.setattr(merge_annotations.gpd, "read_file", lambda path: points_df.copy())
     monkeypatch.setattr(
-        merge_annotations,
-        "ensure_output_dir_for_file",
+        "wwtp.utils.ensure_output_dir_for_file",
         lambda path: captured.setdefault("ensured", path),
     )
 

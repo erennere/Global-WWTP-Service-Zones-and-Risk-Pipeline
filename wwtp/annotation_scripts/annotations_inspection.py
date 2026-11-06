@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from wwtp.annotation_scripts.merge_annotations import decode_gen_text
-from wwtp.utils import configure_logging, ensure_output_dir_for_file
+from wwtp.utils import atomic_output, configure_logging, ensure_output_dir_for_file
 from wwtp.starter import add_standard_override_arguments, load_config, parse_config_overrides
 
 def plot_category_distribution(df, column='category_name', save_path=None, show=False):
@@ -151,8 +151,8 @@ def main():
     df_sampled = get_stratified_sample(df, 'category_name', total_n=sample_size, seed=random_seed)
 
     sample_csv_path = os.path.join(image_output_dir, 'annotation_stratified_sample.csv')
-    ensure_output_dir_for_file(sample_csv_path)
-    df_sampled.to_csv(sample_csv_path, index=False)
+    with atomic_output(sample_csv_path) as tmp_path:
+        df_sampled.to_csv(tmp_path, index=False)
     print(f"Saved sampled rows to {sample_csv_path}")
 
     print(f"New shape: {df_sampled.shape}")

@@ -57,7 +57,7 @@ def test_generategrids_main_filters_points_and_writes(monkeypatch, tmp_path):
         captured["geom_type"] = self.geometry.iloc[0].geom_type
 
     monkeypatch.setattr(gen_grids.gpd, "read_file", lambda path: src.copy())
-    monkeypatch.setattr(gen_grids, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
     try:
         monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
         gen_grids.main(100.0, 50.0, "in.gpkg", str(tmp_path / "out.gpkg"))

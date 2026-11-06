@@ -28,7 +28,7 @@ import pandas as pd
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from .. import provenance
-from ..utils import configure_logging, default_cpu_workers, select_industrial_categories
+from ..utils import atomic_output, configure_logging, default_cpu_workers, select_industrial_categories
 from .. import pipelines as _pipelines_module
 from ..pipelines import (
     run_voronoi_approach,
@@ -383,18 +383,15 @@ def main():
             )
         
         # Save output
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        if os.path.exists(output_path):
-            os.remove(output_path)
-        
         logger.info(f"Writing {len(unconnected)} unconnected areas to {output_path}...")
         lower_output_path = output_path.lower()
-        if lower_output_path.endswith('.parquet'):
-            unconnected.to_parquet(output_path, index=False)
-        elif lower_output_path.endswith('.gpkg'):
-            unconnected.to_file(output_path, driver='GPKG', index=False)
-        else:
+        if not lower_output_path.endswith(('.parquet', '.gpkg')):
             raise ValueError(f"Unsupported industrial_unconnected_output extension: {output_path}")
+        with atomic_output(output_path) as tmp_path:
+            if lower_output_path.endswith('.parquet'):
+                unconnected.to_parquet(tmp_path, index=False)
+            else:
+                unconnected.to_file(tmp_path, driver='GPKG', index=False)
         logger.info(f"Successfully created {output_path}")
         
         return True

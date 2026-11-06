@@ -46,7 +46,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_create_rasters_main_smoke(monkeypatch, tmp_path):
-    args = argparse.Namespace(job_index=0, total_jobs=1)
+    args = argparse.Namespace(job_index=0, total_jobs=1, merge_shards=None)
     monkeypatch.setattr(cr, "parse_args", lambda: args)
     monkeypatch.setattr(cr, "parse_config_overrides", lambda args=None: {})
 
@@ -326,6 +326,7 @@ def test_orchestrate_intersections_skips_processed_countries_and_appends_outputs
     monkeypatch.setattr(create_rasters, "orchestrate_country_intersection", fake_orchestrate_country_intersection)
     monkeypatch.setattr(create_rasters, "ensure_output_dir_for_file", lambda path: ensured.append(path))
     monkeypatch.setattr(create_rasters.os.path, "exists", fake_exists)
+    monkeypatch.setattr(create_rasters.os.path, "getsize", lambda path: 10)
     monkeypatch.setattr(pd, "read_csv", lambda path: pd.DataFrame({"country": ["DE"]}))
     monkeypatch.setattr(pd.DataFrame, "to_csv", fake_to_csv)
 
@@ -431,7 +432,7 @@ def test_orchestrate_intersections_rejects_non_positive_workers(monkeypatch, tmp
 
 
 def test_create_rasters_main_watershed_requires_crs_and_read_file_no_crs_kwarg(monkeypatch, tmp_path):
-    args = type("Args", (), {"job_index": 0, "total_jobs": 1})()
+    args = type("Args", (), {"job_index": 0, "total_jobs": 1, "merge_shards": None})()
     monkeypatch.setattr(create_rasters, "parse_args", lambda: args)
     monkeypatch.setattr(create_rasters, "parse_config_overrides", lambda args=None: {})
 
@@ -490,3 +491,18 @@ def test_create_rasters_main_watershed_requires_crs_and_read_file_no_crs_kwarg(m
     assert calls["watershed_kwargs"] == {}
 
 
+
+
+@pytest.mark.real_atomic_output
+def test_shards_write_their_own_csvs_and_merge_into_one(tmp_path):
+    final = str(tmp_path / "stats.csv")
+    assert create_rasters.shard_path(final, 0, 1) == final
+    paths = [create_rasters.shard_path(final, i, 3) for i in range(3)]
+    assert paths[2].endswith("stats_shard2of3.csv")
+    pd.DataFrame({"country": ["DE"], "population_served": [1.0]}).to_csv(paths[0], index=False)
+    open(paths[1], "w").close()  # a shard whose countries had no rows
+    with pytest.raises(FileNotFoundError, match="shards not finished"):
+        create_rasters.merge_shards([final], 3)
+    pd.DataFrame({"country": ["FR"], "population_served": [2.0]}).to_csv(paths[2], index=False)
+    create_rasters.merge_shards([final], 3)
+    assert pd.read_csv(final)["country"].tolist() == ["DE", "FR"]

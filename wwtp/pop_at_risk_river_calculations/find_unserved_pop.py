@@ -16,7 +16,7 @@ from ..starter import add_standard_override_arguments, load_config, parse_config
 
 from .. import provenance
 from ..geo_utils import buffer_meters, ensure_duckdb_spatial
-from ..utils import configure_logging, duckdb_connection, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging, duckdb_connection
 from .find_pop_in_danger_pop import finding_tiles
 
 logger = logging.getLogger(__name__)
@@ -274,8 +274,8 @@ def create_unserved_pop(filepath, threshold, output_filepath,
                             is_parallel=is_parallel,
                             wwtp_country_col=wwtp_country_col)
 
-    ensure_output_dir_for_file(output_filepath)
-    df.to_file(output_filepath, driver='GPKG', index=False)
+    with atomic_output(output_filepath) as tmp_path:
+        df.to_file(tmp_path, driver='GPKG', index=False)
     logger.info("Wrote %s polygons to %s", len(df), output_filepath)
     return len(df)
 

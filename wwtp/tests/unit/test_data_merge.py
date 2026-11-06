@@ -345,8 +345,7 @@ def test_merge_new_drops_old_segmentation_columns_and_writes(monkeypatch, tmp_pa
     monkeypatch.setattr(merge_seg_results.gpd, "read_file", lambda path: points_df.copy())
     monkeypatch.setattr(merge_seg_results.pd, "read_csv", lambda path: seg_results.copy())
     monkeypatch.setattr(
-        merge_seg_results,
-        "ensure_output_dir_for_file",
+        "wwtp.utils.ensure_output_dir_for_file",
         lambda path: captured.setdefault("ensured", path),
     )
 
@@ -556,7 +555,7 @@ def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp
     corrected_low = low.copy()
     corrected_low["matched_osm_geometry"] = [Point(7.1, 7.1)]
 
-    monkeypatch.setattr(final_data_merge.os, "chdir", lambda path: None)
+    monkeypatch.setattr(os, "chdir", lambda path: None)
     monkeypatch.setattr(final_data_merge, "parse_config_overrides", lambda *a, **k: {})
     monkeypatch.setattr(final_data_merge, "load_config", lambda **overrides: cfg)
     monkeypatch.setattr(final_data_merge.gpd, "read_file", fake_read_file)
@@ -571,7 +570,7 @@ def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp
         lambda df: gpd.GeoDataFrame(df.assign(meter_geometry=df["geometry"].apply(lambda g: g.wkt)), geometry="geometry", crs=4326),
     )
     monkeypatch.setattr(final_data_merge, "cluster_points", lambda df, threshold: df)
-    monkeypatch.setattr(final_data_merge, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path))
 
     original_to_file = gpd.GeoDataFrame.to_file
 
@@ -682,7 +681,7 @@ def test_correct_locations_main_writes_corrected_and_missing_outputs(monkeypatch
         "coordinate_corr_locations_wOSM",
         lambda rad, pdf, df: corrected_match.copy(),
     )
-    monkeypatch.setattr(correct_locations_w_OSM, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", []).append(path))
 
     original_to_file = gpd.GeoDataFrame.to_file
 
@@ -806,7 +805,7 @@ def test_correct_locations_main_downloads_overture_and_enriches_when_iso2_missin
         "download_overture_maps",
         lambda s3, path: captured.setdefault("downloaded", (s3, path)),
     )
-    monkeypatch.setattr(correct_locations_w_OSM, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_exists = correct_locations_w_OSM.os.path.exists
     monkeypatch.setattr(
@@ -918,8 +917,7 @@ def test_merge_old_reads_zip_csvs_and_writes_output(monkeypatch, tmp_path):
         lambda source, target: source.assign(merged=True),
     )
     monkeypatch.setattr(
-        merge_seg_results,
-        "ensure_output_dir_for_file",
+        "wwtp.utils.ensure_output_dir_for_file",
         lambda path: captured.setdefault("ensured", path),
     )
 

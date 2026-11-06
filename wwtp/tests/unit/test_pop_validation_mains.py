@@ -45,8 +45,7 @@ def test_verification_main_writes_ver_unver_and_single_outputs(monkeypatch, tmp_
     monkeypatch.setattr(verification_script.os, "listdir", lambda path: ["sample.gpkg"])
     monkeypatch.setattr(verification_script.gpd, "read_file", lambda path: gdf.copy())
     monkeypatch.setattr(
-        verification_script,
-        "ensure_output_dir_for_file",
+        "wwtp.utils.ensure_output_dir_for_file",
         lambda path: captured.setdefault("ensured", []).append(path),
     )
 
@@ -120,7 +119,7 @@ def test_verification_main_processes_only_gpkg_files(monkeypatch, tmp_path):
         "read_file",
         lambda path: captured["read_paths"].append(path) or gdf.copy(),
     )
-    monkeypatch.setattr(verification_script, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     original_to_file = gpd.GeoDataFrame.to_file
     try:

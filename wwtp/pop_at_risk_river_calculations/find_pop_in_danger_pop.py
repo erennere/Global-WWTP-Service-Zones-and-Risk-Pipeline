@@ -19,7 +19,7 @@ from ..add_pop import intersect_all_files
 from ..service_areas import intersects_with_country_db
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from .. import provenance
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging, ensure_output_dir_for_file
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -313,8 +313,8 @@ def main():
         _log_zero_value_diagnostics("final_merged_output", results)
         results = gpd.GeoDataFrame(results, geometry=results['geometry'], crs=4326)
         _log_stage_frame_stats("final_output", results)
-    ensure_output_dir_for_file(cfg['paths']['pop_at_risk_output_filepath'])
-    results.to_parquet(cfg['paths']['pop_at_risk_output_filepath'], engine='pyarrow', index=False)
+    with atomic_output(cfg['paths']['pop_at_risk_output_filepath']) as tmp_path:
+        results.to_parquet(tmp_path, engine='pyarrow', index=False)
     logger.info("Wrote pop-at-risk parquet: %s", cfg['paths']['pop_at_risk_output_filepath'])
 
 if __name__ == '__main__':

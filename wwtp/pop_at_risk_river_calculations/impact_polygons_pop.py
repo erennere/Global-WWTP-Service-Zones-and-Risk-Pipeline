@@ -5,7 +5,6 @@ downstream by basin hierarchy, builds plume polygons segment-by-segment, and
 merges outputs into a final GeoPackage.
 """
 
-import os
 import argparse
 import logging
 import traceback
@@ -18,7 +17,7 @@ from tqdm import tqdm
 from shapely.geometry import Polygon
 from ..starter import add_standard_override_arguments, get_runtime_params, load_config, parse_config_overrides
 from .. import provenance
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging
 from ..geo_utils import batch_estimate_utm_epsg
 
 logger = logging.getLogger(__name__)
@@ -698,8 +697,8 @@ def main():
     if results is not None:
         for radius, gdf in results.items():
             output_path = impact_polygons_output_path(cfg['paths']['impact_pop_polygons_outpath'], radius)
-            ensure_output_dir_for_file(output_path)
-            gdf.to_file(output_path, driver='GPKG')
+            with atomic_output(output_path) as tmp_path:
+                gdf.to_file(tmp_path, driver='GPKG')
             logger.info("Process complete. Wrote %s geometries for radius %s", len(gdf), radius)
     else:
         logger.warning("No output generated")

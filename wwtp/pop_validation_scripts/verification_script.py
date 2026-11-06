@@ -8,7 +8,7 @@ import os
 import geopandas as gpd
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from .. import provenance
-from ..utils import configure_logging, ensure_output_dir_for_file
+from ..utils import atomic_output, configure_logging
 
 def find_verification_watersheds(gdf, percent_verification, watershed_col='HYBAS_ID'):
     """Mark each row with verification flags derived from basin-level validity rates."""
@@ -74,15 +74,11 @@ def main():
         un_ver_gdf = gdf[(~gdf['watersheds_chosen']) & (~gdf['is_single_points'])].reset_index(drop=True)
         singles_df = gdf[gdf['is_single_points']].reset_index(drop=True)
 
-        if not ver_gdf.empty:
-            ensure_output_dir_for_file(ver_output_filepath)
-            ver_gdf.to_file(ver_output_filepath, driver='GPKG', index=False)
-        if not un_ver_gdf.empty:
-            ensure_output_dir_for_file(unver_output_filepath)
-            un_ver_gdf.to_file(unver_output_filepath, driver='GPKG', index=False)
-        if not singles_df.empty:
-            ensure_output_dir_for_file(single_output_filepath)
-            singles_df.to_file(single_output_filepath, driver='GPKG', index=False)
+        for part, path in ((ver_gdf, ver_output_filepath), (un_ver_gdf, unver_output_filepath),
+                           (singles_df, single_output_filepath)):
+            if not part.empty:
+                with atomic_output(path) as tmp_path:
+                    part.to_file(tmp_path, driver='GPKG', index=False)
 
 
 if __name__ == '__main__':

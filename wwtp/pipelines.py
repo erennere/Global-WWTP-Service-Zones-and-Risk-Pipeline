@@ -34,7 +34,6 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 from shapely import from_wkt, to_wkt, from_wkb
-import shapely
 import logging
 
 logger = logging.getLogger(__name__)
@@ -225,8 +224,8 @@ def run_voronoi_approach(approach_id, gdf, clipping_gdf, country_df, cfg, distan
         raise ValueError("cfg['max_workers'] must be >= 1")
     
     from . import service_areas as service_areas_module
-    from .service_areas import orchestrate_voronoi_weights, drop_duplicates, calculate_area, calculate_buffer
-    from .utils import ensure_output_dir_for_file, select_industrial_categories
+    from .service_areas import orchestrate_voronoi_weights, calculate_area, calculate_buffer
+    from .utils import atomic_output
 
     site_country_col = site_country_col or cfg['country_output_column']
     country_boundary_col = country_boundary_col or cfg['country_boundary_column']
@@ -294,8 +293,8 @@ def run_voronoi_approach(approach_id, gdf, clipping_gdf, country_df, cfg, distan
         return None, None
 
     region_df, point_df = orchestrate_result
-    ensure_output_dir_for_file(output_path)
-    region_df.to_file(output_path, driver='GPKG', index=False)
+    with atomic_output(output_path) as tmp_path:
+        region_df.to_file(tmp_path, driver='GPKG', index=False)
     logger.info(f"Approach {approach_id}: Saved {len(region_df)} regions to {output_path}")
     return region_df, point_df
 
@@ -327,10 +326,9 @@ def prepare_data(cfg):
     from .service_areas import (
         drop_duplicates, intersects_with_country_db,
         download_overture_maps, intersect_with_polygon_sindex,
-        orchestrate_overlaps,
     )
     from .geo_utils import buffer_geometry
-    from .utils import ensure_output_dir_for_file, select_industrial_categories
+    from .utils import atomic_output, select_industrial_categories
     
     logger.info("Preparing input data...")
     paths = cfg['paths']
@@ -412,8 +410,8 @@ def prepare_data(cfg):
         )
     watershed_gpkg_filepath = os.path.abspath(paths['watershed'].replace('.geojson', '.gpkg'))
     if not os.path.exists(watershed_gpkg_filepath):
-        ensure_output_dir_for_file(watershed_gpkg_filepath)
-        basin_gdf.to_file(watershed_gpkg_filepath, driver='GPKG', index=False)
+        with atomic_output(watershed_gpkg_filepath) as tmp_path:
+            basin_gdf.to_file(tmp_path, driver='GPKG', index=False)
 
     # Add basin information to WWTP
     if basin_col not in gdf_bbox.columns:
@@ -422,13 +420,13 @@ def prepare_data(cfg):
         gdf_bbox = drop_duplicates(drop_duplicates(gdf_bbox, site_id_col), 'geometry')
         filename = os.path.join(os.path.dirname(paths['bboxes']), f"expanded_{os.path.basename(paths['bboxes'])}")
         if not os.path.exists(f"{filename}"):    
-            ensure_output_dir_for_file(filename)
-            gdf_bbox.to_csv(f"{filename}", index=False)
+            with atomic_output(filename) as tmp_path:
+                gdf_bbox.to_csv(tmp_path, index=False)
         expanded_gpkg = filename.replace('.csv', '.gpkg')
         if not os.path.exists(expanded_gpkg):
-            ensure_output_dir_for_file(expanded_gpkg)
             gdf_bbox_export = gpd.GeoDataFrame(gdf_bbox, geometry='geometry', crs='epsg:4326')
-            gdf_bbox_export.to_file(expanded_gpkg, index=False, driver='GPKG')
+            with atomic_output(expanded_gpkg) as tmp_path:
+                gdf_bbox_export.to_file(tmp_path, index=False, driver='GPKG')
         
     # Load country boundaries
     country_df = pd.read_parquet(paths['overture'])

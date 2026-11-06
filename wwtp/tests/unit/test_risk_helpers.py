@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import duckdb
 import pytest
 from shapely import from_wkt, to_wkt
 from shapely.geometry import box
@@ -127,7 +128,7 @@ def test_find_difference_returns_watershed_minus_served_geometry(monkeypatch, ti
         crs="EPSG:4326",
     )
 
-    monkeypatch.setattr(find_diff_pop.duckdb, "connect", lambda *a, **k: _FakeDifferenceConnection())
+    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: _FakeDifferenceConnection())
     monkeypatch.setattr(find_diff_pop.os.path, "exists", lambda path: False)
 
     result = find_diff_pop.find_difference(tiny_watershed_gdf.iloc[[0]].copy(), served, basin_col="HYBAS_ID")
@@ -145,7 +146,7 @@ def test_find_difference_returns_none_when_duckdb_connect_fails(monkeypatch, tin
     )
 
     monkeypatch.setattr(
-        find_diff_pop.duckdb,
+        duckdb,
         "connect",
         lambda path: (_ for _ in ()).throw(RuntimeError("duckdb unavailable")),
     )
@@ -181,8 +182,7 @@ def test_create_unserved_pop_writes_filtered_geometries(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
-        find_unserved_pop,
-        "ensure_output_dir_for_file",
+        "wwtp.utils.ensure_output_dir_for_file",
         lambda path: captured.setdefault("ensured", path),
     )
     monkeypatch.setattr(
@@ -272,7 +272,7 @@ def test_create_unserved_pop_writes_empty_output_when_query_returns_no_rows(monk
         "duckdb_connection",
         _fake_duckdb_connection(_FakeSqlConnection(_DuckResult(pd.DataFrame(columns=["pop_sum", "geometry"])))),
     )
-    monkeypatch.setattr(find_unserved_pop, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
     monkeypatch.setattr(find_unserved_pop, "orchestrate_urban_intersection", lambda gdf, *args, **kwargs: gdf)
     monkeypatch.setattr(find_unserved_pop, "add_buffers_to_WWTP", lambda gdf, **kwargs: gdf)
 
@@ -816,7 +816,7 @@ def test_find_diff_pop_main_selects_sorted_input_and_writes_output(
         monkeypatch.setattr(find_diff_pop.gpd, "read_file", fake_read_file)
         monkeypatch.setattr(find_diff_pop, "find_differences", fake_find_differences)
         monkeypatch.setattr(find_diff_pop, "intersect_all_files", fake_intersect_all_files)
-        monkeypatch.setattr(find_diff_pop, "ensure_output_dir_for_file", fake_ensure_output_dir_for_file)
+        monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", fake_ensure_output_dir_for_file)
         monkeypatch.setattr(gpd.GeoDataFrame, "to_file", fake_to_file)
 
         find_diff_pop.main()

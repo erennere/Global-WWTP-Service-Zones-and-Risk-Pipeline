@@ -1,6 +1,7 @@
 """Tests for annotation_wastewater_join (moved from the coverage-campaign files)."""
 import geopandas as gpd
 import pandas as pd
+import random
 import pytest
 from shapely.geometry import Point, Polygon
 from shapely import to_wkb
@@ -154,7 +155,7 @@ def test_write_geodata_ensures_parent_and_writes(monkeypatch, tmp_path):
     gdf = gpd.GeoDataFrame({"geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
     captured = {}
 
-    monkeypatch.setattr(ww3, "ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: captured.setdefault("ensured", path))
     monkeypatch.setattr(gpd.GeoDataFrame, "to_file", lambda self, path, driver="GeoJSON": captured.setdefault("written", (path, driver)))
 
     ww3.write_geodata(gdf, str(tmp_path / "out.geojson"))
@@ -207,7 +208,7 @@ def test_convert_geojson_to_parquet_failure_and_existing_skip(monkeypatch, tmp_p
             return None
 
     monkeypatch.setattr(ww3.os.path, "exists", lambda path: False)
-    monkeypatch.setattr(ww3, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
     monkeypatch.setattr(ww3.duckdb, "connect", lambda *a, **k: _FailConn())
 
     assert ww3.convert_geojson_to_parquet("idx_2_polygons.geojson", str(tmp_path), overwrite=False) is None
@@ -336,7 +337,7 @@ def test_new03_merge_bboxes_sql_branches(monkeypatch, tmp_path):
     monkeypatch.setattr(ww3.duckdb, "connect", _connect)
     monkeypatch.setattr(ww3, "parallel_convert_geojsons", lambda *args, **kwargs: [str(tmp_path / "idx_1_polygons.parquet")])
     monkeypatch.setattr(ww3, "merge_parquets_sql", lambda *args, **kwargs: {"x": "1"})
-    monkeypatch.setattr(ww3, "ensure_output_dir_for_file", lambda path: None)
+    monkeypatch.setattr("wwtp.utils.ensure_output_dir_for_file", lambda path: None)
 
     ww3.merge_bboxes_sql(
         polygons_dir=str(tmp_path),
@@ -377,7 +378,7 @@ def test_new03_merge_bboxes_sql_empty_conversion_short_circuits(monkeypatch, tmp
         def close(self):
             return None
 
-    monkeypatch.setattr(ww3.random, "randint", lambda a, b: 456)
+    monkeypatch.setattr(random, "randint", lambda a, b: 456)
     monkeypatch.setattr(ww3.duckdb, "connect", lambda *a, **k: _Conn())
     monkeypatch.setattr(ww3, "parallel_convert_geojsons", lambda *args, **kwargs: [])
     monkeypatch.setattr(
