@@ -405,7 +405,7 @@ find_unserved_pop:
     non_served_above_threshold_outpath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/non_served_areas_above_threshold_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
     # Downstream of merge_annotations in the pipeline: use the annotated dataset.
     annotated_all_filepath: null
-    
+
 find_diff_pop:
   level: null
   version: null

@@ -275,8 +275,8 @@ def discover_parquet_schema(parquet_file: str) -> Tuple[str, str, List[str], Dic
 
         # Load parquet WITHOUT adding GRID column (GRID is metadata, not a data column)
         temp_conn.execute(
-            f"""CREATE TEMP TABLE {tmp_table} 
-               AS SELECT * 
+            f"""CREATE TEMP TABLE {tmp_table}
+               AS SELECT *
                FROM read_parquet('{parquet_file}');"""
         )
         col_names, col_types = get_parquet_schema_info(temp_conn, tmp_table)

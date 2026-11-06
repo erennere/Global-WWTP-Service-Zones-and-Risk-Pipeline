@@ -2,7 +2,7 @@
 # Map 2: flow-based cartograms (level 3: 8 rounds, level 4: 10 rounds, 1536-cell grid) and all plot variants
 S="$(cd "$(dirname "$0")" && pwd)"                    # this folder: the scripts
 C="python3 $S/../fig1_config.py"                      # config.yaml, section figure1
-W="$($C cartogram_dir)"; mkdir -p "$W"; cd "$W"   # work folder under data_dir
+W="$($C cartogram_dir)"; mkdir -p "$W"; cd "$W" || exit 1   # work folder under data_dir
 python3 $S/07_cartogram.py 3 --rounds 8 --grid 1536 > svc/carto3_log.txt 2>&1
 python3 $S/07_cartogram.py 4 --rounds 10 --grid 1536 > svc/carto4_log.txt 2>&1
 mkdir -p figs2

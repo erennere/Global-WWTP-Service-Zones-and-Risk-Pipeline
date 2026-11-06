@@ -252,7 +252,7 @@ def main():
                     }}
                 }}
                 map.on('zoomend', updateView);
-                setTimeout(updateView, 400); 
+                setTimeout(updateView, 400);
             }});
         </script>
     """)
@@ -273,7 +273,7 @@ def main():
 
     legend_html = f"""
     {{% macro html(this, kwargs) %}}
-    <div style="position: fixed; bottom: 30px; left: 30px; width: 260px; z-index: 9999; 
+    <div style="position: fixed; bottom: 30px; left: 30px; width: 260px; z-index: 9999;
                 background: white; border-radius: 8px; padding: 15px; font-family: sans-serif;
                 box-shadow: 0 0 10px rgba(0,0,0,0.3); border: 1px solid #ccc;">
         <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #eee;">WWTP Type Breakdown</div>

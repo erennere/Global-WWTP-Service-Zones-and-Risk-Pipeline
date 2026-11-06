@@ -334,10 +334,10 @@ def intersect_with_polygons_db(df, polygons, cols, df_join_col="ISO_2", polygon_
         FROM polygons
     )
     SELECT
-        a.* REPLACE(ST_AsText(a.centroid)) AS centroid, 
+        a.* REPLACE(ST_AsText(a.centroid)) AS centroid,
         {select_cols}
         FROM data a
-        LEFT JOIN polygons b ON a.{quoted_df_join_col} = b.{quoted_polygon_join_col} 
+        LEFT JOIN polygons b ON a.{quoted_df_join_col} = b.{quoted_polygon_join_col}
         AND ST_IsValid(a.centroid)
         AND ST_IsValid(b.geometry)
         AND ST_Intersects(a.centroid, b.geometry)

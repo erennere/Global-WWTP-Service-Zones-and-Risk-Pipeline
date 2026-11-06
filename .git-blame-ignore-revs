@@ -1,0 +1,3 @@
+# Mass reformatting commits; use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# ruff format over wwtp/ and figures/
+68af8003632fd8b637be0010c017238f8906d5cd

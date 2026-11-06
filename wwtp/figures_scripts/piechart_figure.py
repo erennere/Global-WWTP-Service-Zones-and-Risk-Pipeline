@@ -331,12 +331,12 @@ def main():
         xpos, ypos = get_pos(row.geometry)
         dist_ind = [float(row[f"IND_{tag1}_{agg_type}"]), float(row[f"IND_{tag2}_{agg_type}"])]
         dist_res = [float(row[f"RES_{tag1}_{agg_type}"]), float(row[f"RES_{tag2}_{agg_type}"])]
-        """         
+        """
         if dist_ind == [0., 0.] or any(np.isnan(item) for item in dist_ind):
             dist_ind = [1., 1.]
-            
+
         if dist_res == [0., 0.] or any(np.isnan(item) for item in dist_res):
-            dist_res = [1., 1.] 
+            dist_res = [1., 1.]
         """
         if any(np.isnan(item) for item in dist_ind):
             dist_ind = [0.0, 0.0]

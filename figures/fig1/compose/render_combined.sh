@@ -9,7 +9,7 @@
 #   D=truearea  panel d as the true-area map (as before the tanks map), with night-light versions if NL is set
 S="$(cd "$(dirname "$0")" && pwd)"                    # this folder: the scripts
 C="python3 $S/../fig1_config.py"                      # config.yaml, section figure1
-W="$($C combined_dir)"; mkdir -p "$W"; cd "$W"   # work folder under data_dir
+W="$($C combined_dir)"; mkdir -p "$W"; cd "$W" || exit 1   # work folder under data_dir
 ATTRS=${ATTRS:-$($C heigit_attrs)}           # figure1.paths.heigit_attrs
 HB=${HB:-$($C hydrobasins_dir)}             # figure1.paths.hydrobasins_dir
 TAG=${TAG:-$($C tag)}; D=${D:-tanks}; LEVELS=${LEVELS:-country hybas3 hybas4}
@@ -18,10 +18,10 @@ R=$ROOT/rows; mkdir -p $R
 q(){ "$@" 2>&1 | grep -v -i warn | tail -1; }
 
 # map 2 at country level: aggregation and cartogram, once
-cd $M2
+cd "$M2" || exit 1
 [ -f svc/service_country.gpkg ] || q python3 $S/../cartogram/05b_service_country.py data $M1/agg svc $TAG
 [ -f svc/cartogram_country.gpkg ] || q python3 $S/../cartogram/07_cartogram.py country --rounds 8 --grid 1536
-cd $ROOT
+cd "$ROOT" || exit 1
 
 declare -A LAB=( [country]=Countries [hybas3]="HydroBASINS level 3" [hybas4]="HydroBASINS level 4" )
 declare -A LEV=( [country]=country [hybas3]=3 [hybas4]=4 )

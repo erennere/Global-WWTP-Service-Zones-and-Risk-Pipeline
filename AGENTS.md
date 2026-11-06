@@ -24,6 +24,8 @@ Use these commands from repository root:
 - `python -m pip install -e ".[test]"`
 - `pytest -q`
 - `pytest -m unit -q`
+- `pre-commit run --all-files` (ruff lint + format, gitleaks, shellcheck, ...)
+- `snakemake -n` (what the workflow would run)
 
 ## Architecture Boundaries
 - Keep `load_config` in [wwtp/starter.py](wwtp/starter.py) orchestration-focused.

@@ -16,6 +16,7 @@ WWTPs are not just point infrastructure in this project: they are spatial servic
 - [Project Data Flow](#project-data-flow)
 - [Environment Creation](#environment-creation)
 - [Starter Data Files You Need Before Running](#starter-data-files-you-need-before-running)
+- [Checks: pre-commit and CI](#checks-pre-commit-and-ci)
 - [Configuration Parameters You Usually Need To Change](#configuration-parameters-you-usually-need-to-change)
 - [What Is Missing Or External To The Repository](#what-is-missing-or-external-to-the-repository)
 - [Section Documentation](#section-documentation)
@@ -257,6 +258,12 @@ Practical prerequisites:
 - Snakemake for the workflow (`pip install -e ".[workflow]"`, which also brings the SLURM executor plugin).
 - Access to the geospatial inputs under `data/`.
 - SLURM access for `workflow/profiles/slurm`.
+
+## Checks: pre-commit and CI
+
+`pre-commit install` once per clone (pre-commit itself is best installed apart from the pipeline's environment, e.g. `pipx install pre-commit`) runs on every commit: ruff (lint and format), gitleaks (secrets), large files (> 5 MB), YAML/TOML syntax, line endings, nbstripout for notebooks and shellcheck for the remaining shell scripts. `pre-commit run --all-files` checks everything. The ruff reformatting commit is listed in `.git-blame-ignore-revs` (`git config blame.ignoreRevsFile .git-blame-ignore-revs`).
+
+GitHub Actions (`.github/workflows/`): on every push and pull request the hooks and the whole test suite with coverage (the floor in `.coveragerc` only rises); weekly and on demand the slow end-to-end checks on the mock world against the stored golden outputs, through the stage command lines and through Snakemake.
 
 ## Starter Data Files You Need Before Running
 

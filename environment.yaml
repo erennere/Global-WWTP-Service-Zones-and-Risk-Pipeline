@@ -35,7 +35,6 @@ dependencies:
   - pytest-cov>=5
   - pytest-mock>=3.14
   - hypothesis>=6  # property tests (wwtp/tests/unit/test_*_oracle.py)
-  - pre-commit
   - pip:
       - hdx-python-api
       # Declared in pyproject.toml but missing here, so a conda-only setup

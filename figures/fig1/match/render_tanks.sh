@@ -7,7 +7,7 @@
 #   HEIGIT_PLANTS  01_reconcile's plants_heigit_<TAG>.csv, if it is not in agg/
 S="$(cd "$(dirname "$0")" && pwd)"                    # this folder: the scripts
 C="python3 $S/../fig1_config.py"                      # config.yaml, section figure1
-W="$($C match_dir)"; mkdir -p "$W"; cd "$W"   # work folder under data_dir
+W="$($C match_dir)"; mkdir -p "$W"; cd "$W" || exit 1   # work folder under data_dir
 TAG=${1:-$($C tag)}
 ATTRS=${ATTRS:-$($C heigit_attrs)}           # figure1.paths.heigit_attrs
 HB=${HB-$($C hydrobasins_dir)}              # figure1.paths.hydrobasins_dir; HB= draws the country level only

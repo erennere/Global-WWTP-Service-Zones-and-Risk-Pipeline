@@ -5,7 +5,7 @@
 # plus a contact sheet.
 S="$(cd "$(dirname "$0")" && pwd)"                    # this folder: the scripts
 C="python3 $S/../fig1_config.py"                      # config.yaml, section figure1
-W="$($C cartogram_dir)"; mkdir -p "$W"; cd "$W"   # work folder under data_dir
+W="$($C cartogram_dir)"; mkdir -p "$W"; cd "$W" || exit 1   # work folder under data_dir
 O=${OUT:-figs2/pairs}; mkdir -p $O
 r(){ python3 $S/09_plot_pair.py "$@" 2>&1 | grep -v -i warn | tail -1; }
 for lev in 3 4; do
