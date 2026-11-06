@@ -1,10 +1,11 @@
 """Stack all rendered variants of one or more aggregation levels into a labelled overview PNG."""
 import sys, glob, os
+from matplotlib import font_manager
 from PIL import Image, ImageDraw, ImageFont
 
 out, levels = sys.argv[1], sys.argv[2:]
 ORDER = ["base", "europe", "europe_latprofile", "spikes_europe", "main_with_spikes", "europe_with_spikes", "main_with_circles", "europe_with_circles"]
-font = ImageFont.truetype("C:/Windows/Fonts/LiberationSans-Bold.ttf", 34)
+font = ImageFont.truetype(font_manager.findfont(font_manager.FontProperties(family="DejaVu Sans", weight="bold")), 34)  # ships with matplotlib
 rows = []
 for lev in levels:
     for v in ORDER:
