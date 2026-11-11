@@ -139,7 +139,7 @@ merge_annotations:
     annotated_all_filepath: '{data_dir}/all_annotated_v{version}.gpkg'
     annotated_images_output_dir: null
     #annotations_results_filepath: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global/annotated/mm/inference/csv_files/chunk_1/i2t_res1.csv'
-    annotations_results_filepath: /sd17f001/sukanya/wtp_seg/2026_global/annotated/mm/inference/output/inference/csv_files/chunk_1/i2t_res1.csv
+    annotations_results_filepath: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global/annotated/mm/inference/output/inference/csv_files/chunk_1/i2t_res1.csv'
 annotations_inspection:
   annotations:
     n_sample_size: 1000
