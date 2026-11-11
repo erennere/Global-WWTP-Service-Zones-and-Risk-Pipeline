@@ -70,6 +70,7 @@ FIGURES = {
     "figures",
 }
 INDUSTRIAL = {"find_unconnected_industrial_areas", "download_and_vectorize"}  # configured variant only
+COMPARISONS = {"verification_script", "hw_comparison", "eu_comparison"}
 SWEEP = {"compare_pop_sweep_hw_eu", "sweep_ver_ranking_task", "sweep_ver_ranking_merge", "sweep_layers", "sweep"}
 
 
@@ -82,7 +83,9 @@ def test_snakemake_alone_runs_nothing(work):
 @pytest.mark.parametrize(
     "target, wanted, unwanted",
     [
-        ("analysis", RISK | {"hw_comparison", "eu_comparison", "find_diff_pop"}, FIGURES | SWEEP),
+        ("service_areas", {"create_voronoi", "add_pop"} | COMPARISONS, RISK | INDUSTRIAL | FIGURES | SWEEP),
+        ("risk", RISK | INDUSTRIAL | {"find_diff_pop"}, COMPARISONS | FIGURES | SWEEP),
+        ("analysis", RISK | INDUSTRIAL | COMPARISONS | {"find_diff_pop"}, FIGURES | SWEEP),
         ("figures", FIGURES | RISK, SWEEP | {"hw_comparison", "eu_comparison", "find_diff_pop"}),
         (
             "sweep",

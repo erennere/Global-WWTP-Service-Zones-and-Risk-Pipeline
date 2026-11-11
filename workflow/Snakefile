@@ -8,9 +8,12 @@ SLURM resources in its `workflow` section.
 
 Targets (run from the repository root; add --profile workflow/profiles/local or .../slurm, -n to only plan).
 A run does only the part it names; `snakemake` alone lists the targets and runs nothing.
-    snakemake analysis          configured variant: service areas, population, non-served population,
-                                river risk, population differences, HydroWASTE/UWWTD comparisons,
-                                unconnected industrial areas
+    snakemake service_areas     configured variant: service areas, population layers and their
+                                HydroWASTE/UWWTD comparisons
+    snakemake risk              configured variant, the rest: non-served population, river risk,
+                                population differences, unconnected industrial areas
+                                (makes the service areas first if they are missing)
+    snakemake analysis          service_areas + risk
     snakemake figures           configured variant's figures (and whatever of the analysis they need)
     snakemake sweep             whole sweep grid: service areas + population, HydroWASTE/UWWTD scores
                                 and ranking
@@ -64,7 +67,9 @@ def threads(stage):
 
 
 TARGETS = {
-    "analysis": "configured variant: service areas, population, non-served, river risk, comparisons, industrial",
+    "service_areas": "configured variant: service areas, population layers, HydroWASTE/UWWTD comparisons",
+    "risk": "configured variant: non-served population, river risk, population differences, industrial areas",
+    "analysis": "service_areas + risk",
     "figures": "configured variant's figures (and whatever of the analysis they need)",
     "sweep": "whole sweep grid: service areas + population, HydroWASTE/UWWTD scores and ranking",
     "sweep_layers": "only the service areas + population of the sweep grid",
@@ -444,14 +449,24 @@ rule:
 # --------------------------------------------------------------------------- #
 # Targets: each part on its own, `all` for every part                         #
 # --------------------------------------------------------------------------- #
-rule analysis:
+rule service_areas:
+    """Service areas and population layers of every approach, compared with HydroWASTE and the UWWTD."""
     input:
-        FIG,
-        RISK["find_pop_in_danger_pop"]["pop_at_risk_output_filepath"],
-        wf.diff_layer(v),
+        [wf.population_layer(v, a) for a in wf.approaches(v)],
         wf.stamp("hw_comparison", v),
         wf.stamp("eu_comparison", v),
+
+
+rule risk:
+    """Non-served population, river risk, population differences, unconnected industrial areas."""
+    input:
+        RISK["find_pop_in_danger_pop"]["pop_at_risk_output_filepath"],
+        wf.diff_layer(v),
         RISK["find_unconnected_industrial_areas"]["industrial_unconnected_output"],
+
+
+rule analysis:
+    input: rules.service_areas.input, rules.risk.input
 
 
 rule figures:
