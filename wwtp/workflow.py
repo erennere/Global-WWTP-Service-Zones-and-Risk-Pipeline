@@ -52,7 +52,12 @@ class Variant:
         return {key: getattr(self, key) for key in RUN_KEYS}
 
     def cli(self):
-        """The same values as command-line flags of every stage (quote them: weight_func can be '')."""
+        """The same values as command-line flags of every stage.
+
+        An empty weight_func goes as ``--weight-func=``: Snakemake's ``{params.cli:q}`` does not quote an
+        empty element, so ``--weight-func ''`` reached the stage as a flag without a value. Other values
+        keep the two-word form, so the params of finished jobs (and their rerun state) do not change.
+        """
         args = [
             "--level",
             self.level,
@@ -62,8 +67,7 @@ class Variant:
             str(self.buffer),
             "--weight-method",
             self.weight_method,
-            "--weight-func",
-            self.weight_func,
+            *(["--weight-func", self.weight_func] if self.weight_func else ["--weight-func="]),
             "--dynamic-buffering",
             str(self.dynamic_buffering).lower(),
         ]

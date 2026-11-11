@@ -90,3 +90,18 @@ def test_approach0_is_made_once_per_weighting_and_extent():
     assert all(source.level == "6" and source.tag in tags for source in sources if source is not None)
     assert all(wf.approach0_source(v) is None for v in sweep if v.level == "6")
     assert wf.approach0_source(wf.default_variant()) is None
+
+
+@pytest.mark.parametrize("variant", [wf.default_variant(), *wf.sweep_variants()[::5]], ids=lambda v: v.tag)
+def test_the_shell_command_snakemake_writes_gives_back_the_variant(variant):
+    """Through Snakemake's own {params.cli:q} formatting: it leaves an empty element unquoted, which once
+    dropped weight_func '' from the command line (create_voronoi: --weight-func expected one argument)."""
+    import shlex
+    from types import SimpleNamespace
+
+    from snakemake.utils import format as snakemake_format
+
+    command = snakemake_format("{params.cli:q}", params=SimpleNamespace(cli=["--approach", "0", *variant.cli()]))
+    overrides = starter.parse_config_overrides(argv=["prog", *shlex.split(command)[2:]])
+    cfg = starter.load_config(script_name="create_voronoi", **overrides)
+    assert wf.Variant.from_section(cfg) == variant
