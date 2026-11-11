@@ -17,11 +17,12 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
         sweep_layers / sweep_scores / sweep_industrial    one part of it
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
-    snakemake --config run_once=annotations annotations    grids, OSM context, annotated images, merged labels
+    snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
 
 One-time stages (combine_locations, the four annotation rules, download_pop) are left out
 of every run: their outputs are taken as they are. Name them to include them in one run,
-e.g. `--config run_once=annotations,download_pop` (or list them in workflow.run_once).
+e.g. `snakemake analysis --config run_once=download_pop` (or list them in workflow.run_once).
+Targets go before --config: it takes every word that follows it.
 
 The first time on outputs made by the old shell wrappers, `snakemake --touch`
 marks them as up to date instead of recomputing them.
@@ -68,7 +69,7 @@ TARGETS = {
     "sweep": "whole sweep grid: service areas + population, scores and ranking, industrial",
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
-    "annotations": "with --config run_once=annotations: grids, OSM context, images, merged labels",
+    "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
 }
 
 

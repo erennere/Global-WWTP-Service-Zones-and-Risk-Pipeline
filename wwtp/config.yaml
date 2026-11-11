@@ -859,7 +859,7 @@ workflow:
   # wastewater_join, download_bing_annotate, merge_annotations; all four:
   # 'annotations') and download_pop. A run takes their outputs as they are and
   # never schedules them, unless they are listed here or named for one run:
-  #   snakemake --config run_once=annotations,download_pop
+  #   snakemake analysis --config run_once=annotations,download_pop   (targets before --config)
   # Their outputs must then exist (all_annotated_v2.gpkg, the download_pop stamp).
   run_once: []
   resources:
