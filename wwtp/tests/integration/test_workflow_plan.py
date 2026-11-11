@@ -49,8 +49,8 @@ def _plan(work, *args):
 
 
 def _kind(job):
-    """Rule name without the variant tag: create_voronoi__v2_lvl6_..._a1 -> create_voronoi."""
-    return job.split("__")[0]
+    """Rule name without the variant tag or basin level: create_voronoi__v2_lvl6_..._a1 -> create_voronoi."""
+    return job.split("__")[0].split("_lvl")[0]
 
 
 RISK = {
@@ -69,6 +69,7 @@ FIGURES = {
     "interactive_unconnected_industrial_map",
     "figures",
 }
+INDUSTRIAL = {"find_unconnected_industrial_areas", "download_and_vectorize"}  # sweep_industrial only
 SWEEP = {"compare_pop_sweep_hw_eu", "sweep_ver_ranking_task", "sweep_scores", "sweep_layers", "sweep"}
 
 
@@ -83,7 +84,11 @@ def test_snakemake_alone_runs_nothing(work):
     [
         ("analysis", RISK | {"hw_comparison", "eu_comparison", "find_diff_pop"}, FIGURES | SWEEP),
         ("figures", FIGURES | RISK, SWEEP | {"hw_comparison", "eu_comparison", "find_diff_pop"}),
-        ("sweep", SWEEP - {"sweep_layers"}, FIGURES | RISK | {"hw_comparison", "eu_comparison", "find_diff_pop"}),
+        (
+            "sweep",
+            SWEEP - {"sweep_layers"},
+            FIGURES | RISK | INDUSTRIAL | {"hw_comparison", "eu_comparison", "find_diff_pop"},
+        ),
         ("all", FIGURES | RISK | (SWEEP - {"sweep_layers", "sweep"}), set()),  # target rules are not jobs here
     ],
 )

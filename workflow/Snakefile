@@ -12,9 +12,11 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 river risk, population differences, HydroWASTE/UWWTD comparisons,
                                 unconnected industrial areas
     snakemake figures           configured variant's figures (and whatever of the analysis they need)
-    snakemake sweep             whole sweep grid: service areas + population, scores and ranking,
-                                unconnected industrial areas
-        sweep_layers / sweep_scores / sweep_industrial    one part of it
+    snakemake sweep             whole sweep grid: service areas + population, HydroWASTE/UWWTD scores
+                                and ranking
+        sweep_layers                  only the service areas + population of the grid
+        sweep_industrial              optional: unconnected industrial areas per sweep variant
+                                      (not in sweep or all; nothing downstream reads them)
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
@@ -66,7 +68,8 @@ def threads(stage):
 TARGETS = {
     "analysis": "configured variant: service areas, population, non-served, river risk, comparisons, industrial",
     "figures": "configured variant's figures (and whatever of the analysis they need)",
-    "sweep": "whole sweep grid: service areas + population, scores and ranking, industrial",
+    "sweep": "whole sweep grid: service areas + population, HydroWASTE/UWWTD scores and ranking",
+    "sweep_industrial": "optional: unconnected industrial areas per sweep variant (not in sweep or all)",
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
@@ -248,7 +251,8 @@ rule sweep_layers:
 
 
 rule sweep_industrial:
-    """Industrial areas outside every service area, for each variant of the sweep."""
+    """Industrial areas outside every service area, for each variant of the sweep. Optional: not part of
+    `sweep` or `all`, since nothing downstream reads them; it also downloads industrial land per level."""
     input: [wf.config("find_unconnected_industrial_areas", v)["paths"]["industrial_unconnected_output"] for v in SWEEP]
 
 
@@ -288,8 +292,8 @@ rule sweep_scores:
 
 
 rule sweep:
-    """Everything of the sweep grid: layers, scores and ranking, unconnected industrial areas."""
-    input: rules.sweep_layers.input, rules.sweep_scores.output, rules.sweep_industrial.input
+    """The sweep grid: service areas + population of every variant, their scores and ranking."""
+    input: rules.sweep_layers.input, rules.sweep_scores.output
 
 
 # --------------------------------------------------------------------------- #

@@ -151,13 +151,13 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
 ```bash
 snakemake --profile workflow/profiles/slurm analysis   # configured variant: service areas, population, non-served, river risk, comparisons, industrial
 snakemake --profile workflow/profiles/slurm figures    # its figures (plus whatever of the analysis they still need)
-snakemake --profile workflow/profiles/slurm sweep      # whole sweep grid: layers, HydroWASTE/UWWTD scores and ranking, industrial
+snakemake --profile workflow/profiles/slurm sweep      # whole sweep grid: service areas + population, HydroWASTE/UWWTD scores and ranking
 snakemake --profile workflow/profiles/slurm all        # analysis + figures + sweep
 snakemake --profile workflow/profiles/slurm fig1       # Figure 1 from its prepared inputs
 snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations  # grids, OSM context, images, labels
 ```
 
-Parts of the sweep on their own: `sweep_layers` (service areas + population), `sweep_scores`, `sweep_industrial`.
+Parts of the sweep on their own: `sweep_layers` (service areas + population), `sweep_scores`. `sweep_industrial` (unconnected industrial areas for every sweep variant, with an industrial-land download per basin level) is optional and in neither `sweep` nor `all`: nothing downstream reads it.
 
 - The configured variant is the one `create_voronoi` sets in `wwtp/config.yaml` (level, version, buffer, weighting, size measure); the sweep grid is the `sweep` section. Change either there or in an overlay, not on the command line, so the files Snakemake expects match what the stages write.
 - One-time stages are never part of a run unless named: `combine_locations`, the image annotation (`annotation_grids`, `wastewater_join`, `download_bing_annotate`, `merge_annotations`, together `annotations`) and `download_pop`. A run takes their outputs as they are (`all_annotated_v2.gpkg`, the WorldPop rasters behind `{data_dir}/workflow/stamps/download_pop.done`) and stops before submitting anything if one is missing. Include them for one run with `--config run_once=annotations,download_pop` after the targets (`--config` takes every word that follows it, so `snakemake analysis --config run_once=merge_annotations`), or for good in `workflow.run_once`; forcing them (`-R annotation_grids`) also needs them named. If the WorldPop rasters are already in place without the stamp, `touch` it.
