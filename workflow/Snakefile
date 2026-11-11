@@ -15,8 +15,6 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake sweep             whole sweep grid: service areas + population, HydroWASTE/UWWTD scores
                                 and ranking
         sweep_layers                  only the service areas + population of the grid
-        sweep_industrial              optional: unconnected industrial areas per sweep variant
-                                      (not in sweep or all; nothing downstream reads them)
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
@@ -69,7 +67,7 @@ TARGETS = {
     "analysis": "configured variant: service areas, population, non-served, river risk, comparisons, industrial",
     "figures": "configured variant's figures (and whatever of the analysis they need)",
     "sweep": "whole sweep grid: service areas + population, HydroWASTE/UWWTD scores and ranking",
-    "sweep_industrial": "optional: unconnected industrial areas per sweep variant (not in sweep or all)",
+    "sweep_layers": "only the service areas + population of the sweep grid",
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
@@ -250,12 +248,6 @@ rule sweep_layers:
     input: [wf.population_layer(v, a) for v in SWEEP for a in wf.approaches(v)]
 
 
-rule sweep_industrial:
-    """Industrial areas outside every service area, for each variant of the sweep. Optional: not part of
-    `sweep` or `all`, since nothing downstream reads them; it also downloads industrial land per level."""
-    input: [wf.config("find_unconnected_industrial_areas", v)["paths"]["industrial_unconnected_output"] for v in SWEEP]
-
-
 SCORES = wf.config("sweep_ver_ranking")["paths"]["output_dir"]
 rule compare_pop_sweep_hw_eu:
     """HydroWASTE and UWWTD agreement of every population layer of the sweep."""
@@ -278,7 +270,7 @@ rule sweep_ver_ranking_task:
     shell: STAGE
 
 
-rule sweep_scores:
+rule sweep_ver_ranking_merge:
     """Verified / unverified / single-plant ranking of the sweep, merged from its tasks."""
     input:
         wf.stamp("compare_pop_sweep_hw_eu"),
@@ -293,7 +285,7 @@ rule sweep_scores:
 
 rule sweep:
     """The sweep grid: service areas + population of every variant, their scores and ranking."""
-    input: rules.sweep_layers.input, rules.sweep_scores.output
+    input: rules.sweep_layers.input, rules.sweep_ver_ranking_merge.output
 
 
 # --------------------------------------------------------------------------- #

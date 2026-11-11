@@ -31,12 +31,11 @@ graph TD
   C --> D[find_unconnected_industrial_areas, per variant]
   D --> E[(unconnected industrial areas)]
 ```
-Snakemake rules `download_and_vectorize_lvl<level>` and `find_unconnected_industrial_areas__<variant tag>`; target `sweep_industrial` runs the second for every sweep variant.
+Snakemake rules `download_and_vectorize_lvl<level>` and `find_unconnected_industrial_areas__<variant tag>`, run by the `analysis` target for the configured variant.
 
 ## Run Instructions
 ```bash
-snakemake --profile workflow/profiles/slurm all               # configured variant
-snakemake --profile workflow/profiles/slurm sweep_industrial  # every variant of the sweep
+snakemake --profile workflow/profiles/slurm analysis          # configured variant (with the rest of the analysis)
 python -m wwtp.industrial_analysis.find_unconnected_industrial_areas --level 6
 ```
 

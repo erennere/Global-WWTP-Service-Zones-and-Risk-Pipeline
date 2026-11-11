@@ -69,8 +69,8 @@ FIGURES = {
     "interactive_unconnected_industrial_map",
     "figures",
 }
-INDUSTRIAL = {"find_unconnected_industrial_areas", "download_and_vectorize"}  # sweep_industrial only
-SWEEP = {"compare_pop_sweep_hw_eu", "sweep_ver_ranking_task", "sweep_scores", "sweep_layers", "sweep"}
+INDUSTRIAL = {"find_unconnected_industrial_areas", "download_and_vectorize"}  # configured variant only
+SWEEP = {"compare_pop_sweep_hw_eu", "sweep_ver_ranking_task", "sweep_ver_ranking_merge", "sweep_layers", "sweep"}
 
 
 def test_snakemake_alone_runs_nothing(work):

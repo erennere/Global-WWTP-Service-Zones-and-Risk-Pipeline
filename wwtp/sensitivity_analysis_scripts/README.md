@@ -38,8 +38,8 @@ The grid is `wwtp.workflow.sweep_variants()`: every level, weighting and buffer 
 
 ## Run Instructions
 ```bash
-snakemake --profile workflow/profiles/slurm sweep          # service areas and population layers of the grid
-snakemake --profile workflow/profiles/slurm sweep_scores   # ... and the comparison and ranking
+snakemake --profile workflow/profiles/slurm sweep          # service areas, population, HydroWASTE/UWWTD comparison and ranking
+snakemake --profile workflow/profiles/slurm sweep_layers   # only the service areas and population layers
 python -m wwtp.sensitivity_analysis_scripts.sweep_ver_ranking --task-id 0   # one ranking task
 ```
 
