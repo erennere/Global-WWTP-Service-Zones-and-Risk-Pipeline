@@ -28,6 +28,7 @@ import pandas as pd
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from .. import provenance
+from ..geo_utils import read_located_plants
 from ..utils import atomic_output, configure_logging, default_cpu_workers, select_industrial_categories
 from .. import pipelines as _pipelines_module
 from ..pipelines import (
@@ -61,7 +62,7 @@ def load_wwtps(cfg: dict, approach_id: str) -> gpd.GeoDataFrame:
     path = cfg["paths"]["annotated_all_filepath"]
     logger.info(f"Loading WTTPs from {path}...")
 
-    gdf = gpd.read_file(path, driver="GPKG")
+    gdf = read_located_plants(path)
     logger.info(f"Loaded {len(gdf)} WTTPs")
 
     basin_col = cfg["basin_column_name"]

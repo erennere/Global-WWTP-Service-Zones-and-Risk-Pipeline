@@ -66,6 +66,7 @@ def dissolve_overlapping_geometries_fast(subdf, radius, convex=False):
     # 4. Building the Graph (The DFS replacement)
     # We treat each row index as a node and an intersection as an edge
     g = nx.Graph()
+    g.add_nodes_from(range(len(subdf)))  # a geometry that meets nothing (even itself) is still its own group
     g.add_edges_from(zip(left_indices, right_indices))
 
     # 5. Extracting Connected Components

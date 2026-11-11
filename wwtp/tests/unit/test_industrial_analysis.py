@@ -193,7 +193,7 @@ def test_load_wwtps_adds_basin_info_when_missing_for_approach_one(mock_cfg, monk
 
     assert result[basin_col].tolist() == [101, 202]
     assert read_calls == [
-        (cfg["paths"]["annotated_all_filepath"], "GPKG"),
+        (cfg["paths"]["annotated_all_filepath"], None),  # geo_utils.read_located_plants
         (cfg["paths"]["watershed"], "GPKG"),
     ]
 

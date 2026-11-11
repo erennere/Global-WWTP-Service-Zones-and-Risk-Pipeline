@@ -362,7 +362,7 @@ def prepare_data(cfg):
         download_overture_maps,
         intersect_with_polygon_sindex,
     )
-    from .geo_utils import buffer_geometry
+    from .geo_utils import buffer_geometry, read_located_plants
     from .utils import atomic_output, select_industrial_categories
 
     logger.info("Preparing input data...")
@@ -384,7 +384,7 @@ def prepare_data(cfg):
             crs="epsg:4326",
         )
     else:
-        gdf_bbox = gpd.read_file(paths["annotated_all_filepath"])
+        gdf_bbox = read_located_plants(paths["annotated_all_filepath"])
         if "final_geometry" in gdf_bbox.columns:
             gdf_bbox["geometry_wkt"] = gdf_bbox["geometry"].apply(to_wkt)
             gdf_bbox["geometry"] = gdf_bbox["final_geometry"]

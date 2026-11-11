@@ -200,6 +200,25 @@ def estimate_utm_crs(gdf):
         return CRS.from_epsg(3857)
 
 
+def read_located_plants(filepath):
+    """Read a plant layer and leave out the plants without a location.
+
+    The location correction keeps plants it found not to exist (``WWTP_exists`` False, e.g. a
+    HydroWASTE point with no plant on the imagery) but clears their geometry. No spatial stage can
+    use them: they get no service area and serve nobody.
+    """
+    gdf = gpd.read_file(filepath)
+    missing = gdf.geometry.isna() | gdf.geometry.is_empty
+    if missing.any():
+        logger.info(
+            "%s: %d of %d plants have no location (WWTP_exists False) and are left out",
+            filepath,
+            int(missing.sum()),
+            len(gdf),
+        )
+    return gdf[~missing].copy()
+
+
 def buffer_geometry(geom):
     """Apply a zero-buffer topology fix to polygon geometries.
 

@@ -704,3 +704,28 @@ def test_find_diff_pop_can_resolve_its_country_layer():
 
     cfg = load_config(script_name="find_diff_pop")
     assert cfg["paths"]["overture"] and cfg["country_boundary_column"]
+
+
+def test_plants_without_location_are_left_out_at_load(tmp_path, caplog):
+    """Cluster run 2026-11-11: 5,042 plants with WWTP_exists False have no geometry. They reached
+    create_voronoi, sat in no overlap group, and approach 0 stopped with KeyError: 53881."""
+    path = tmp_path / "plants.gpkg"
+    gpd.GeoDataFrame(
+        {"WASTE_ID": [1, 2, 3], "WWTP_exists": [None, "False", "True"], "geometry": [Point(0, 0), None, Point(1, 1)]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    ).to_file(path, driver="GPKG")
+    with caplog.at_level("INFO"):
+        plants = geo_utils.read_located_plants(str(path))
+    assert plants["WASTE_ID"].tolist() == [1, 3]
+    assert "1 of 3 plants have no location" in caplog.text
+
+
+def test_a_geometry_that_meets_nothing_is_its_own_overlap_group():
+    sites = gpd.GeoDataFrame(
+        {"some_id": [0, 1, 2], "geometry": [Point(10, 50), Point(10.0001, 50), Point()]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    groups, _ = sa.dissolve_overlapping_geometries_fast(sites, 1000)
+    assert sorted(sorted(g) for g in groups) == [[0, 1], [2]]
