@@ -5,6 +5,7 @@ the main geospatial table via the numeric identifier encoded in image names.
 """
 
 import argparse
+import logging
 import os
 import re
 
@@ -13,6 +14,8 @@ import pandas as pd
 
 from wwtp.starter import add_standard_override_arguments, load_config, parse_config_overrides
 from wwtp.utils import atomic_output, configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 def decode_gen_text(text):
@@ -79,7 +82,6 @@ def main():
     overrides = parse_config_overrides(args=parse_args())
     cfg = load_config(script_name="merge_annotations", **overrides)
 
-    image_input_dir = cfg["paths"]["annotated_images_output_dir"]
     filepath = cfg["paths"]["annotations_results_filepath"]
 
     df = pd.read_csv(filepath)
@@ -91,7 +93,6 @@ def main():
     df[["category_number", "category_name", "justification"]] = df["gen_text"].apply(
         lambda x: pd.Series(decode_gen_text(x))
     )
-    df["filepath"] = df["image"].apply(lambda x: os.path.join(image_input_dir, x))
 
     points_df = gpd.read_file(cfg["paths"]["corrected_all_filepath"])
     if "idx" not in points_df.columns:
@@ -103,7 +104,15 @@ def main():
     df["idx"] = df["image"].apply(parse_idx_from_image_name)
     df = df[df["idx"].notna()].copy()
     df["idx"] = df["idx"].astype(int)
-    df.drop(columns=["filepath", "gen_text"], inplace=True)
+    # Only the labels join the plants. Other columns of the results file (image name, model output) could
+    # collide with columns an earlier merge left in the plant table (image, image_x, image_y).
+    df = df[["idx", *annotation_cols]]
+    duplicated = df["idx"].duplicated(keep="first")
+    if duplicated.any():
+        # Several labels for one plant would duplicate its row; keep the first, as the site-id dedupe
+        # in create_voronoi would.
+        logger.warning("%d plants have more than one label in %s; keeping the first", duplicated.sum(), filepath)
+        df = df[~duplicated]
 
     # Merge parsed annotations onto the geospatial points table.
     # Existing annotation values in points_df are kept unless overridden by df.
@@ -112,7 +121,7 @@ def main():
         col_x, col_y = f"{col}_x", f"{col}_y"
         if col_x in merged_df.columns and col_y in merged_df.columns:
             merged_df[col] = merged_df[col_y].where(merged_df[col_y].notna(), merged_df[col_x])
-            merged_df.drop(columns=[col_x, col_y], inplace=True)
+            merged_df = merged_df.drop(columns=[col_x, col_y])
     # Write to a NEW path, never back onto corrected_all_filepath: that was a
     # self-loop (read and overwrite the same file) that destroyed the
     # distinction between annotated and unannotated data on every re-run.

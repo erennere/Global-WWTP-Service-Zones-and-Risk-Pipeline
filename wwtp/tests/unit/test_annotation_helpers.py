@@ -154,3 +154,56 @@ def test_merge_annotations_main_requires_idx_column_in_points(monkeypatch, tmp_p
 
     with pytest.raises(KeyError, match="required 'idx' column"):
         merge_annotations.main()
+
+
+def test_merge_annotations_joins_only_the_labels(monkeypatch, tmp_path, caplog):
+    """A plant table that went through earlier merges (image, image_x, image_y left in it) and a results
+    file with extra columns and a plant labelled twice: one row per plant, the first label wins."""
+    cfg = {
+        "paths": {
+            "annotated_images_output_dir": str(tmp_path / "images"),
+            "annotations_results_filepath": str(tmp_path / "annotations.csv"),
+            "corrected_all_filepath": str(tmp_path / "corrected_all.gpkg"),
+            "annotated_all_filepath": str(tmp_path / "annotated_all.gpkg"),
+        }
+    }
+    annotations_df = pd.DataFrame(
+        {
+            "image": ["tile_1.png", "tile_1.png", "tile_2.png"],
+            "gen_text": [
+                "Decision: 1. Residential\nJustification: lagoon",
+                "Decision: 3. Industrial\nJustification: second run",
+                "Decision: 3. Industrial\nJustification: reactors",
+            ],
+            "model": ["m", "m", "m"],
+        }
+    )
+    points_df = gpd.GeoDataFrame(
+        {
+            "idx": [1, 2, 3],
+            "image": ["a", "b", "c"],
+            "image_x": ["a", "b", "c"],
+            "image_y": ["a", "b", "c"],
+            "category_name": ["old", "old", "old"],
+            "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    written = {}
+    monkeypatch.setattr(merge_annotations, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(merge_annotations, "load_config", lambda **overrides: cfg)
+    monkeypatch.setattr(merge_annotations.pd, "read_csv", lambda path: annotations_df.copy())
+    monkeypatch.setattr(merge_annotations.gpd, "read_file", lambda path: points_df.copy())
+    monkeypatch.setattr(
+        gpd.GeoDataFrame, "to_file", lambda self, filename=None, **kwargs: written.setdefault("df", self.copy())
+    )
+
+    with caplog.at_level("WARNING"):
+        merge_annotations.main()
+
+    out = written["df"]
+    assert out["idx"].tolist() == [1, 2, 3]
+    assert out["category_name"].tolist() == ["Residential", "Industrial", "old"]
+    assert {"image", "image_x", "image_y"} <= set(out.columns) and "model" not in out.columns
+    assert "1 plants have more than one label" in caplog.text
