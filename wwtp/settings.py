@@ -547,8 +547,22 @@ class JobResources(Strict):
     runtime: PositiveInt  # minutes
 
 
+# Stages that prepare inputs once (workflow.ONE_TIME_STAGES): rule names, or 'annotations' for the four
+# annotation rules.
+OneTimeStage = Literal[
+    "combine_locations",
+    "annotations",
+    "annotation_grids",
+    "wastewater_join",
+    "download_bing_annotate",
+    "merge_annotations",
+    "download_pop",
+]
+
+
 class Workflow(Section):
     bing_annotate_shards: PositiveInt
+    run_once: list[OneTimeStage]
     resources: dict[str, JobResources]
     paths: Paths
 

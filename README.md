@@ -153,12 +153,13 @@ snakemake --profile workflow/profiles/slurm      # run it as SLURM jobs (one job
 snakemake --profile workflow/profiles/slurm sweep             # service areas + population, whole sweep grid
 snakemake --profile workflow/profiles/slurm sweep_scores      # ... plus HydroWASTE/UWWTD scores and ranking
 snakemake --profile workflow/profiles/slurm sweep_industrial  # unconnected industrial areas per sweep variant
-snakemake --profile workflow/profiles/slurm annotations       # grids, OSM context, annotated images, merged labels
+snakemake --profile workflow/profiles/slurm --config run_once=annotations annotations  # grids, OSM context, images, labels
 snakemake --profile workflow/profiles/slurm fig1              # Figure 1
 ```
 
 - The configured variant is the one `create_voronoi` sets in `wwtp/config.yaml` (level, version, buffer, weighting, size measure); the sweep grid is the `sweep` section. Change either there or in an overlay, not on the command line, so the files Snakemake expects match what the stages write.
-- The default target `all` builds, for that variant: the merged plants and annotations if missing, basins, WorldPop rasters, service areas (approaches 0 and 1, and 2 with `city_voronoi`), population layers, the non-served population (`create_rasters` as `workflow`-configured country shards plus a merge), rivers, impact polygons, population at risk, the population differences, the HydroWASTE/UWWTD comparisons, unconnected industrial areas and the figures.
+- One-time stages are never part of a run unless named: `combine_locations`, the image annotation (`annotation_grids`, `wastewater_join`, `download_bing_annotate`, `merge_annotations`, together `annotations`) and `download_pop`. A run takes their outputs as they are (`all_annotated_v2.gpkg`, the WorldPop rasters behind `{data_dir}/workflow/stamps/download_pop.done`) and stops before submitting anything if one is missing. Include them for one run with `--config run_once=annotations,download_pop`, or for good in `workflow.run_once`; forcing them (`-R annotation_grids`) also needs them named. If the WorldPop rasters are already in place without the stamp, `touch` it.
+- The default target `all` builds, for that variant: basins, service areas (approaches 0 and 1, and 2 with `city_voronoi`), population layers, the non-served population (`create_rasters` as `workflow`-configured country shards plus a merge), rivers, impact polygons, population at risk, the population differences, the HydroWASTE/UWWTD comparisons, unconnected industrial areas and the figures.
 - SLURM threads, memory and runtime per stage are in `wwtp/config.yaml`, section `workflow.resources`; job logs go to `{data_dir}/workflow/logs/`. Stages whose outputs cannot be listed in advance (downloads, plots) leave a marker in `{data_dir}/workflow/stamps/`.
 - On outputs made before the workflow existed (by the former shell wrappers), run `snakemake --touch` once: it marks them as up to date instead of recomputing them.
 - A single stage still runs on its own, e.g. `python -m wwtp.create_voronoi --approach 1 --weight-func add` for a one-off additive run.

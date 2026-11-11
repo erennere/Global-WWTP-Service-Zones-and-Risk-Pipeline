@@ -14,11 +14,23 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
-from . import starter
+from . import settings, starter
 from .pipelines import create_output_paths, create_pop_output_paths
 from .pop_at_risk_river_calculations.impact_polygons_pop import impact_polygons_output_path
 
 RUN_KEYS = ("level", "version", "buffer", "weight_method", "weight_func", "dynamic_buffering", "size_measure")
+
+# Stages that prepare inputs once. The workflow defines their rules only when a run names them
+# (workflow.run_once, or ``snakemake --config run_once=...``); otherwise their outputs are plain inputs.
+ONE_TIME_STAGES = {
+    "combine_locations": ("combine_locations",),
+    "annotations": ("annotation_grids", "wastewater_join", "download_bing_annotate", "merge_annotations"),
+    "annotation_grids": ("annotation_grids",),
+    "wastewater_join": ("wastewater_join",),
+    "download_bing_annotate": ("download_bing_annotate",),
+    "merge_annotations": ("merge_annotations",),
+    "download_pop": ("download_pop",),
+}
 
 
 @dataclass(frozen=True)
@@ -106,6 +118,21 @@ def sweep_variants(weight_funcs=None):
                         Variant(str(level), default.version, default.buffer, method, weight_func, True, measure)
                     )
     return variants
+
+
+def one_time_rules(snakemake_config):
+    """The one-time rules this run includes.
+
+    ``snakemake --config run_once=annotations,download_pop`` names them for one run (a comma-separated
+    string or a YAML list); without it, ``workflow.run_once`` in config.yaml does (default: none).
+    """
+    names = snakemake_config["run_once"] if "run_once" in snakemake_config else config("workflow")["run_once"]
+    if isinstance(names, str):
+        names = [name.strip() for name in names.split(",") if name.strip()]
+    unknown = [name for name in names if name not in ONE_TIME_STAGES]
+    if unknown:
+        raise settings.SettingsError(f"run_once: unknown stage(s) {unknown}; choose from {list(ONE_TIME_STAGES)}")
+    return {rule for name in names for rule in ONE_TIME_STAGES[name]}
 
 
 def approaches(variant):

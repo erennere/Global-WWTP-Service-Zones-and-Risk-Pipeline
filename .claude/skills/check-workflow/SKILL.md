@@ -26,6 +26,9 @@ the three is the failure this checklist looks for.
 - **Late binding**: a value from a `for` loop must reach a rule through `params`, `input` or `output`,
   never through the `shell:` string (it is formatted when the job runs, when the loop variable already
   holds its last value).
+- **One-time stages**: rules that prepare inputs once (`wf.ONE_TIME_STAGES`, the same names as
+  `settings.OneTimeStage`) are defined only inside `if "<rule>" in ONCE:`, and no rule outside that set
+  has inputs that change with `ONCE`, so naming one for a run never re-runs the rules downstream of it.
 - **Resources**: every stage a rule runs has an entry in `wwtp/config.yaml` → `workflow.resources`
   (`wwtp/tests/unit/test_workflow.py` checks this).
 - **Shell scripts**: the remaining `.sh` files (`figures/fig1/*/render_*.sh`) pass `shellcheck` (the

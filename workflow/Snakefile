@@ -13,8 +13,12 @@ Targets (run from the repository root):
     snakemake sweep                                service areas + population for the whole sweep grid
     snakemake sweep_scores                         ... and their HydroWASTE/UWWTD scores and ranking
     snakemake sweep_industrial                     industrial areas outside the service areas, per sweep variant
-    snakemake annotations                          grids, OSM context, annotated images, merged labels
+    snakemake --config run_once=annotations annotations    grids, OSM context, annotated images, merged labels
     snakemake fig1                                 Figure 1 (see workflow/rules/fig1.smk)
+
+One-time stages (combine_locations, the four annotation rules, download_pop) are left out
+of every run: their outputs are taken as they are. Name them to include them in one run,
+e.g. `--config run_once=annotations,download_pop` (or list them in workflow.run_once).
 
 The first time on outputs made by the old shell wrappers, `snakemake --touch`
 marks them as up to date instead of recomputing them.
@@ -29,6 +33,7 @@ PY = sys.executable
 DEFAULT = wf.default_variant()
 SWEEP = wf.sweep_variants()
 VARIANTS = list({v.tag: v for v in [DEFAULT, *SWEEP]}.values())  # the configured run is usually in the grid too
+ONCE = wf.one_time_rules(config)  # one-time rules this run includes (default: none)
 
 
 # One shell template for every stage. The module and arguments are params, because a
@@ -68,87 +73,100 @@ rule all:
 # --------------------------------------------------------------------------- #
 # Inputs shared by all variants                                               #
 # --------------------------------------------------------------------------- #
+# One-time stages: defined only when this run names them (ONCE). Otherwise their outputs are
+# plain inputs that must exist, so a missing intermediate (an OSM layer, an image stamp) cannot
+# pull the whole annotation chain back in. Downstream rules list the same inputs either way.
 MERGE = wf.config("final_data_merge")["paths"]
-rule combine_locations:
-    """Corrected plant locations: OSM-snapped, segmentation results, national datasets (one job, in order)."""
-    output:
-        MERGE["corrected_all_filepath"],
-        MERGE["new_points_filepath"],
-    params: module="data_merge.correct_locations_w_OSM", cli=[]
-    log: wf.log("combine_locations")
-    threads: threads("combine_locations")
-    resources: **res("combine_locations")
-    shell:
-        STAGE + then("data_merge.merge_seg_results", "--variant old") + then("data_merge.final_data_merge") + \
-        then("data_merge.merge_seg_results", "--variant new")
+if "combine_locations" in ONCE:
+    rule combine_locations:
+        """Corrected plant locations: OSM-snapped, segmentation results, national datasets (one job, in order)."""
+        output:
+            MERGE["corrected_all_filepath"],
+            MERGE["new_points_filepath"],
+        params: module="data_merge.correct_locations_w_OSM", cli=[]
+        log: wf.log("combine_locations")
+        threads: threads("combine_locations")
+        resources: **res("combine_locations")
+        shell:
+            STAGE + then("data_merge.merge_seg_results", "--variant old") + then("data_merge.final_data_merge") + \
+            then("data_merge.merge_seg_results", "--variant new")
 
 
-ANNOT = wf.config("download_bing_annotate")["paths"]
 GRIDS = wf.annotation_grid()
-rule annotation_grids:
-    """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02)."""
-    input: MERGE["corrected_all_filepath"]
-    output:
-        GRIDS,
-        touch(wf.stamp("osm_extract")),
-    params: module="annotation_scripts.NEW_01_GENERATEGRIDS", cli=[]
-    log: wf.log("annotation_grids")
-    threads: threads("annotation_grids")
-    resources: **res("annotation_grids")
-    shell: STAGE + then("annotation_scripts.NEW_02_EXTRACTOSMDATAFULL_GEOJSON")
+if "annotation_grids" in ONCE:
+    rule annotation_grids:
+        """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02)."""
+        input: MERGE["corrected_all_filepath"]
+        output:
+            GRIDS,
+            touch(wf.stamp("osm_extract")),
+        params: module="annotation_scripts.NEW_01_GENERATEGRIDS", cli=[]
+        log: wf.log("annotation_grids")
+        threads: threads("annotation_grids")
+        resources: **res("annotation_grids")
+        shell: STAGE + then("annotation_scripts.NEW_02_EXTRACTOSMDATAFULL_GEOJSON")
 
 
-rule wastewater_join:
-    """The OSM tiles merged into polygon and line layers (NEW_03), read by the image annotation."""
-    input: GRIDS, wf.stamp("osm_extract")
-    output: wf.osm_layers()
-    params: module="annotation_scripts.NEW_03_WASTEWATERJOIN_GEOJSON", cli=[]
-    log: wf.log("wastewater_join")
-    threads: threads("wastewater_join")
-    resources: **res("wastewater_join")
-    shell: STAGE
+if "wastewater_join" in ONCE:
+    rule wastewater_join:
+        """The OSM tiles merged into polygon and line layers (NEW_03), read by the image annotation."""
+        input: GRIDS, wf.stamp("osm_extract")
+        output: wf.osm_layers()
+        params: module="annotation_scripts.NEW_03_WASTEWATERJOIN_GEOJSON", cli=[]
+        log: wf.log("wastewater_join")
+        threads: threads("wastewater_join")
+        resources: **res("wastewater_join")
+        shell: STAGE
 
 
 BING_SHARDS = wf.config("workflow")["bing_annotate_shards"]
-rule download_bing_annotate:
-    """Annotated imagery, one job per share of the tiles."""
-    input: GRIDS, wf.osm_layers()
-    output: touch(wf.stamp("bing_annotate_{shard}"))
-    params:
-        module="annotation_scripts.download_bing_annotate",
-        cli=lambda w: [w.shard, "--num-instances", str(BING_SHARDS)],
-    log: wf.log("bing_annotate_{shard}")
-    threads: threads("download_bing_annotate")
-    resources: **res("download_bing_annotate")
-    shell: STAGE
+if "download_bing_annotate" in ONCE:
+    rule download_bing_annotate:
+        """Annotated imagery, one job per share of the tiles."""
+        input: GRIDS, wf.osm_layers()
+        output: touch(wf.stamp("bing_annotate_{shard}"))
+        params:
+            module="annotation_scripts.download_bing_annotate",
+            cli=lambda w: [w.shard, "--num-instances", str(BING_SHARDS)],
+        log: wf.log("bing_annotate_{shard}")
+        threads: threads("download_bing_annotate")
+        resources: **res("download_bing_annotate")
+        shell: STAGE
 
 
-rule merge_annotations:
-    """Plant types from the image labels (inference results come from outside this workflow)."""
-    input:
-        MERGE["corrected_all_filepath"],
-        wf.config("merge_annotations")["paths"]["annotations_results_filepath"],
-        expand(wf.stamp("bing_annotate_{shard}"), shard=range(BING_SHARDS)),
-    output: wf.config("merge_annotations")["paths"]["annotated_all_filepath"]
-    params: module="annotation_scripts.merge_annotations", cli=[]
-    log: wf.log("merge_annotations")
-    threads: threads("merge_annotations")
-    resources: **res("merge_annotations")
-    shell: STAGE
+MERGED_LABELS = wf.config("merge_annotations")["paths"]["annotated_all_filepath"]
+if "merge_annotations" in ONCE:
+    rule merge_annotations:
+        """Plant types from the image labels (inference results come from outside this workflow).
+
+        Waits for the image download only when this run downloads images too.
+        """
+        input:
+            MERGE["corrected_all_filepath"],
+            wf.config("merge_annotations")["paths"]["annotations_results_filepath"],
+            expand(wf.stamp("bing_annotate_{shard}"), shard=range(BING_SHARDS))
+            if "download_bing_annotate" in ONCE else [],
+        output: MERGED_LABELS
+        params: module="annotation_scripts.merge_annotations", cli=[]
+        log: wf.log("merge_annotations")
+        threads: threads("merge_annotations")
+        resources: **res("merge_annotations")
+        shell: STAGE
 
 
 rule annotations:
-    input: rules.merge_annotations.output
+    input: MERGED_LABELS
 
 
-rule download_pop:
-    """WorldPop rasters of every country, start_year..end_year (one folder per country)."""
-    output: touch(wf.stamp("download_pop"))
-    params: module="download_pop", cli=[]
-    log: wf.log("download_pop")
-    threads: threads("download_pop")
-    resources: **res("download_pop")
-    shell: STAGE
+if "download_pop" in ONCE:
+    rule download_pop:
+        """WorldPop rasters of every country, start_year..end_year (one folder per country)."""
+        output: touch(wf.stamp("download_pop"))
+        params: module="download_pop", cli=[]
+        log: wf.log("download_pop")
+        threads: threads("download_pop")
+        resources: **res("download_pop")
+        shell: STAGE
 
 
 for level in sorted({v.level for v in VARIANTS}):
