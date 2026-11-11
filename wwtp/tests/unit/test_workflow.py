@@ -65,3 +65,17 @@ def test_every_stage_of_the_snakefile_has_resources():
     }
     for stage in stages:
         assert set(wf.resources(stage)) == {"threads", "mem_mb", "runtime"}, stage
+
+
+def test_no_two_variants_write_the_same_file():
+    """Every per-variant output carries the whole tag (an industrial name without weight_func once made
+    the 'li' and 'li_mult' variants write one file, and Snakemake refused the sweep)."""
+    for outputs in (
+        [wf.service_areas(v, a) for v in wf.sweep_variants() for a in wf.approaches(v)],
+        [wf.population_layer(v, a) for v in wf.sweep_variants() for a in wf.approaches(v)],
+        [
+            wf.config("find_unconnected_industrial_areas", v)["paths"]["industrial_unconnected_output"]
+            for v in wf.sweep_variants()
+        ],
+    ):
+        assert len(set(outputs)) == len(outputs)

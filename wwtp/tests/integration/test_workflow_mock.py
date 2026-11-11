@@ -42,7 +42,7 @@ def run(tmp_path_factory):
     stamps = data / "workflow" / "stamps"
     stamps.mkdir(parents=True)
     (stamps / "download_pop.done").touch()  # the mock world brings its rasters; nothing to download
-    result = _snakemake(work, "--keep-going")
+    result = _snakemake(work, "--keep-going", "analysis", "figures")
     yield {"work": work, "data": data, "result": result}
     shutil.rmtree(work, ignore_errors=True)
 
@@ -106,7 +106,7 @@ def test_create_rasters_ran_as_shards_and_merged(run):
 
 
 def test_a_second_run_has_nothing_to_do(run):
-    again = _snakemake(run["work"], "-n")
+    again = _snakemake(run["work"], "-n", "analysis", "figures")
     assert again.returncode == 0 and "Nothing to be done" in again.stdout + again.stderr
 
 

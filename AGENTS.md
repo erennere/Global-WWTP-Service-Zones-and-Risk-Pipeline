@@ -25,7 +25,7 @@ Use these commands from repository root:
 - `pytest -q`
 - `pytest -m unit -q`
 - `pre-commit run --all-files` (ruff lint + format, gitleaks, shellcheck, ...)
-- `snakemake -n` (what the workflow would run)
+- `snakemake -n analysis` (what the workflow would run; targets: `analysis`, `figures`, `sweep`, `all`, `fig1`)
 
 ## Architecture Boundaries
 - Keep `load_config` in [wwtp/starter.py](wwtp/starter.py) orchestration-focused.

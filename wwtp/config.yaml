@@ -599,7 +599,7 @@ find_unconnected_industrial_areas:
     # this script never reads or overwrites the all-plant create_voronoi outputs.
     industrial_voronoi_dir: '{data_dir}/industrial_results/voronoi'
     industrial_buffers_dir: '{data_dir}/industrial_results/buffers'
-    industrial_unconnected_output: '{data_dir}/industrial_results/v{version}/lvl{level}/bf{buffer}/{weight_type}/unconnected_industrial_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}_mp{industrial_min_cells}.gpkg'
+    industrial_unconnected_output: '{data_dir}/industrial_results/v{version}/lvl{level}/bf{buffer}/{weight_type}/unconnected_industrial_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}_mp{industrial_min_cells}.gpkg'
 
 verification_script:
   level: null
@@ -669,7 +669,7 @@ interactive_unconnected_industrial_map:
     zip_tiles: true
   paths:
     data_dir: null
-    industrial_unconnected_input: '{data_dir}/industrial_results/v{version}/lvl{level}/bf{buffer}/{weight_type}/unconnected_industrial_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}_mp{industrial_min_cells}.gpkg'
+    industrial_unconnected_input: '{data_dir}/industrial_results/v{version}/lvl{level}/bf{buffer}/{weight_type}/unconnected_industrial_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}_mp{industrial_min_cells}.gpkg'
     industrial_unconnected_output: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/industrial_unconnected_for_map_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
     industrial_unconnected_tiles_dir: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/industrial_unconnected_tiles_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}'
     industrial_unconnected_tiles_zip_filepath: '{data_dir}/figures/v{version}/lvl{level}/{weight_type}/industrial_unconnected_tiles_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.zip'

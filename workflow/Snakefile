@@ -6,15 +6,18 @@ the same config resolution and path helpers the stages use. Settings live in
 wwtp/config.yaml and its layers (WWTP_CONFIG_OVERLAYS, wwtp/config.local.yaml),
 SLURM resources in its `workflow` section.
 
-Targets (run from the repository root):
-    snakemake -n                                   what would run for the configured variant
-    snakemake --profile workflow/profiles/local    the configured variant on this machine
-    snakemake --profile workflow/profiles/slurm    the same as SLURM jobs
-    snakemake sweep                                service areas + population for the whole sweep grid
-    snakemake sweep_scores                         ... and their HydroWASTE/UWWTD scores and ranking
-    snakemake sweep_industrial                     industrial areas outside the service areas, per sweep variant
+Targets (run from the repository root; add --profile workflow/profiles/local or .../slurm, -n to only plan).
+A run does only the part it names; `snakemake` alone lists the targets and runs nothing.
+    snakemake analysis          configured variant: service areas, population, non-served population,
+                                river risk, population differences, HydroWASTE/UWWTD comparisons,
+                                unconnected industrial areas
+    snakemake figures           configured variant's figures (and whatever of the analysis they need)
+    snakemake sweep             whole sweep grid: service areas + population, scores and ranking,
+                                unconnected industrial areas
+        sweep_layers / sweep_scores / sweep_industrial    one part of it
+    snakemake all               analysis + figures + sweep
+    snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake --config run_once=annotations annotations    grids, OSM context, annotated images, merged labels
-    snakemake fig1                                 Figure 1 (see workflow/rules/fig1.smk)
 
 One-time stages (combine_locations, the four annotation rules, download_pop) are left out
 of every run: their outputs are taken as they are. Name them to include them in one run,
@@ -59,15 +62,23 @@ def threads(stage):
     return wf.resources(stage)["threads"]
 
 
-rule all:
-    input:
-        wf.population_layer(DEFAULT, wf.figure_approach(DEFAULT)),
-        wf.config("find_pop_in_danger_pop", DEFAULT)["paths"]["pop_at_risk_output_filepath"],
-        wf.diff_layer(DEFAULT),
-        wf.stamp("hw_comparison", DEFAULT),
-        wf.stamp("eu_comparison", DEFAULT),
-        wf.config("find_unconnected_industrial_areas", DEFAULT)["paths"]["industrial_unconnected_output"],
-        wf.stamp("figures", DEFAULT),
+TARGETS = {
+    "analysis": "configured variant: service areas, population, non-served, river risk, comparisons, industrial",
+    "figures": "configured variant's figures (and whatever of the analysis they need)",
+    "sweep": "whole sweep grid: service areas + population, scores and ranking, industrial",
+    "all": "analysis + figures + sweep",
+    "fig1": "Figure 1 from its prepared inputs",
+    "annotations": "with --config run_once=annotations: grids, OSM context, images, merged labels",
+}
+
+
+rule help:
+    """The default target: runs nothing and lists the targets, so a run always names its part."""
+    localrule: True
+    run:
+        print("Name what to run, e.g. `snakemake --profile workflow/profiles/slurm analysis`:")
+        for target, what in TARGETS.items():
+            print(f"  {target:<12} {what}")
 
 
 # --------------------------------------------------------------------------- #
@@ -230,7 +241,8 @@ for v in VARIANTS:
         shell: STAGE
 
 
-rule sweep:
+rule sweep_layers:
+    """Service areas and population of every variant of the sweep."""
     input: [wf.population_layer(v, a) for v in SWEEP for a in wf.approaches(v)]
 
 
@@ -242,7 +254,7 @@ rule sweep_industrial:
 SCORES = wf.config("sweep_ver_ranking")["paths"]["output_dir"]
 rule compare_pop_sweep_hw_eu:
     """HydroWASTE and UWWTD agreement of every population layer of the sweep."""
-    input: rules.sweep.input
+    input: rules.sweep_layers.input
     output: touch(wf.stamp("compare_pop_sweep_hw_eu"))
     params: module="sensitivity_analysis_scripts.compare_pop_sweep_hw_eu", cli=[]
     log: wf.log("compare_pop_sweep_hw_eu")
@@ -252,7 +264,7 @@ rule compare_pop_sweep_hw_eu:
 
 
 rule sweep_ver_ranking_task:
-    input: rules.sweep.input
+    input: rules.sweep_layers.input
     output: f"{SCORES}/partial/task_{{task}}_metrics.csv"
     params: module="sensitivity_analysis_scripts.sweep_ver_ranking", cli=lambda w: ["--task-id", str(int(w.task))]
     log: wf.log("sweep_ver_ranking_{task}")
@@ -272,6 +284,11 @@ rule sweep_scores:
     threads: threads("sweep_ver_ranking")
     resources: **res("sweep_ver_ranking")
     shell: STAGE
+
+
+rule sweep:
+    """Everything of the sweep grid: layers, scores and ranking, unconnected industrial areas."""
+    input: rules.sweep_layers.input, rules.sweep_scores.output, rules.sweep_industrial.input
 
 
 # --------------------------------------------------------------------------- #
@@ -425,6 +442,27 @@ rule:
     name: f"figures__{v.tag}"
     input: [wf.stamp(figure, v) for figure in FIGURE_INPUTS]
     output: touch(wf.stamp("figures", v))
+
+
+# --------------------------------------------------------------------------- #
+# Targets: each part on its own, `all` for every part                         #
+# --------------------------------------------------------------------------- #
+rule analysis:
+    input:
+        FIG,
+        RISK["find_pop_in_danger_pop"]["pop_at_risk_output_filepath"],
+        wf.diff_layer(v),
+        wf.stamp("hw_comparison", v),
+        wf.stamp("eu_comparison", v),
+        RISK["find_unconnected_industrial_areas"]["industrial_unconnected_output"],
+
+
+rule figures:
+    input: wf.stamp("figures", v)
+
+
+rule all:
+    input: rules.analysis.input, rules.figures.input, rules.sweep.input
 
 
 include: "rules/fig1.smk"

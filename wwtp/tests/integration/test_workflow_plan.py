@@ -1,4 +1,4 @@
-"""What `snakemake -n` plans: the one-time stages stay out unless the run names them."""
+"""What `snakemake -n` plans: each target only its part, one-time stages only when named."""
 
 import os
 import subprocess
@@ -48,23 +48,71 @@ def _plan(work, *args):
     return result, jobs
 
 
+def _kind(job):
+    """Rule name without the variant tag: create_voronoi__v2_lvl6_..._a1 -> create_voronoi."""
+    return job.split("__")[0]
+
+
+RISK = {
+    "create_rasters",
+    "find_unserved_pop",
+    "find_intersection_river",
+    "impact_polygons_pop",
+    "find_pop_in_danger_pop",
+}
+FIGURES = {
+    "piechart_figure",
+    "piechart_interactive",
+    "sizes_interactive_map",
+    "composite_area_population_plots",
+    "pop_at_risk_figures",
+    "interactive_unconnected_industrial_map",
+    "figures",
+}
+SWEEP = {"compare_pop_sweep_hw_eu", "sweep_ver_ranking_task", "sweep_scores", "sweep_layers", "sweep"}
+
+
+def test_snakemake_alone_runs_nothing(work):
+    result, jobs = _plan(work)
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert jobs == {"help"}
+
+
+@pytest.mark.parametrize(
+    "target, wanted, unwanted",
+    [
+        ("analysis", RISK | {"hw_comparison", "eu_comparison", "find_diff_pop"}, FIGURES | SWEEP),
+        ("figures", FIGURES | RISK, SWEEP | {"hw_comparison", "eu_comparison", "find_diff_pop"}),
+        ("sweep", SWEEP - {"sweep_layers"}, FIGURES | RISK | {"hw_comparison", "eu_comparison", "find_diff_pop"}),
+        ("all", FIGURES | RISK | (SWEEP - {"sweep_layers", "sweep"}), set()),  # target rules are not jobs here
+    ],
+)
+def test_each_target_plans_only_its_part(work, target, wanted, unwanted):
+    result, jobs = _plan(work, target)
+    assert result.returncode == 0, result.stderr[-2000:]
+    kinds = {_kind(job) for job in jobs}
+    assert wanted <= kinds, wanted - kinds
+    assert not kinds & unwanted, kinds & unwanted
+    assert not kinds & ONE_TIME_RULES
+
+
 def test_a_run_starts_after_the_one_time_stages(work):
     """The annotation intermediates (OSM layers, image stamps) are missing, yet nothing of the chain is planned."""
-    result, jobs = _plan(work)
+    result, jobs = _plan(work, "analysis")
     assert result.returncode == 0, result.stderr[-2000:]
     assert any(job.startswith("create_voronoi__") for job in jobs)
     assert not jobs & ONE_TIME_RULES
 
 
 def test_forcing_a_one_time_stage_needs_it_named(work):
-    result, _ = _plan(work, "-R", "annotation_grids")
+    result, _ = _plan(work, "analysis", "-R", "annotation_grids")
     assert result.returncode != 0 and "No rule to produce annotation_grids" in result.stdout + result.stderr
 
 
 def test_a_missing_stamp_stops_the_plan_until_its_stage_is_named(work):
     os.remove(wf.stamp("download_pop"))
-    result, _ = _plan(work)
+    result, _ = _plan(work, "analysis")
     assert result.returncode != 0 and "download_pop.done" in result.stdout + result.stderr
-    result, jobs = _plan(work, "--config", "run_once=download_pop")
+    result, jobs = _plan(work, "analysis", "--config", "run_once=download_pop")
     assert result.returncode == 0, result.stderr[-2000:]
     assert "download_pop" in jobs and not jobs & (ONE_TIME_RULES - {"download_pop"})
