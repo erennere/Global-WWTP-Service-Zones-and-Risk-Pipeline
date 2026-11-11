@@ -42,6 +42,18 @@ def normalize_plane(a, b):
     return (a - min_vals) / scale, (b - min_vals) / scale
 
 
+def plane_frame(a_min, a_max, b):
+    """``normalize_plane``'s shift and scale, from the extremes of the points and the site.
+
+    Lets a caller normalise any subset of the points exactly as ``normalize_plane`` would normalise
+    all of them (the pruned site assignment works tile by tile).
+    """
+    b = np.asarray(b, dtype=float)
+    min_vals = np.minimum(a_min, b)
+    extent = float(np.max(np.maximum(a_max, b) - min_vals))
+    return min_vals, (extent if extent > 0 else 1.0)
+
+
 def auto_weight_scale(points):
     """
     Compute automatic weight scaling factor based on median nearest neighbor distance.
@@ -92,6 +104,11 @@ def default_distance_additive(a, b, weight, factor):
         distance for every site.
     """
     a, b = normalize_plane(a, b)
+    return additive_in_plane(a, b, weight, factor)
+
+
+def additive_in_plane(a, b, weight, factor):
+    """``default_distance_additive`` on already normalised coordinates."""
     effective_weight = weight / factor if factor and factor > 0 else weight
     return np.sum((a - b) ** 2, axis=-1) - effective_weight**2
 
@@ -116,6 +133,11 @@ def default_distance_multiplicative(a, b, weight, factor):
         Division by weight means weight=0 causes division error (not handled).
     """
     a, b = normalize_plane(a, b)
+    return multiplicative_in_plane(a, b, weight, factor)
+
+
+def multiplicative_in_plane(a, b, weight, factor):
+    """``default_distance_multiplicative`` on already normalised coordinates."""
     return np.sqrt(np.sum((a - b) ** 2, axis=-1)) / weight
 
 

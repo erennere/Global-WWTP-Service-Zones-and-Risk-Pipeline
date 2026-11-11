@@ -14,12 +14,24 @@ import shapely.affinity
 import shapely
 from ..geo_utils import buffer_geometry, cluster_point_indices, estimate_utm_crs
 from .size import calculate_buffer, plant_size_people
-from .weights import default_distance_multiplicative, initialize_voronoi_weights
+from .weights import (
+    additive_in_plane,
+    default_distance_additive,
+    default_distance_multiplicative,
+    initialize_voronoi_weights,
+    multiplicative_in_plane,
+    plane_frame,
+)
 from .contours import extract_contours_cv2, extract_contours_rasterio, extract_contours_scipy
 from .joins import create_centroid_points, drop_duplicates
 from .overlaps import resolve_polygon_overlaps
 
 logger = logging.getLogger(__name__)
+
+# Grid points per tile in the pruned site assignment (about 64 x 64 cells). Only speed depends on it.
+TILE_POINTS = 4096
+# Groups with at least this many grid points log their progress.
+PROGRESS_POINTS = 2_000_000
 
 
 def geometry_contains_points(geometry, points):
@@ -31,6 +43,7 @@ def geometry_contains_points(geometry, points):
     if points is None or len(points) == 0:
         return np.array([], dtype=bool)
 
+    shapely.prepare(geometry)  # same answers, much faster for many points
     x_coords = points[:, 0]
     y_coords = points[:, 1]
 
@@ -196,9 +209,10 @@ def assign_sites_streaming(valid_points, points, weights, distance_fn, factor):
     """
     Assign each grid point to nearest Voronoi site using weighted distance.
 
-    Computes distance from each grid point to all sites using the provided
-    distance function, tracking minimum distance site for streaming computation.
-    Supports multiplicative and additive weighting schemes.
+    For the two built-in distance functions the grid is cut into tiles and each tile only compares the
+    sites that can still win one of its points (``_assign_sites_pruned``); the result is the same as
+    comparing every site, ties included (the lowest site index wins). Any other distance function
+    compares every site with every point.
 
     Parameters
     ----------
@@ -224,6 +238,8 @@ def assign_sites_streaming(valid_points, points, weights, distance_fn, factor):
     large grids.
     """
 
+    if distance_fn is default_distance_multiplicative or distance_fn is default_distance_additive:
+        return _assign_sites_pruned(valid_points, points, weights, distance_fn, factor)
     n_points = valid_points.shape[0]
     best_distances = np.full(n_points, np.inf)
     assignments = np.full(n_points, -1, dtype=int)
@@ -238,6 +254,116 @@ def assign_sites_streaming(valid_points, points, weights, distance_fn, factor):
     assigned_count = np.sum(assignments >= 0)
     logger.debug(f"Assignment complete: {assigned_count}/{n_points} points assigned")
     return assignments
+
+
+def _box_distance_bounds(sites, box):
+    """Smallest and largest Euclidean distance from each site to the box ``(x0, y0, x1, y1)``."""
+    x0, y0, x1, y1 = box
+    x, y = sites[:, 0], sites[:, 1]
+    near = np.hypot(np.maximum(np.maximum(x0 - x, 0.0), x - x1), np.maximum(np.maximum(y0 - y, 0.0), y - y1))
+    far = np.hypot(np.maximum(np.abs(x - x0), np.abs(x - x1)), np.maximum(np.abs(y - y0), np.abs(y - y1)))
+    return near, far
+
+
+def _assign_sites_pruned(valid_points, points, weights, distance_fn, factor):
+    """``assign_sites_streaming`` for the built-in distance functions, tile by tile.
+
+    Every distance is the one the distance function computes: the same normalisation of the whole
+    point set (``plane_frame``) and the same formula, applied to a tile's points. A tile skips a site
+    only when that site's smallest possible distance to the tile's box exceeds the largest possible
+    distance of some other site (with a margin for rounding), so the skipped site cannot win any of
+    the tile's points. The remaining sites are compared in index order with a strict ``<``, as in
+    the full comparison, so ties go to the same site.
+    """
+    pts = np.asarray(valid_points, dtype=float)
+    sites = np.asarray(points, dtype=float).reshape(-1, 2)
+    w = np.asarray(weights, dtype=float)
+    n_points, n_sites = len(pts), len(sites)
+    assignments = np.full(n_points, -1, dtype=int)
+    if n_points == 0 or n_sites == 0:
+        return assignments
+    multiplicative = distance_fn is default_distance_multiplicative
+    kernel = multiplicative_in_plane if multiplicative else additive_in_plane
+
+    a_min, a_max = pts.min(axis=0), pts.max(axis=0)
+    frames = [plane_frame(a_min, a_max, site) for site in sites]
+    shifts = np.array([frame[0] for frame in frames]).reshape(-1, 2)
+    scales = np.array([frame[1] for frame in frames], dtype=float)
+    site_norm = (sites - shifts) / scales[:, None]
+    effective = w / factor if factor and factor > 0 else w  # additive weight, as in additive_in_plane
+
+    def bounds(near, far):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            if multiplicative:
+                return near / scales / w, far / scales / w
+            return (near / scales) ** 2 - effective**2, (far / scales) ** 2 - effective**2
+
+    extent = np.maximum(a_max - a_min, 1.0)
+    tile = np.sqrt(extent[0] * extent[1] / n_points * TILE_POINTS)
+    tx = np.floor((pts[:, 0] - a_min[0]) / tile).astype(np.int64)
+    ty = np.floor((pts[:, 1] - a_min[1]) / tile).astype(np.int64)
+    order = np.argsort(tx * (int(ty.max()) + 1) + ty, kind="stable")
+    keys = (tx * (int(ty.max()) + 1) + ty)[order]
+    tiles = np.split(order, np.flatnonzero(np.diff(keys)) + 1)
+    report = max(1, len(tiles) // 10) if n_points >= PROGRESS_POINTS else 0
+    compared = 0
+
+    for t, idx in enumerate(tiles):
+        tile_points = pts[idx]
+        box = (*tile_points.min(axis=0), *tile_points.max(axis=0))
+        lo, hi = bounds(*_box_distance_bounds(sites, box))
+        finite = np.isfinite(hi)
+        if finite.any():
+            limit = hi[finite].min()
+            candidates = np.flatnonzero(lo <= limit + 1e-9 * (abs(limit) + np.abs(lo)) + 1e-12)
+        else:
+            candidates = np.arange(n_sites)
+        best = np.full(len(idx), np.inf)
+        chosen = np.full(len(idx), -1, dtype=int)
+        for i in candidates:
+            dist = kernel((tile_points - shifts[i]) / scales[i], site_norm[i], w[i], factor)
+            better = dist < best
+            best[better] = dist[better]
+            chosen[better] = i
+        assignments[idx] = chosen
+        compared += len(candidates) * len(idx)
+        if report and (t + 1) % report == 0:
+            logger.info(f"Assigned {t + 1}/{len(tiles)} tiles of {n_points} grid points to {n_sites} sites")
+    logger.debug(f"Pruned assignment: {compared / max(n_points, 1):.1f} sites compared per point instead of {n_sites}")
+    return assignments
+
+
+def site_cell_windows(assignments, valid_flat_indices, n_cols, n_rows, n_sites):
+    """Per site, the grid window that holds all its cells plus one cell of margin.
+
+    Returns a list with ``(row0, row1, col0, col1)`` (inclusive) per site, or None for a site
+    without cells. Tracing a region inside its window gives the same outline as tracing it on the
+    whole grid: every cell of the site and every neighbour of one lies in the window.
+    """
+    assigned = assignments >= 0
+    site_of = assignments[assigned]
+    rows, cols = np.divmod(np.asarray(valid_flat_indices)[assigned], n_cols)
+    big = np.iinfo(np.int64).max
+    row_min, col_min = np.full(n_sites, big), np.full(n_sites, big)
+    row_max, col_max = np.full(n_sites, -1), np.full(n_sites, -1)
+    np.minimum.at(row_min, site_of, rows)
+    np.maximum.at(row_max, site_of, rows)
+    np.minimum.at(col_min, site_of, cols)
+    np.maximum.at(col_max, site_of, cols)
+    windows = []
+    for i in range(n_sites):
+        if row_max[i] < 0:
+            windows.append(None)
+        else:
+            windows.append(
+                (
+                    max(int(row_min[i]) - 1, 0),
+                    min(int(row_max[i]) + 1, n_rows - 1),
+                    max(int(col_min[i]) - 1, 0),
+                    min(int(col_max[i]) + 1, n_cols - 1),
+                )
+            )
+    return windows
 
 
 def weighted_voronoi(
@@ -467,35 +593,41 @@ def weighted_voronoi(
     assignment_grid = np.full(mask.shape, -1, dtype=np.int32)
     assignment_grid[valid_flat_indices] = assignments
     assignment_grid_2d = assignment_grid.reshape(len(y_coords), len(x_coords))
+    windows = site_cell_windows(assignments, valid_flat_indices, len(x_coords), len(y_coords), len(points))
     del assignment_grid, valid_flat_indices, valid_points
 
     # === PHASE 10: REGION BOUNDARY EXTRACTION ===
     # Build Voronoi region polygon for each site
     region_polygons = []
     df.reset_index(drop=True, inplace=True)
+    report = max(1, len(df) // 10) if assignment_grid_2d.size >= PROGRESS_POINTS else 0
     for point, (i, row) in zip(points, df.iterrows()):
-        assigned_to_site = assignments == i
-        if not np.any(assigned_to_site):
+        if report and (i + 1) % report == 0:
+            logger.info(f"Traced {i + 1}/{len(df)} regions")
+        if windows[i] is None:
             # No points assigned to this site: create empty region placeholder
             region_polygons.append({site_id_col: row[site_id_col], "geometry": None})
             continue
 
         # === CONTOUR EXTRACTION ===
-        # Create 2D binary mask indicating which grid points belong to this site
-        # Reshape 1D mask back to 2D grid for contour detection
-        region_mask_2d = assignment_grid_2d == i
+        # 2D binary mask of the site's cells, cut to the window around them: tracing a site on the
+        # whole grid cost one full-grid pass per site.
+        row0, row1, col0, col1 = windows[i]
+        region_mask_2d = assignment_grid_2d[row0 : row1 + 1, col0 : col1 + 1] == i
+        origin_x = grid_minx + col0 * n_points
+        origin_y = grid_miny + row0 * n_points
 
         # Extract contours (region boundaries) from binary mask using selected method:
         # Different contour extraction algorithms have different speed/accuracy tradeoffs
         if scipy_true:
             # scipy marching squares: smooth contours, good for analysis
-            polygons = extract_contours_scipy(region_mask_2d, n_points, grid_minx, grid_miny)
+            polygons = extract_contours_scipy(region_mask_2d, n_points, origin_x, origin_y)
         elif cv2_true:
             # OpenCV contours: fast, good edge detection
-            polygons = extract_contours_cv2(region_mask_2d, n_points, grid_minx, grid_miny)
+            polygons = extract_contours_cv2(region_mask_2d, n_points, origin_x, origin_y)
         else:
             # rasterio shapes (default): standard raster-to-vector conversion
-            polygons = extract_contours_rasterio(region_mask_2d, n_points, grid_minx, grid_miny)
+            polygons = extract_contours_rasterio(region_mask_2d, n_points, origin_x, origin_y)
 
         if polygons:
             polygons = buffer_geometry(unary_union(polygons))
