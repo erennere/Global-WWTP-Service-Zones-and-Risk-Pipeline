@@ -214,8 +214,30 @@ for level in sorted({v.level for v in VARIANTS}):
 # Service areas and population, per variant                                   #
 # --------------------------------------------------------------------------- #
 ANNOTATED = wf.config("create_voronoi")["paths"]["annotated_all_filepath"]
+TAGS = {v.tag for v in VARIANTS}
 for v in VARIANTS:
     for a in wf.approaches(v):
+        source = wf.approach0_source(v) if a == "0" else None
+        if source is not None and source.tag in TAGS:
+            # Approach 0 never reads the basins: the same files as at the shared level, hard-linked
+            # (every stage replaces its outputs, so the two names cannot drift apart).
+            # One rule per file: a link has its source's modification time, which must not be older
+            # than any input of its rule.
+            rule:
+                name: f"share_approach0__{v.tag}"
+                input: wf.service_areas(source, "0")
+                output: wf.service_areas(v, "0")
+                localrule: True
+                shell: "ln -f {input} {output}"
+
+            rule:
+                name: f"share_approach0_pop__{v.tag}"
+                input: wf.population_layer(source, "0")
+                output: wf.population_layer(v, "0")
+                localrule: True
+                shell: "ln -f {input} {output}"
+            continue
+
         rule:
             name: f"create_voronoi__{v.tag}__a{a}"
             input: ANNOTATED, wf.watershed(v.level)

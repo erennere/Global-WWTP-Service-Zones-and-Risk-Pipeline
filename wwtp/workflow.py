@@ -11,7 +11,7 @@ the files Snakemake expects are the files the stages write.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from . import settings, starter
@@ -133,6 +133,19 @@ def one_time_rules(snakemake_config):
     if unknown:
         raise settings.SettingsError(f"run_once: unknown stage(s) {unknown}; choose from {list(ONE_TIME_STAGES)}")
     return {rule for name in names for rule in ONE_TIME_STAGES[name]}
+
+
+def approach0_source(variant):
+    """The variant whose approach-0 files ``variant`` reuses, or None when it makes its own.
+
+    Approach 0 groups plants by overlapping buffers and never reads the basins, so its service areas
+    and population layer are the same at every basin level. The sweep makes them once, at the
+    configured run's level (or the first sweep level when that one is not swept), and links them to
+    the other levels' file names.
+    """
+    levels = [str(level) for level in config("sweep")["sweep_levels"]]
+    shared = default_variant().level if default_variant().level in levels else levels[0]
+    return None if variant.level == shared else replace(variant, level=shared)
 
 
 def approaches(variant):

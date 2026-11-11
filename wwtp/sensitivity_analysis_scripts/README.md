@@ -34,7 +34,7 @@ graph TD
   J --> K[(comparison tables and figures)]
   N --> O[(ranking tables)]
 ```
-The grid is `wwtp.workflow.sweep_variants()`: every level, weighting and buffer of the `sweep` section (108 variants by default).
+The grid is `wwtp.workflow.sweep_variants()`: every level, weighting and buffer of the `sweep` section (108 variants by default). Approach 0 does not depend on the basin level, so its layers are made once per weighting and buffer and linked to the other levels (`wwtp.workflow.approach0_source`).
 
 ## Run Instructions
 ```bash

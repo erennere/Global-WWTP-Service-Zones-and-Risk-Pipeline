@@ -79,3 +79,14 @@ def test_no_two_variants_write_the_same_file():
         ],
     ):
         assert len(set(outputs)) == len(outputs)
+
+
+def test_approach0_is_made_once_per_weighting_and_extent():
+    """Approach 0 never reads the basins: levels 5 and 7 link the level-6 files instead of recomputing them."""
+    sweep = wf.sweep_variants()
+    tags = {v.tag for v in sweep}
+    sources = [wf.approach0_source(v) for v in sweep]
+    assert sum(source is not None for source in sources) == 72
+    assert all(source.level == "6" and source.tag in tags for source in sources if source is not None)
+    assert all(wf.approach0_source(v) is None for v in sweep if v.level == "6")
+    assert wf.approach0_source(wf.default_variant()) is None

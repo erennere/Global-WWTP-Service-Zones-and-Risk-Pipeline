@@ -124,3 +124,13 @@ def test_a_missing_stamp_stops_the_plan_until_its_stage_is_named(work):
     result, jobs = _plan(work, "analysis", "--config", "run_once=download_pop")
     assert result.returncode == 0, result.stderr[-2000:]
     assert "download_pop" in jobs and not jobs & (ONE_TIME_RULES - {"download_pop"})
+
+
+def test_the_sweep_makes_approach0_once_per_weighting_and_extent(work):
+    result, jobs = _plan(work, "sweep")
+    assert result.returncode == 0, result.stderr[-2000:]
+    voronoi_a0 = {job for job in jobs if job.startswith("create_voronoi__") and job.endswith("__a0")}
+    assert voronoi_a0 and all("_lvl6_" in job for job in voronoi_a0)
+    # The scoring reads the population layers; a shared service-area file is linked only when asked for.
+    shared = {job for job in jobs if job.startswith("share_approach0_pop__")}
+    assert shared and all("_lvl6_" not in job for job in shared)
