@@ -158,6 +158,7 @@ snakemake --profile workflow/profiles/slurm national_data   # downloads the vali
 snakemake --profile workflow/profiles/slurm all        # analysis + figures + sweep
 snakemake --profile workflow/profiles/slurm fig1       # Figure 1 from its prepared inputs
 snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations  # grids, OSM context, images, labels
+snakemake --profile workflow/profiles/slurm connection_radius   # calibration inputs: national connection statistics + served-share curves per country
 ```
 
 The sweep validation's reference files (GB catchments, CBS, EPA sewersheds, JMP, Eurostat, OECD) are downloaded by the local rule `national_data_fetch` (URLs in `national_data.sources`); it needs internet on the node that runs Snakemake and keeps files that are already in `data/validation_data/`. `national_data` also writes `data/validation_data/national_data/new_plants.gpkg` (plants of the national registers farther than `match_distance_m` from every plant of ours, one file for all countries), `peek.md` (structure of every downloaded file) and `results.zip`.

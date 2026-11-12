@@ -230,6 +230,7 @@ def test_references_and_choice_end_to_end(tmp_path, monkeypatch):
             "weight_method": ["size", "linear"],
             "weight_func": ["mult", "none"],
             "uses_reported_sizes": [True, False],
+            "radius_by_connection": [True, False],
             "configured": [True, False],
             "path": [str(bad), str(good)],
         }
@@ -258,6 +259,7 @@ def test_references_and_choice_end_to_end(tmp_path, monkeypatch):
     assert n.loc[("good", "jmp"), "n_countries"] == 3 and n.loc[("good", "eurostat"), "n_countries"] == 2
     assert n.loc[("bad", "jmp"), "world_ratio"] == pytest.approx(3.0)
     assert n.loc[("good", "jmp_sewer"), "bias_pp"] < 0 and n.loc[("good", "jmp_sewer"), "role"] == "upper bound"
+    assert n.loc[("bad", "jmp"), "role"] == "calibration" and n.loc[("good", "jmp"), "role"] == "independent"
     s = scores[scores["group"] == "all"].set_index(["candidate", "reference"])
     for ref in ("gb", "nl", "us"):
         assert s.loc[("good", ref), "class_balanced_error_x"] == pytest.approx(1.0, abs=1e-6)
@@ -351,5 +353,6 @@ def test_candidates_cover_the_sweep_once_per_approach_0(monkeypatch):
     )
     conf = cands[cands["configured"]].iloc[0]
     assert conf["approach"] == workflow.figure_approach(default) and conf["uses_reported_sizes"]
+    assert conf["radius_by_connection"] and not cands.loc[cands["buffer"] != "size", "radius_by_connection"].any()
     rigid = cands[(cands["buffer"] != "size") & (cands["weight_method"] != "size")]
     assert not rigid["uses_reported_sizes"].any()

@@ -10,6 +10,10 @@ from ..geo_utils import parse_diameters_to_round_area
 
 logger = logging.getLogger(__name__)
 
+# Connected shares are clipped to [0.01, 0.99] before the logit: the radius calibration and the pipeline
+# use the same rule (wwtp.calibration.connection_radius imports this value).
+CONNECTED_SHARE_CLIP = 0.01
+
 
 def calculate_area(df, only_round=False):
     """
@@ -180,10 +184,25 @@ def plant_size_people(df, size_measure, footprint_to_people, reported_size_colum
     return people
 
 
+def connected_share_logit(share):
+    """logit of a connected share, clipped to [CONNECTED_SHARE_CLIP, 1 - CONNECTED_SHARE_CLIP]."""
+    share = np.clip(np.asarray(share, dtype=float), CONNECTED_SHARE_CLIP, 1 - CONNECTED_SHARE_CLIP)
+    return np.log(share / (1 - share))
+
+
+def radius_at_10k_by_connection(share, rule):
+    """r10k (km) of a country: ``min(max_km, exp(intercept + slope * logit(connected share)))``."""
+    r10k = np.exp(float(rule["intercept"]) + float(rule["slope"]) * connected_share_logit(share))
+    return np.minimum(r10k, float(rule["max_km"]))
+
+
 def service_radius_m(size_people, radius_at_10k_people_km, exponent, max_m):
-    """Service radius (m): ``radius_at_10k_people_km * (people / 10,000) ** exponent``, at most ``max_m``."""
+    """Service radius (m): ``radius_at_10k_people_km * (people / 10,000) ** exponent``, at most ``max_m``.
+
+    ``radius_at_10k_people_km`` is one value or one per plant.
+    """
     people = np.asarray(size_people, dtype=float)
-    radius_km = float(radius_at_10k_people_km) * np.power(people / 1e4, float(exponent))
+    radius_km = np.asarray(radius_at_10k_people_km, dtype=float) * np.power(people / 1e4, float(exponent))
     return np.minimum(radius_km * 1000.0, float(max_m))
 
 
@@ -199,9 +218,10 @@ def calculate_buffer(df, weights, *args, **kwargs):
     **kwargs
         ``buffer`` (m), ``dynamic_buffering``, ``max_buffer`` (m), and with
         dynamic buffering ``size_measure``, ``footprint_to_people``,
-        ``reported_size_columns``, ``reported_size_skip``, ``radius_exponent``
-        and ``radius_at_10k_people_km`` (starter picks the latter from
-        ``radius_calibration`` for the size measure).
+        ``reported_size_columns``, ``reported_size_skip``, ``radius_exponent``,
+        ``radius_at_10k_people_km``, ``radius_by_connection`` (or None),
+        ``connected_share`` and ``country_column`` (starter takes them from
+        ``radius_calibration`` for the size measure and ``connected_share``).
 
     Returns
     -------
@@ -212,16 +232,25 @@ def calculate_buffer(df, weights, *args, **kwargs):
     -----
     With ``dynamic_buffering`` false every site gets ``buffer`` (at most
     ``max_buffer``). Otherwise the radius grows with plant size in people. The
-    exponent and the radius at 10,000 people were chosen on US census
-    population in EPA sourced sewersheds (``wwtp.calibration.service_radius``);
-    the GB catchments are the independent test.
+    exponent was chosen on US census population in EPA sourced sewersheds
+    (``wwtp.calibration.service_radius``) and holds on the GB and NL
+    catchments. The radius at 10,000 people follows the country's connected
+    share where ``radius_by_connection`` is set (calibrated on 126 countries,
+    ``wwtp.calibration.connection_radius calibrate``); other countries keep
+    ``radius_at_10k_people_km``.
     """
     max_buffer = kwargs["max_buffer"]
     if not kwargs["dynamic_buffering"]:
         fixed = float(min(kwargs["buffer"], max_buffer))
         return np.full(len(df), fixed, dtype=float)
     people = plant_size_people(df, **kwargs)
-    radius = service_radius_m(people, kwargs["radius_at_10k_people_km"], kwargs["radius_exponent"], max_buffer)
+    r10k = np.full(len(df), float(kwargs["radius_at_10k_people_km"]))
+    rule = kwargs["radius_by_connection"]
+    if rule is not None:
+        share = df[kwargs["country_column"]].map(kwargs["connected_share"]).to_numpy(dtype=float)
+        known = np.isfinite(share)
+        r10k[known] = radius_at_10k_by_connection(share[known], rule)
+    radius = service_radius_m(people, r10k, kwargs["radius_exponent"], max_buffer)
     logger.debug(
         "Service radius %.0f-%.0f m (median %.0f m) for %d sites",
         radius.min(),

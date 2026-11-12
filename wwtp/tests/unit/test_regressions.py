@@ -206,6 +206,9 @@ RADIUS_KW = dict(
     reported_size_skip={"POP_SERVED": {"QUAL_POP": [4]}},
     radius_exponent=0.35,
     radius_at_10k_people_km=3.75,
+    radius_by_connection=None,
+    connected_share={},
+    country_column="ISO_2",
 )
 
 
@@ -286,6 +289,24 @@ def test_size_weights_give_large_plants_proportionally_more_area():
     assert unweighted.to_crs(32632).set_index("WASTE_ID").geometry[2].contains(Point(11_000, 0))
 
 
+def test_radius_scale_follows_the_connected_share_of_the_country():
+    """r10k = min(max_km, exp(intercept + slope logit(C))); countries without a share keep the fixed value."""
+    plants = _plants([0, 10_000, 20_000, 30_000], 1, POP_SERVED=[10_000] * 4)
+    plants["ISO_2"] = ["AA", "BB", "CC", "ZZ"]
+    kw = {
+        **RADIUS_KW,
+        "radius_by_connection": {"intercept": 1.456, "slope": 0.166, "max_km": 5.5},
+        "connected_share": {"AA": 0.0, "BB": 0.5, "CC": 0.97},
+    }
+    radius = sa.calculate_buffer(plants, None, **kw)
+    # a plant of 10,000 people: its radius is r10k itself
+    assert radius == pytest.approx([2000, 4289, 5500, 3750], rel=2e-3)  # clipped share, middle, cap, no share
+    big = _plants([0], 1, POP_SERVED=[40_000])
+    big["ISO_2"] = ["CC"]
+    big["POP_SERVED"] = [40_000]
+    assert sa.calculate_buffer(big, None, **kw)[0] == pytest.approx(5500 * 4**0.35, rel=1e-6)
+
+
 def test_size_weights_need_the_multiplicative_distance():
     plants = _plants([0, 20_000], 1, POP_SERVED=[1_000_000, 10_000])
     plants["WASTE_ID"] = [1, 2]
@@ -310,6 +331,9 @@ def test_starter_reads_the_radius_for_the_configured_size_measure():
     assert cfg["weight_method"] == "size" and cfg["weight_type"] == "sz" and cfg["buffer_path_token"] == "rep"
     assert kw["size_measure"] == "reported" and kw["radius_exponent"] == pytest.approx(0.3)
     assert kw["radius_at_10k_people_km"] == pytest.approx(3.75)
+    assert kw["radius_by_connection"]["max_km"] == pytest.approx(5.5) and kw["country_column"] == "ISO_2"
+    assert 0 <= min(kw["connected_share"].values()) and max(kw["connected_share"].values()) <= 1
+    assert kw["connected_share"]["NO"] > 0  # the codes are text: YAML must not read Norway as false
     other = load_config(script_name="create_voronoi", size_measure="footprint")
     assert other["calculate_buffer_kwargs"]["radius_exponent"] == pytest.approx(0.5)
     assert other["buffer_path_token"] == "fp"

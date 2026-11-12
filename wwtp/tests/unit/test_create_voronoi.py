@@ -178,6 +178,9 @@ BUFFER_KWARGS = {
     "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
     "radius_exponent": 0.35,
     "radius_at_10k_people_km": 3.75,
+    "radius_by_connection": None,
+    "connected_share": {},
+    "country_column": "ISO_2",
 }
 
 

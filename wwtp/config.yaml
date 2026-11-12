@@ -284,8 +284,49 @@ create_voronoi:
   # used.
   # Regenerate with: python -m wwtp.calibration.service_radius --help
   radius_calibration:
-    reported: {radius_exponent: 0.3, radius_at_10k_people_km: 3.75}
-    footprint: {radius_exponent: 0.5, radius_at_10k_people_km: 4.25}
+    reported:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.456, slope: 0.166, max_km: 5.5}
+    footprint:
+      radius_exponent: 0.5
+      radius_at_10k_people_km: 4.25
+      by_connection: {intercept: 1.297, slope: 0.151, max_km: 4.5}
+  # The radius at 10,000 people by country (by_connection; without it radius_at_10k_people_km everywhere):
+  #   r10k_km = min(max_km, exp(intercept + slope * logit(C))), C = connected_share of the plant's
+  #   country; countries without a value keep radius_at_10k_people_km.
+  # Calibrated on 126 countries (wwtp.calibration.connection_radius calibrate): the national share
+  # of people served, from WorldPop 2022 and our plants, against JMP "safely managed via sewer".
+  # Leaving one SDG region out, the mean error of the served share is 10.1 pp (reported; 15.0 pp
+  # with 3.75 km everywhere) and 14.0 pp (footprint; 15.8 pp with 4.25 km). max_km is the largest
+  # cap that does not raise the mean plant-level error on the US, GB and NL catchments (reported
+  # x1.440 against x1.445; footprint x1.529 against x1.526). See
+  # notes/radius_calibration_2026-11-12.md.
+  # Share of people whose sewage reaches treatment (JMP household file, san_sew_sm_t, value of the
+  # year nearest 2022; ISO 3166 alpha-2).
+  connected_share: {
+    'AD': 1.000, 'AE': 0.926, 'AF': 0.012, 'AL': 0.338, 'AM': 0.000, 'AS': 0.310, 'AT': 0.926, 'AU': 0.925,
+    'AW': 0.047, 'AZ': 0.267, 'BA': 0.254, 'BD': 0.000, 'BE': 0.839, 'BF': 0.001, 'BG': 0.680, 'BH': 0.858,
+    'BJ': 0.003, 'BM': 0.015, 'BR': 0.417, 'BT': 0.089, 'BW': 0.006, 'BY': 0.635, 'BZ': 0.082, 'CA': 0.691,
+    'CD': 0.001, 'CF': 0.000, 'CH': 0.993, 'CI': 0.024, 'CL': 0.886, 'CN': 0.597, 'CO': 0.044, 'CR': 0.048,
+    'CU': 0.201, 'CV': 0.015, 'CW': 0.028, 'CY': 0.499, 'CZ': 0.850, 'DE': 0.945, 'DJ': 0.023, 'DK': 0.919,
+    'DO': 0.091, 'DZ': 0.584, 'EC': 0.257, 'EE': 0.816, 'EG': 0.469, 'ES': 0.864, 'ET': 0.002, 'FI': 0.851,
+    'FJ': 0.102, 'FR': 0.787, 'GB': 0.965, 'GE': 0.452, 'GF': 0.492, 'GG': 0.750, 'GH': 0.005, 'GL': 0.000,
+    'GM': 0.005, 'GP': 0.204, 'GR': 0.843, 'GW': 0.004, 'GY': 0.015, 'HK': 0.935, 'HR': 0.532, 'HU': 0.839,
+    'IE': 0.620, 'IL': 0.954, 'IM': 0.798, 'IN': 0.052, 'IQ': 0.247, 'IR': 0.235, 'IT': 0.766, 'JE': 0.900,
+    'JM': 0.097, 'JO': 0.678, 'JP': 0.794, 'KE': 0.015, 'KG': 0.185, 'KH': 0.057, 'KI': 0.018, 'KM': 0.038,
+    'KN': 0.037, 'KR': 0.993, 'KW': 1.000, 'KY': 0.127, 'KZ': 0.279, 'LA': 0.011, 'LB': 0.168, 'LI': 0.957,
+    'LS': 0.004, 'LT': 0.920, 'LU': 0.949, 'LV': 0.923, 'LY': 0.100, 'MA': 0.253, 'MC': 1.000, 'MD': 0.283,
+    'ME': 0.266, 'MG': 0.003, 'MK': 0.067, 'ML': 0.006, 'MM': 0.004, 'MN': 0.225, 'MO': 0.759, 'MQ': 0.462,
+    'MT': 0.989, 'MU': 0.197, 'MW': 0.004, 'MX': 0.548, 'MY': 0.766, 'MZ': 0.004, 'NE': 0.004, 'NG': 0.030,
+    'NL': 0.973, 'NO': 0.641, 'NP': 0.000, 'NR': 0.071, 'NZ': 0.807, 'OM': 0.216, 'PA': 0.201, 'PE': 0.431,
+    'PF': 0.070, 'PG': 0.032, 'PH': 0.027, 'PL': 0.763, 'PR': 0.325, 'PS': 0.524, 'PT': 0.866, 'PY': 0.039,
+    'QA': 0.999, 'RE': 0.518, 'RO': 0.558, 'RS': 0.096, 'RU': 0.511, 'SA': 0.702, 'SE': 0.876, 'SG': 1.000,
+    'SI': 0.677, 'SK': 0.666, 'SL': 0.002, 'SM': 0.828, 'SN': 0.030, 'SO': 0.026, 'SR': 0.011, 'ST': 0.066,
+    'SV': 0.024, 'SZ': 0.053, 'TC': 0.000, 'TD': 0.002, 'TG': 0.002, 'TH': 0.092, 'TN': 0.598, 'TO': 0.015,
+    'TR': 0.660, 'TT': 0.227, 'TV': 0.000, 'TZ': 0.005, 'UA': 0.472, 'UG': 0.002, 'US': 0.837, 'UZ': 0.106,
+    'VE': 0.234, 'VN': 0.018, 'WS': 0.000, 'YE': 0.195, 'ZA': 0.481, 'ZW': 0.018
+  }
   scipy_true: false
   cv2_true: false
   city_voronoi: false
@@ -562,6 +603,7 @@ find_unconnected_industrial_areas:
   reported_size_skip: null
   footprint_to_people: null
   radius_calibration: null
+  connected_share: null
   industrial_min_cells: null
   # null = the same category list create_voronoi uses for remove_industrial,
   # so the two layers can never disagree. An empty list is rejected.
@@ -974,6 +1016,63 @@ national_data:
     validation_dir: '{data_dir}/validation_data'
     output_dir: '{data_dir}/validation_data/national_data'
 
+# Service-radius scale from the national connection rate (wwtp/calibration/connection_radius.py;
+# Snakemake target `connection_radius`). For every country with plants and a WorldPop raster: the share
+# of its people inside service areas as a function of radius_at_10k_people_km, with the stand-in of
+# wwtp/calibration/service_radius.py (each person goes to the plant with the smallest distance /
+# sqrt(people) among its candidate_plants nearest, kept inside that plant's circle, at most max_buffer).
+# Those curves and the national connection statistics (reference_urls) are the inputs of the
+# cross-validated fit of r10k = exp(a + b logit(connected share)). Nothing here changes the pipeline.
+connection_radius:
+  version: null
+  year: 2022                  # WorldPop raster year (download_pop keeps 2015-2024)
+  aggregate_cells: 10         # 100 m cells summed to 1 km
+  candidate_plants: 64
+  size_measures: ['reported', 'footprint']
+  radius_exponents: [0.3, 0.5]
+  # radius_at_10k_people_km grid: count values, geometric from start to stop (km)
+  radius_grid: {start: 0.5, stop: 40.0, count: 40}
+  max_workers: 16
+  max_buffer: null
+  footprint_to_people: null
+  reported_size_columns: null
+  reported_size_skip: null
+  country_output_column: null
+  country_boundary_column: null
+  # National connection statistics, saved unparsed: JMP household world file (sewer connections,
+  # wastewater treated), Eurostat population connected to wastewater treatment, OECD wastewater
+  # treatment. Downloaded on the machine that runs Snakemake (compute nodes may have no internet).
+  reference_urls:
+    jmp_household.xlsx: 'https://washdata.org/data/country/WLD/household/download'
+    eurostat_env_ww_con.tsv: 'https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/env_ww_con?format=TSV'
+    oecd_water_treat.csv: 'https://sdmx.oecd.org/public/rest/data/OECD.ENV.EPI,DSD_WATER_TREAT@DF_WATER_TREAT,1.0/all?format=csvfilewithlabels'
+  request_timeout_seconds: 120
+  # The share of people connected to wastewater treatment, per source, in the year nearest `year`:
+  # JMP "safely managed via sewer" (sewer connections whose wastewater is treated; sheet 'san'),
+  # Eurostat 'connected to urban and other wastewater treatment' (ww_tp URB_OTH_CS, unit PC), OECD
+  # 'public total treatment' (PUBTOTTR). fit_reference is fitted and scored; the others are checks.
+  reference_files: {jmp: 'jmp_household.xlsx', eurostat: 'eurostat_env_ww_con.tsv', oecd: 'oecd_water_treat.csv'}
+  reference_series: {jmp: 'san_sew_sm_t', eurostat: 'URB_OTH_CS', oecd: 'PUBTOTTR'}
+  eurostat_geo_aliases: {EL: 'GR', UK: 'GB'}   # Eurostat country codes that are not ISO 3166
+  reference_max_year_gap: 5   # per country the value of the year nearest `year`; dropped if further away
+  fit_reference: 'jmp'
+  # Fit (light; runs anywhere): log r10k = a + b logit(predictor), cross-validated over countries.
+  # Predictors: 'reference' (the connected share itself) and 'reported_coverage' (sum of our plants'
+  # reported sizes / national population: our data only, so the reference stays a pure check).
+  fit_predictors: ['reference', 'reported_coverage']
+  fit_folds: 5
+  fit_seed: 0
+  # calibrate: caps (km) of r10k = min(cap, exp(a + b logit(C))) to tabulate, each tested by leaving one
+  # SDG region out; the cap is then chosen with the plant-level check (notes/radius_calibration_2026-11-12.md).
+  calibration_caps_km: [4.5, 5.0, 5.25, 5.5, 5.75, 6.0, 6.5, 7.0, 8.0, 40.0]
+  paths:
+    data_dir: null
+    annotated_all_filepath: null
+    overture: null
+    overture_s3_url: null
+    pop_tif_dir: null
+    output_dir: '{data_dir}/calibration/connection_radius'
+
 # Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
 # unit, and the served-population cartogram. Scripts read these through
 # figures/fig1/fig1_config.py; their outputs and inputs live under data_dir.
@@ -1036,6 +1135,7 @@ workflow:
     national_registers: {threads: 2, mem_mb: 16384, runtime: 240}
     sweep_validation_references: {threads: 16, mem_mb: 65536, runtime: 720}
     sweep_validation: {threads: 16, mem_mb: 131072, runtime: 1440}
+    connection_radius_curves: {threads: 16, mem_mb: 196608, runtime: 2880}
   paths:
     data_dir: null
     log_dir: '{data_dir}/workflow/logs'

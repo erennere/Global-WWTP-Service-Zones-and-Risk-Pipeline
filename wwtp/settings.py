@@ -93,11 +93,23 @@ class FootprintToPeople(Strict):
     unsized_people: PositiveFloat
 
 
+class RadiusByConnection(Strict):
+    """r10k_km = min(max_km, exp(intercept + slope * logit(connected share of the plant's country)))."""
+
+    intercept: float
+    slope: float
+    max_km: PositiveFloat
+
+
 class RadiusCalibration(Strict):
-    """Circle radius = radius_at_10k_people_km * (people / 10,000) ** radius_exponent."""
+    """Circle radius = r10k * (people / 10,000) ** radius_exponent.
+
+    r10k is ``radius_at_10k_people_km``, or the ``by_connection`` value in countries with a connected share.
+    """
 
     radius_exponent: PositiveFloat
     radius_at_10k_people_km: PositiveFloat
+    by_connection: RadiusByConnection | None = None  # absent: radius_at_10k_people_km in every country
 
 
 class ServiceAreaParams(RunParams):
@@ -125,6 +137,7 @@ class ServiceAreaParams(RunParams):
     reported_size_skip: dict[str, dict[str, list[int]]]
     footprint_to_people: FootprintToPeople
     radius_calibration: dict[SizeMeasure, RadiusCalibration]
+    connected_share: dict[str, Fraction]
     scipy_true: bool
     cv2_true: bool
     industrial_category_numbers: list[int]
@@ -602,6 +615,52 @@ class NationalData(Section):
         return self
 
 
+class RadiusGrid(Strict):
+    """Geometric grid of radius_at_10k_people_km values (km)."""
+
+    start: PositiveFloat
+    stop: PositiveFloat
+    count: Annotated[int, Field(ge=2)]
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.stop <= self.start:
+            raise ValueError(f"radius_grid stop {self.stop} must be larger than start {self.start}")
+        return self
+
+
+ReferenceSource = Literal["jmp", "eurostat", "oecd"]
+
+
+class ConnectionRadius(Section):
+    version: Version
+    year: Annotated[int, Field(ge=2000, le=2100)]
+    aggregate_cells: PositiveInt
+    candidate_plants: PositiveInt
+    size_measures: list[SizeMeasure] = Field(min_length=1)
+    radius_exponents: list[PositiveFloat] = Field(min_length=1)
+    radius_grid: RadiusGrid
+    max_workers: PositiveInt
+    max_buffer: PositiveInt
+    footprint_to_people: FootprintToPeople
+    reported_size_columns: list[str]
+    reported_size_skip: dict[str, dict[str, list[int]]]
+    country_output_column: str
+    country_boundary_column: str
+    reference_urls: dict[str, str] = Field(min_length=1)
+    request_timeout_seconds: PositiveInt
+    reference_files: dict[ReferenceSource, str]
+    reference_series: dict[ReferenceSource, str]
+    eurostat_geo_aliases: dict[str, str]
+    reference_max_year_gap: int = Field(ge=0)
+    fit_reference: ReferenceSource
+    fit_predictors: list[Literal["reference", "reported_coverage"]] = Field(min_length=1)
+    fit_folds: Annotated[int, Field(ge=2)]
+    fit_seed: int
+    calibration_caps_km: list[PositiveFloat] = Field(min_length=1)
+    paths: Paths
+
+
 # --------------------------------------------------------------------------- #
 # Snakemake                                                                   #
 # --------------------------------------------------------------------------- #
@@ -670,6 +729,7 @@ SECTIONS: dict[str, type[Section]] = {
     "sweep": Sweep,
     "sweep_validation": SweepValidation,
     "national_data": NationalData,
+    "connection_radius": ConnectionRadius,
     "figure1": Figure1,
     "workflow": Workflow,
 }

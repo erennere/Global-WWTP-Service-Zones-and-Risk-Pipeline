@@ -39,14 +39,17 @@ reference   share per country (value of the year nearest           role
             ``national_year``, at most ``national_max_year_gap``
             years off)
 ==========  ====================================================  ============================
-jmp         JMP "safely managed via sewer" (sewered and treated)   independent, global
+jmp         JMP "safely managed via sewer" (sewered and treated)   independent, global; calibration
+                                                                    data for size-based candidates
 jmp_sewer   JMP sewer connection, treated or not                    upper bound
 eurostat    Eurostat env_ww_con, urban and other treatment          independent (Europe)
 oecd        OECD public total treatment                             independent (OECD)
 ==========  ====================================================  ============================
 
 Measures: mean, median and population-weighted absolute error (percentage points), bias, share within
-10 pp, the SDG-region error (regional shares, population-weighted) and the world ratio. Part of the gap
+10 pp, the SDG-region error (regional shares, population-weighted) and the world ratio. The radius
+scale of size-based candidates was calibrated on the JMP shares (leaving one region out: 10.1 pp,
+notes/radius_calibration_2026-11-12.md), so for them JMP is not an independent test. Part of the gap
 is common to every candidate (plants missing from our list); the differences between candidates are
 what the choice uses.
 
@@ -146,6 +149,10 @@ def candidates():
                     "weight_method": variant.weight_method,
                     "weight_func": variant.weight_func or "none",
                     "uses_reported_sizes": uses_reported_sizes(variant),
+                    # its radius scale was calibrated on the JMP shares (radius_calibration.by_connection)
+                    "radius_by_connection": variant.dynamic_buffering
+                    and workflow.config("create_voronoi", variant)["calculate_buffer_kwargs"]["radius_by_connection"]
+                    is not None,
                     "configured": variant == default and approach == default_approach,
                     "path": workflow.population_layer(variant, approach),
                 }
@@ -616,7 +623,7 @@ def national_scores(long, regions, cands):
             {
                 "candidate": cand,
                 "reference": ref,
-                "role": ROLES[ref],
+                "role": "calibration" if ref == "jmp" and bool(cands.loc[cand, "radius_by_connection"]) else ROLES[ref],
                 "n_countries": len(part),
                 "mean_abs_error_pp": float(np.mean(np.abs(err))),
                 "median_abs_error_pp": float(np.median(np.abs(err))),

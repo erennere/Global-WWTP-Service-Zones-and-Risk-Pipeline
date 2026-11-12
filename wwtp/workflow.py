@@ -10,6 +10,8 @@ the files Snakemake expects are the files the stages write.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -237,6 +239,25 @@ def osm_layers():
 def resources(stage):
     """SLURM resources of a stage's jobs (``workflow.resources``)."""
     return dict(config("workflow")["resources"][stage])
+
+
+def sizing_params(variant):
+    """Extra rule params of a size-based variant: the radius calibration it runs with.
+
+    Its file names do not carry the calibration, so Snakemake would keep service areas made with an
+    older one; as a rule param, a change reruns them (rigid-buffer variants get none and stay).
+    """
+    if not variant.dynamic_buffering:
+        return {}
+    kwargs = config("create_voronoi", variant)["calculate_buffer_kwargs"]
+    shares = hashlib.sha256(json.dumps(kwargs["connected_share"], sort_keys=True).encode()).hexdigest()[:12]
+    signature = {
+        "exponent": kwargs["radius_exponent"],
+        "r10k": kwargs["radius_at_10k_people_km"],
+        "by_connection": kwargs["radius_by_connection"],
+        "connected_share": shares,
+    }
+    return {"radius": json.dumps(signature, sort_keys=True)}
 
 
 def stamp(name, variant=None):

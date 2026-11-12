@@ -279,7 +279,14 @@ def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_te
                 "dynamic_buffering": True,
                 "max_buffer": 50000,
                 **SIZE_CONFIG,
-                "radius_calibration": {"reported": {"radius_exponent": 0.3, "radius_at_10k_people_km": 4.0}},
+                "radius_calibration": {
+                    "reported": {
+                        "radius_exponent": 0.3,
+                        "radius_at_10k_people_km": 4.0,
+                        "by_connection": {"intercept": 1.4, "slope": 0.2, "max_km": 5.0},
+                    }
+                },
+                "connected_share": {"NL": 0.97},
             },
         }
     )
@@ -293,7 +300,11 @@ def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_te
         **SIZE_KWARGS,
         "radius_exponent": 0.3,
         "radius_at_10k_people_km": 4.0,
+        "radius_by_connection": {"intercept": 1.4, "slope": 0.2, "max_km": 5.0},
+        "connected_share": cfg["connected_share"],
+        "country_column": cfg["country_output_column"],
     }
+    assert cfg["connected_share"]["NL"] == 0.97
 
 
 def test_fixed_buffering_needs_no_radius_calibration(write_test_config):
@@ -330,6 +341,7 @@ def test_size_measure_without_calibration_entry_is_rejected(write_test_config):
     path = config_with({"footprint": {"radius_exponent": 0.4, "radius_at_10k_people_km": 4.0}})
     cfg = starter.load_config(script_name="create_voronoi", config=path, size_measure="footprint")
     assert cfg["calculate_buffer_kwargs"]["radius_exponent"] == 0.4
+    assert cfg["calculate_buffer_kwargs"]["radius_by_connection"] is None  # no rule: one radius everywhere
     with pytest.raises(ValueError, match="no radius_calibration entry"):
         starter.load_config(script_name="create_voronoi", config=path, size_measure="reported")
     with pytest.raises(ValueError, match="radius_at_10k_people_km: Field required"):
