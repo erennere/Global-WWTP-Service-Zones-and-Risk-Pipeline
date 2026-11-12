@@ -234,4 +234,5 @@ The stage-specific READMEs carry the detailed script descriptions, execution dia
 | Figures and exports | Produces GeoJSON, plots, and report assets | `<figure>__<tag>`, `figures__<tag>` | `wwtp/figures_scripts/README.md` |
 | Validation | Compares outputs to HydroWASTE and EU references | `verification_script__<tag>`, `hw_comparison__<tag>`, `eu_comparison__<tag>` | `wwtp/pop_validation_scripts/README.md` |
 | Sensitivity analysis | Runs the parameter sweep and its scoring | targets `sweep`, `sweep_layers` | `wwtp/sensitivity_analysis_scripts/README.md` |
+| Radius calibration | Service-radius rule against census (`calibration/service_radius.py`) and its scale against national connection rates (`calibration/connection_radius.py`) | target `connection_radius` (curves, references); `python -m wwtp.calibration.connection_radius fit` | module docstrings, `notes/service_radius_*.md` |
 | Industrial analysis | Quantifies industrial land not covered by eligible WWTPs | `download_and_vectorize_lvl<level>`, `find_unconnected_industrial_areas__<tag>` | `wwtp/industrial_analysis/README.md` |

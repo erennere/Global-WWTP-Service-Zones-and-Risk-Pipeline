@@ -538,6 +538,43 @@ class SweepVerRanking(ComparePopSweepHwEu):
     figures: Figures
 
 
+class RadiusGrid(Strict):
+    """Geometric grid of radius_at_10k_people_km values (km)."""
+
+    start: PositiveFloat
+    stop: PositiveFloat
+    count: Annotated[int, Field(ge=2)]
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.stop <= self.start:
+            raise ValueError(f"radius_grid stop {self.stop} must be larger than start {self.start}")
+        return self
+
+
+class ConnectionRadius(Section):
+    version: Version
+    year: Annotated[int, Field(ge=2000, le=2100)]
+    aggregate_cells: PositiveInt
+    candidate_plants: PositiveInt
+    size_measures: list[SizeMeasure] = Field(min_length=1)
+    radius_exponents: list[PositiveFloat] = Field(min_length=1)
+    radius_grid: RadiusGrid
+    max_workers: PositiveInt
+    max_buffer: PositiveInt
+    footprint_to_people: FootprintToPeople
+    reported_size_columns: list[str]
+    reported_size_skip: dict[str, dict[str, list[int]]]
+    country_output_column: str
+    country_boundary_column: str
+    reference_urls: dict[str, str] = Field(min_length=1)
+    request_timeout_seconds: PositiveInt
+    fit_predictors: list[Literal["reference", "reported_coverage"]] = Field(min_length=1)
+    fit_folds: Annotated[int, Field(ge=2)]
+    fit_seed: int
+    paths: Paths
+
+
 # --------------------------------------------------------------------------- #
 # Snakemake                                                                   #
 # --------------------------------------------------------------------------- #
@@ -606,6 +643,7 @@ SECTIONS: dict[str, type[Section]] = {
     "sweep": Sweep,
     "compare_pop_sweep_hw_eu": ComparePopSweepHwEu,
     "sweep_ver_ranking": SweepVerRanking,
+    "connection_radius": ConnectionRadius,
     "figure1": Figure1,
     "workflow": Workflow,
 }

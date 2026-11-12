@@ -21,6 +21,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
+    snakemake connection_radius   calibration inputs for a radius scale from the connection rate
+                                (wwtp/calibration/connection_radius.py)
 
 One-time stages (combine_locations, the four annotation rules, download_pop) are left out
 of every run: their outputs are taken as they are. Name them to include them in one run,
@@ -76,6 +78,7 @@ TARGETS = {
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
+    "connection_radius": "calibration inputs: national connection statistics + served-share curves per country",
 }
 
 
@@ -497,6 +500,35 @@ rule figures:
 
 rule all:
     input: rules.analysis.input, rules.figures.input, rules.sweep.input
+
+
+# --------------------------------------------------------------------------- #
+# Calibration: service-radius scale from the national connection rate          #
+# (wwtp/calibration/connection_radius.py; settings: connection_radius)        #
+# --------------------------------------------------------------------------- #
+CR = wf.config("connection_radius")["paths"]["output_dir"]
+rule connection_radius_references:
+    """National connection statistics, saved unparsed. A local job: compute nodes may have no internet."""
+    output: f"{CR}/references/manifest.json"
+    params: module="calibration.connection_radius", cli=["references"]
+    log: wf.log("connection_radius_references")
+    localrule: True
+    shell: PY + " -m wwtp.{params.module} {params.cli:q} > {log} 2>&1"
+
+
+rule connection_radius_curves:
+    """Served share against the radius scale for every country with plants and a WorldPop raster."""
+    input: ANNOTATED, wf.stamp("download_pop")
+    output: f"{CR}/countries.csv", f"{CR}/served_share_curves.csv"
+    params: module="calibration.connection_radius", cli=["curves"]
+    log: wf.log("connection_radius_curves")
+    threads: threads("connection_radius_curves")
+    resources: **res("connection_radius_curves")
+    shell: STAGE
+
+
+rule connection_radius:
+    input: rules.connection_radius_references.output, rules.connection_radius_curves.output
 
 
 include: "rules/fig1.smk"

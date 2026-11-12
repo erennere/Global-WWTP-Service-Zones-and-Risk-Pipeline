@@ -157,6 +157,7 @@ snakemake --profile workflow/profiles/slurm sweep      # whole sweep grid: servi
 snakemake --profile workflow/profiles/slurm all        # analysis + figures + sweep
 snakemake --profile workflow/profiles/slurm fig1       # Figure 1 from its prepared inputs
 snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations  # grids, OSM context, images, labels
+snakemake --profile workflow/profiles/slurm connection_radius   # calibration inputs: national connection statistics + served-share curves per country
 ```
 
 `sweep_layers` builds only the service areas + population of the sweep grid, without the scores and ranking. Approach 0 never reads the basins, so the sweep computes it once per weighting and extent (at the configured level) and hard-links those files to the other levels' names (`share_approach0_pop__*`): 144 instead of 216 `create_voronoi` and `add_pop` jobs. The linked layers keep the shared level's `HYBAS_ID`/`basin_area` columns; the sweep scoring does not read them.

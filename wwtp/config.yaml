@@ -831,6 +831,51 @@ sweep_ver_ranking:
     eu_ref_filepath: null
     output_dir: '{data_dir}/sensitivity/ver_ranking'
 
+# Service-radius scale from the national connection rate (wwtp/calibration/connection_radius.py;
+# Snakemake target `connection_radius`). For every country with plants and a WorldPop raster: the share
+# of its people inside service areas as a function of radius_at_10k_people_km, with the stand-in of
+# wwtp/calibration/service_radius.py (each person goes to the plant with the smallest distance /
+# sqrt(people) among its candidate_plants nearest, kept inside that plant's circle, at most max_buffer).
+# Those curves and the national connection statistics (reference_urls) are the inputs of the
+# cross-validated fit of r10k = exp(a + b logit(connected share)). Nothing here changes the pipeline.
+connection_radius:
+  version: null
+  year: 2022                  # WorldPop raster year (download_pop keeps 2015-2024)
+  aggregate_cells: 10         # 100 m cells summed to 1 km
+  candidate_plants: 64
+  size_measures: ['reported', 'footprint']
+  radius_exponents: [0.3, 0.5]
+  # radius_at_10k_people_km grid: count values, geometric from start to stop (km)
+  radius_grid: {start: 0.5, stop: 40.0, count: 40}
+  max_workers: 16
+  max_buffer: null
+  footprint_to_people: null
+  reported_size_columns: null
+  reported_size_skip: null
+  country_output_column: null
+  country_boundary_column: null
+  # National connection statistics, saved unparsed: JMP household world file (sewer connections,
+  # wastewater treated), Eurostat population connected to wastewater treatment, OECD wastewater
+  # treatment. Downloaded on the machine that runs Snakemake (compute nodes may have no internet).
+  reference_urls:
+    jmp_household.xlsx: 'https://washdata.org/data/country/WLD/household/download'
+    eurostat_env_ww_con.tsv: 'https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/env_ww_con?format=TSV'
+    oecd_water_treat.csv: 'https://sdmx.oecd.org/public/rest/data/OECD.ENV.EPI,DSD_WATER_TREAT@DF_WATER_TREAT,1.0/all?format=csvfilewithlabels'
+  request_timeout_seconds: 120
+  # Fit (light; runs anywhere): log r10k = a + b logit(predictor), cross-validated over countries.
+  # Predictors: 'reference' (the connected share itself) and 'reported_coverage' (sum of our plants'
+  # reported sizes / national population: our data only, so the reference stays a pure check).
+  fit_predictors: ['reference', 'reported_coverage']
+  fit_folds: 5
+  fit_seed: 0
+  paths:
+    data_dir: null
+    annotated_all_filepath: null
+    overture: null
+    overture_s3_url: null
+    pop_tif_dir: null
+    output_dir: '{data_dir}/calibration/connection_radius'
+
 # Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
 # unit, and the served-population cartogram. Scripts read these through
 # figures/fig1/fig1_config.py; their outputs and inputs live under data_dir.
@@ -892,6 +937,7 @@ workflow:
     interactive_unconnected_industrial_map: {threads: 2, mem_mb: 4096, runtime: 120}
     compare_pop_sweep_hw_eu: {threads: 8, mem_mb: 65536, runtime: 5760}
     sweep_ver_ranking: {threads: 8, mem_mb: 65536, runtime: 5760}
+    connection_radius_curves: {threads: 16, mem_mb: 196608, runtime: 2880}
   paths:
     data_dir: null
     log_dir: '{data_dir}/workflow/logs'
