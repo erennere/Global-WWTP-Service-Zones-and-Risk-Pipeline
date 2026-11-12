@@ -15,9 +15,10 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 (makes the service areas first if they are missing)
     snakemake analysis          service_areas + risk
     snakemake figures           configured variant's figures (and whatever of the analysis they need)
-    snakemake sweep             whole sweep grid: service areas + population, validated against real
-                                catchments (GB, NL, US) and HydroWASTE/UWWTD, and the recommended
-                                candidate (data/sensitivity/sweep_validation/summary.md)
+    snakemake sweep             whole sweep grid: service areas + population, validated per plant (GB,
+                                NL, US catchments; HydroWASTE/UWWTD) and per country and SDG region
+                                (JMP, Eurostat, OECD), and the recommended candidate
+                                (data/sensitivity/sweep_validation/summary.md)
         sweep_layers                  only the service areas + population of the grid
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
@@ -277,12 +278,12 @@ rule sweep_layers:
 
 SV = wf.config("sweep_validation")["paths"]
 rule sweep_validation_references:
-    """Plants, ver/unver/single groups and reference units (GB, NL, US, HydroWASTE, UWWTD), once."""
+    """Plants, ver/unver/single groups, reference units (GB, NL, US, HydroWASTE, UWWTD) and countries (JMP, Eurostat, OECD), once."""
     input:
         wf.population_layer(DEFAULT, wf.figure_approach(DEFAULT)),
         SV["gb_catchments"], SV["gb_waterbase_lookup"], SV["gb_waterbase"], SV["nl_cbs"], SV["us_sewersheds"],
-        SV["eu_ref_filepath"],
-    output: [f"{SV['output_dir']}/references/{name}" for name in ("plants.csv", "units.csv", "matches.csv", "gb_catchments.gpkg")]
+        SV["eu_ref_filepath"], SV["jmp"], SV["eurostat"], SV["oecd"],
+    output: [f"{SV['output_dir']}/references/{name}" for name in ("plants.csv", "units.csv", "matches.csv", "gb_catchments.gpkg", "national.csv")]
     params: module="sensitivity_analysis_scripts.sweep_validation", cli=["references"]
     log: wf.log("sweep_validation_references")
     threads: threads("sweep_validation_references")
@@ -291,9 +292,9 @@ rule sweep_validation_references:
 
 
 rule sweep_validation:
-    """Every candidate of the sweep against the references; scores and the recommended candidate."""
+    """Every candidate of the sweep against plants and countries; scores and the recommended candidate."""
     input: rules.sweep_layers.input, rules.sweep_validation_references.output
-    output: [f"{SV['output_dir']}/{name}" for name in ("scores.csv", "choice.csv", "summary.md", "units.parquet", "served_by_country.csv")]
+    output: [f"{SV['output_dir']}/{name}" for name in ("scores.csv", "national_scores.csv", "national_countries.csv", "national_regions.csv", "choice.csv", "summary.md", "units.parquet")]
     params: module="sensitivity_analysis_scripts.sweep_validation", cli=["score"]
     log: wf.log("sweep_validation")
     threads: threads("sweep_validation")

@@ -101,14 +101,21 @@ def _world(tmp_path):
         crs=4326,
     )
     uww.to_file(tmp_path / "uwwtd.gpkg", driver="GPKG")
-    # GB population raster, as download_pop names it
-    (tmp_path / "pop" / "gbr").mkdir(parents=True)
-    profile = {
-        "driver": "GTiff", "height": 1000, "width": 1000, "count": 1, "dtype": "float32", "crs": "EPSG:4326",
-        "transform": from_origin(-1.5, 52.5, 0.001, 0.001), "nodata": -99999.0,
-    }  # fmt: skip
-    with rasterio.open(tmp_path / "pop" / "gbr" / "gbr_pop_2024_CN_100m_R2024B_v1.tif", "w", **profile) as dst:
-        dst.write(np.ones((1, 1000, 1000), dtype="float32"))
+    # population rasters, as download_pop names them: GB 1 person per 0.001 degree cell (1 M), NL 1.5 M, US 0.5 M
+    for iso3, origin, cell, shape, value in (
+        ("gbr", (-1.5, 52.5), 0.001, (1000, 1000), 1.0),
+        ("nld", (4.5, 52.5), 0.01, (100, 150), 100.0),
+        ("usa", (-73.0, 43.0), 0.01, (100, 100), 50.0),
+    ):
+        (tmp_path / "pop" / iso3).mkdir(parents=True)
+        profile = {
+            "driver": "GTiff", "height": shape[0], "width": shape[1], "count": 1, "dtype": "float32",
+            "crs": "EPSG:4326", "transform": from_origin(*origin, cell, cell), "nodata": -99999.0,
+        }  # fmt: skip
+        with rasterio.open(tmp_path / "pop" / iso3 / f"{iso3}_pop_2024_CN_100m_R2024B_v1.tif", "w", **profile) as dst:
+            dst.write(np.full((1, *shape), value, dtype="float32"))
+    for folder in ("jmp_household", "eu_eurostat", "oecd_water_treat"):
+        (v / folder).mkdir()
     return {
         "country_output_column": "ISO_2",
         "basin_column_name": "HYBAS_ID",
@@ -119,7 +126,17 @@ def _world(tmp_path):
         "reference_years": {"gb": 2024, "nl": 2024, "us": 2020, "hw": 2024, "uwwtd": 2024},
         "gb_match_distance_m": 1000.0,
         "us_match_distance_m": 500.0,
-        "decide_on": ["gb", "nl"],
+        "national_year": 2024,
+        "national_max_year_gap": 5,
+        "national_min_plants": 3,
+        "national_series": {
+            "jmp": "san_sew_sm_t",
+            "jmp_sewer": "san_sew_t",
+            "eurostat": "URB_OTH_CS",
+            "oecd": "PUBTOTTR",
+        },
+        "eurostat_geo_aliases": {"EL": "GR", "UK": "GB"},
+        "decision_weights": {"gb": 0.25, "nl": 0.25, "jmp": 0.5},
         "bootstrap_samples": 200,
         "bootstrap_seed": 0,
         "confidence": 0.95,
@@ -131,6 +148,9 @@ def _world(tmp_path):
             "gb_waterbase": str(v / "gbr_catchments" / "waterbase_consolidated.csv"),
             "nl_cbs": str(v / "nld_cbs_rwzi" / "cbs.xlsx"),
             "us_sewersheds": str(v / "usa_epa_sewersheds" / "Current_Release.zip"),
+            "jmp": str(v / "jmp_household" / "jmp_household.xlsx"),
+            "eurostat": str(v / "eu_eurostat" / "eurostat_env_ww_con.tsv"),
+            "oecd": str(v / "oecd_water_treat" / "oecd_water_treat.csv"),
             "output_dir": str(tmp_path / "out"),
         },
     }
@@ -166,9 +186,37 @@ def _truth(cfg):
     return np.concatenate([sv.zonal_people(gb, raster), [30000, 8000, 150000, 26000, 4000, 900]])
 
 
+def _national_files(cfg, shares):
+    """JMP, Eurostat and OECD files whose connected shares are ``shares`` (iso3 -> 0-1)."""
+    paths = cfg["paths"]
+    jmp = pd.DataFrame(
+        {
+            "iso3": list(shares) + ["GBR"],
+            "year": [2022] * len(shares) + [2010],  # the 2010 row is too far from 2024
+            "san_sew_sm_t": [100 * v for v in shares.values()] + [1.0],
+            "san_sew_t": [120 * v for v in shares.values()] + [2.0],
+            "region_sdg": ["Europe and Northern America"] * len(shares) + ["Europe and Northern America"],
+        }
+    )
+    jmp.to_excel(paths["jmp"], sheet_name="san", index=False)
+    nl, gb = 100 * shares["NLD"], 100 * shares["GBR"]
+    with open(paths["eurostat"], "w") as fh:
+        fh.write("freq,ww_tp,unit,geo\\TIME_PERIOD\t2022 \t2023 \n")
+        fh.write(f"A,URB_OTH_CS,PC,NL\t{nl} e\t: \nA,URB_OTH_CS,PC,UK\t{gb} \t: \nA,URB_CS,PC,NL\t99.9 \t: \n")
+    pd.DataFrame(
+        {"REF_AREA": ["USA", "USA"], "MEASURE": ["PUBTOTTR", "OTHER"], "TIME_PERIOD": [2022, 2022],
+         "OBS_VALUE": [100 * shares["USA"], 1.0]}
+    ).to_csv(paths["oecd"], index=False)  # fmt: skip
+
+
 def test_references_and_choice_end_to_end(tmp_path, monkeypatch):
     cfg = _world(tmp_path)
     truth = _truth(cfg)
+    population = {
+        c: sv.raster_total(sv.country_raster(c, cfg["paths"]["pop_tif_dir"], 2024)) for c in ("GB", "NL", "US")
+    }
+    served = {"GBR": truth[:4].sum() / population["GB"], "NLD": truth[4:7].sum() / population["NL"]}
+    _national_files(cfg, {**served, "USA": truth[7:].sum() / population["US"]})
     good, bad = tmp_path / "good.gpkg", tmp_path / "bad.gpkg"
     _layer(good, truth, HALF)  # matches the catchments and the counts
     _layer(bad, truth * 3, HALF / 2)  # three times too many people, a quarter of each GB catchment
@@ -190,7 +238,11 @@ def test_references_and_choice_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setattr(sv, "configured_layer", lambda: str(bad))
 
     sv.build_references(cfg)
-    units, matches, catchments = sv.read_references(cfg)
+    units, matches, catchments, national = sv.read_references(cfg)
+    nat = national.set_index("iso2")
+    assert nat.loc["NL", "people"] == pytest.approx(1.5e6) and nat.loc["US", "people"] == pytest.approx(5e5)
+    assert nat.loc["NL", "eurostat_share"] == pytest.approx(served["NLD"]) and nat.loc["GB", "jmp_year"] == 2022
+    assert np.isnan(nat.loc["US", "eurostat_share"]) and nat.loc["US", "oecd_share"] > 0
     n = units.groupby("reference").size().to_dict()
     assert n == {"gb": 4, "nl": 3, "us": 2, "hw": 2, "uwwtd": 3}  # US: flagged and two-ID polygons left out
     gb = units[units["reference"] == "gb"].set_index("unit")
@@ -200,7 +252,12 @@ def test_references_and_choice_end_to_end(tmp_path, monkeypatch):
     assert nl.loc["NL00001", "ref"] == 30000 and nl.loc["NL00001", "group"] == "single"  # municipalities not summed
     assert len(catchments) == 4
 
-    scores, choice = sv.score_all(cfg)
+    scores, nat_scores, choice = sv.score_all(cfg)
+    n = nat_scores.set_index(["candidate", "reference"])
+    assert n.loc[("good", "jmp"), "mean_abs_error_pp"] == pytest.approx(0, abs=1e-9)
+    assert n.loc[("good", "jmp"), "n_countries"] == 3 and n.loc[("good", "eurostat"), "n_countries"] == 2
+    assert n.loc[("bad", "jmp"), "world_ratio"] == pytest.approx(3.0)
+    assert n.loc[("good", "jmp_sewer"), "bias_pp"] < 0 and n.loc[("good", "jmp_sewer"), "role"] == "upper bound"
     s = scores[scores["group"] == "all"].set_index(["candidate", "reference"])
     for ref in ("gb", "nl", "us"):
         assert s.loc[("good", ref), "class_balanced_error_x"] == pytest.approx(1.0, abs=1e-6)
@@ -213,10 +270,13 @@ def test_references_and_choice_end_to_end(tmp_path, monkeypatch):
     c = choice.set_index("candidate")
     assert c.loc["good", "best"] and c.loc["good", "recommended"] and not c.loc["bad", "shortlist"]
     out = cfg["paths"]["output_dir"]
-    for name in ("units.parquet", "served_by_country.csv", "summary.md"):
+    for name in ("units.parquet", "national_countries.csv", "national_regions.csv", "summary.md"):
         assert os.path.exists(os.path.join(out, name))
-    served = pd.read_csv(os.path.join(out, "served_by_country.csv")).set_index(["candidate", "iso2"])
-    assert served.loc[("good", "NL"), "people"] == pytest.approx(188000)
+    regions = pd.read_csv(os.path.join(out, "national_regions.csv"))
+    world = regions[
+        (regions["region_sdg"] == "World") & (regions["candidate"] == "good") & (regions["reference"] == "jmp")
+    ]
+    assert float(world["error_pp"].iloc[0]) == pytest.approx(0, abs=1e-9)
 
 
 def _people(errors, refs):
@@ -230,30 +290,47 @@ def _people(errors, refs):
     return pd.DataFrame(rows), pd.DataFrame(units)
 
 
-def test_the_configured_candidate_stays_unless_the_best_wins_in_every_reference():
+def _long(offsets, ref_share):
+    """National shares for choose(): candidate x country served = reference + offset."""
+    return pd.DataFrame(
+        [
+            {"candidate": c, "reference": "jmp", "iso2": f"C{j}", "served_share": r + off[j], "ref_share": r}
+            for c, off in offsets.items()
+            for j, r in enumerate(ref_share)
+        ]
+    )
+
+
+def test_the_best_replaces_the_configured_only_if_better_overall_and_nowhere_worse():
     rng = np.random.default_rng(1)
     refs = {"gb": 10 ** rng.uniform(3, 6, 60), "nl": 10 ** rng.uniform(3, 6, 60)}  # every size class
     noise = {r: 10 ** rng.normal(0, 0.15, 60) for r in refs}
+    share = rng.uniform(0.1, 0.9, 80)
+    gap = rng.normal(0, 0.05, 80)
     cands = pd.DataFrame(
         {"configured": [True, False, False], "uses_reported_sizes": [True, True, False]}, index=["conf", "a", "b"]
     )
-    # a: better than conf in gb only; b: as good as conf
+    weights = {"gb": 0.25, "nl": 0.25, "jmp": 0.5}
+    # a: much better nationally, but clearly worse in nl -> the configured candidate stays
     errors = {
-        "conf": {"gb": noise["gb"] * 1.6, "nl": noise["nl"]},
-        "a": {"gb": noise["gb"], "nl": noise["nl"] * 1.05},
-        "b": {"gb": noise["gb"] * 1.6, "nl": noise["nl"]},
+        "conf": {"gb": noise["gb"], "nl": noise["nl"]},
+        "a": {"gb": noise["gb"], "nl": noise["nl"] * 1.8},
+        "b": {"gb": noise["gb"] * 1.2, "nl": noise["nl"]},
     }
+    long = _long({"conf": gap - 0.15, "a": gap, "b": gap - 0.15}, share)
     people, units = _people(errors, refs)
-    table, better = sv.choose(people, units, cands, ["gb", "nl"], 300, 0, 0.95)
+    table, decision = sv.choose(people, units, long, cands, weights, 300, 0, 0.95)
     t = table.set_index("candidate")
-    assert t.loc["a", "best"] and better == {"gb": True, "nl": False}
-    assert t.loc["conf", "recommended"] and t.loc["b", "shortlist"] == t.loc["conf", "shortlist"]
-    # a also better in nl -> recommended
+    assert t.loc["a", "best"] and decision["worse"]["nl"] and t.loc["conf", "recommended"]
+    assert decision["best_by"] == {"plants": "conf", "countries": "a"}
+    assert t.loc["conf", "score"] == pytest.approx(1.0)
+    assert t.loc["a", "mean_abs_error_pp jmp"] < t.loc["conf", "mean_abs_error_pp jmp"]
+    # a as good as conf in the plants -> recommended
     errors["a"]["nl"] = noise["nl"]
-    errors["conf"]["nl"] = noise["nl"] * 1.6
     people, units = _people(errors, refs)
-    table, better = sv.choose(people, units, cands, ["gb", "nl"], 300, 0, 0.95)
-    assert table.set_index("candidate").loc["a", "recommended"] and all(better.values())
+    table, decision = sv.choose(people, units, long, cands, weights, 300, 0, 0.95)
+    assert table.set_index("candidate").loc["a", "recommended"] and decision["better_overall"]
+    assert not any(decision["worse"].values())
 
 
 def test_metrics_count_an_empty_area_as_a_failure():

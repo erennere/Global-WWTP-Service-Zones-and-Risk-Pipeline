@@ -807,10 +807,14 @@ sweep:
   sweep_size_measures: ['reported', 'footprint']
 
 # Validation of the sweep and the choice of a candidate (variant x approach; approach 0 once):
-# wwtp/sensitivity_analysis_scripts/sweep_validation.py. People per plant against real catchments
-# (gb: Hoffmann et al., population raster; nl: CBS per RWZI), the EPA sewersheds the radius was
-# calibrated on (us), and HydroWASTE reported / UWWTD capacity (inputs of variants with reported
-# sizes). Plants are grouped once, on the configured variant's basins, into ver / unver / single.
+# wwtp/sensitivity_analysis_scripts/sweep_validation.py. Two levels:
+#   plants    - people per plant against real catchments (gb: Hoffmann et al., population raster;
+#               nl: CBS per RWZI), the EPA sewersheds the radius was calibrated on (us), HydroWASTE
+#               reported and UWWTD capacity (inputs of variants with reported sizes); groups ver /
+#               unver / single fixed on the configured variant's basins.
+#   countries - people in service areas / people of the country's raster against the share connected
+#               to treatment (JMP, Eurostat, OECD; JMP sewer connection as upper bound), per country
+#               and SDG region.
 sweep_validation:
   country_output_column: null
   basin_column_name: null
@@ -818,13 +822,21 @@ sweep_validation:
   threshold: null              # UWWTD match distance (m), as eu_comparison
   eu_reference_factor: null    # as eu_comparison
   percent_verification: null   # as verification_script
-  # Population year of each reference (the candidates' <year>_zonal_sum; gb also its raster).
+  # Population year of each plant reference (the candidates' <year>_zonal_sum; gb also its raster).
   reference_years: {gb: 2024, nl: 2024, us: 2020, hw: 2024, uwwtd: 2024}
   gb_match_distance_m: 1000    # our plant to the UWWTD plant of a linked GB catchment
   us_match_distance_m: 500     # our plant to its EPA sewershed polygon
-  # The choice: mean class-balanced error over these references; the best candidate replaces the
-  # configured one only if it is better in each of them with this confidence (paired bootstrap).
-  decide_on: ['gb', 'nl']
+  # Countries: population year of the shares (JMP's latest is 2022), reference values at most this
+  # many years away, countries with at least this many plants (as the figures).
+  national_year: 2022
+  national_max_year_gap: 5
+  national_min_plants: 5
+  national_series: {jmp: 'san_sew_sm_t', jmp_sewer: 'san_sew_t', eurostat: 'URB_OTH_CS', oecd: 'PUBTOTTR'}
+  eurostat_geo_aliases: {EL: 'GR', UK: 'GB'}   # Eurostat country codes that are not ISO 3166
+  # The choice: each component's error relative to the configured candidate, weighted. Half plants
+  # (GB, NL), half countries (JMP, global). The best candidate replaces the configured one only if it
+  # is better overall and worse in no component, both at this confidence (paired bootstrap).
+  decision_weights: {gb: 0.25, nl: 0.25, jmp: 0.5}
   bootstrap_samples: 1000
   bootstrap_seed: 0
   confidence: 0.95
@@ -837,6 +849,9 @@ sweep_validation:
     gb_waterbase: '{data_dir}/validation_data/gbr_catchments/waterbase_consolidated.csv'
     nl_cbs: '{data_dir}/validation_data/nld_cbs_rwzi/2025-Aantal-inwoners-per-RWZI-verzorgingsgebied-1-jan-2024.xlsx'
     us_sewersheds: '{data_dir}/validation_data/usa_epa_sewersheds/Current_Release.zip'
+    jmp: '{data_dir}/validation_data/jmp_household/jmp_household.xlsx'
+    eurostat: '{data_dir}/validation_data/eu_eurostat/eurostat_env_ww_con.tsv'
+    oecd: '{data_dir}/validation_data/oecd_water_treat/oecd_water_treat.csv'
     output_dir: '{data_dir}/sensitivity/sweep_validation'
 
 # Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
@@ -898,7 +913,7 @@ workflow:
     composite_area_population_plots: {threads: 4, mem_mb: 8192, runtime: 1440}
     pop_at_risk_figures: {threads: 8, mem_mb: 8192, runtime: 1440}
     interactive_unconnected_industrial_map: {threads: 2, mem_mb: 4096, runtime: 120}
-    sweep_validation_references: {threads: 2, mem_mb: 32768, runtime: 720}
+    sweep_validation_references: {threads: 16, mem_mb: 65536, runtime: 720}
     sweep_validation: {threads: 16, mem_mb: 131072, runtime: 1440}
   paths:
     data_dir: null

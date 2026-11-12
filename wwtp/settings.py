@@ -525,7 +525,9 @@ class Sweep(Section):
     sweep_size_measures: list[SizeMeasure] = Field(min_length=1)
 
 
-SweepReference = Literal["gb", "nl", "us", "hw", "uwwtd"]
+SweepPlantReference = Literal["gb", "nl", "us", "hw", "uwwtd"]
+SweepNationalReference = Literal["jmp", "jmp_sewer", "eurostat", "oecd"]
+Year = Annotated[int, Field(ge=2000, le=2100)]
 
 
 class SweepValidation(Section):
@@ -535,20 +537,26 @@ class SweepValidation(Section):
     threshold: NonNegativeInt
     eu_reference_factor: PositiveFloat
     percent_verification: Fraction
-    reference_years: dict[SweepReference, Annotated[int, Field(ge=2000, le=2100)]]
+    reference_years: dict[SweepPlantReference, Year]
     gb_match_distance_m: PositiveFloat
     us_match_distance_m: PositiveFloat
-    decide_on: list[SweepReference] = Field(min_length=1)
+    national_year: Year
+    national_max_year_gap: NonNegativeInt
+    national_min_plants: PositiveInt
+    national_series: dict[SweepNationalReference, str]
+    eurostat_geo_aliases: dict[str, str]
+    decision_weights: dict[SweepPlantReference | SweepNationalReference, PositiveFloat] = Field(min_length=1)
     bootstrap_samples: PositiveInt
     bootstrap_seed: NonNegativeInt
     confidence: Annotated[float, Field(gt=0.5, lt=1)]
     paths: Paths
 
     @model_validator(mode="after")
-    def every_reference_has_a_year(self):
-        missing = set(SweepReference.__args__) - set(self.reference_years)
+    def every_reference_is_configured(self):
+        missing = set(SweepPlantReference.__args__) - set(self.reference_years)
+        missing |= set(SweepNationalReference.__args__) - set(self.national_series)
         if missing:
-            raise ValueError(f"reference_years lacks {sorted(missing)}")
+            raise ValueError(f"reference_years / national_series lack {sorted(missing)}")
         return self
 
 

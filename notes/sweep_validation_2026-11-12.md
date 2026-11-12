@@ -12,33 +12,44 @@ Snakemake target `sweep`. Method in the module docstring and the folder README.
   change when the grid changes.
 - The ver / unver / single split was made on each candidate's own basin level, so levels 5, 6 and 7
   were scored on different plants.
+- Nothing global: no country or regional comparison.
 
-## What decides now
-- GB (Hoffmann et al. catchments, population raster in the catchment: geometry only) and NL (CBS
-  inhabitants per RWZI). Neither was used to fit anything.
-- Score: mean over GB and NL of the class-balanced error. Paired bootstrap over the reference units.
-- The best candidate replaces the configured one only if it is better in GB and in NL at 95 %. This
-  is the rule of the NL test (6 Nov): change a setting only if both countries agree.
-- US sewersheds (calibration data), HydroWASTE and UWWTD are reported with their role, per group, but
-  do not decide.
-- The groups (ver / unver / single) are fixed once on the configured variant's basins.
-- `served_by_country.csv` (people in service areas per country and candidate) is there for the
-  country check against JMP.
+## Two levels
+- **Plants:** GB (Hoffmann et al. catchments, population raster in the catchment: geometry only), NL
+  (CBS inhabitants per RWZI), US (EPA sewersheds; the radius was calibrated on them), HydroWASTE
+  reported and UWWTD (inputs of candidates with reported sizes). Groups ver / unver / single fixed on
+  the configured variant's basins.
+- **Countries and SDG regions:** people in service areas / people of the country's raster (2022)
+  against JMP sewered-and-treated (global), JMP sewer connection (upper bound), Eurostat and OECD.
+  Countries with at least 5 plants.
 
-## Check on real data (scratch runs of 6 Nov, 1 km WorldPop 2020 as counts)
+## The choice
+- Score: each component's error relative to the configured candidate, weighted GB 0.25, NL 0.25,
+  JMP 0.5 (half plants, half countries). Plants: class-balanced error; countries: mean absolute
+  error in percentage points.
+- Paired bootstrap over plants and countries. The best replaces the configured candidate only if it
+  is better overall and worse in no component, both at 95 %.
+- Why both: the two levels pull apart. A larger radius fits the national shares by giving our plants
+  the people of plants missing from the list (connection-radius note): better for countries, worse
+  per plant in GB. The rule only switches when a candidate does not pay for one with the other.
+- Part of every candidate's national gap is plants missing from our list; it is common to all
+  candidates, so it moves the level of the national error, not the comparison.
+
+## Check on real data (scratch runs of 6 Nov, GB and NL only, 1 km WorldPop 2020 as counts)
 Configured (level 6, size weighting, reported radius) against the same with a rigid 50 km buffer:
 
-| candidate | GB class-bal. | GB typical | GB within x2 | GB total | GB capture | NL class-bal. | NL typical | NL within x2 | NL total |
-|---|---|---|---|---|---|---|---|---|---|
-| configured | x1.49 | x1.68 | 64 % | 1.15 | 0.69 | x1.57 | x1.50 | 73 % | 0.82 |
-| rigid 50 km | x1.68 | x1.83 | 57 % | 1.36 | 0.73 | x1.34 | x1.36 | 81 % | 0.99 |
+| candidate | GB class-bal. | GB typical | GB total | GB capture | NL class-bal. | NL total | JMP error (GB, NL) |
+|---|---|---|---|---|---|---|---|
+| configured | x1.49 | x1.68 | 1.15 | 0.69 | x1.57 | 0.82 | 14.0 pp |
+| rigid 50 km | x1.68 | x1.83 | 1.36 | 0.73 | x1.34 | 0.99 | 2.1 pp |
 
-Mean score: rigid 50 km x1.50, configured x1.53, so the rigid buffer is "best"; it is better in NL
-only, so the configured one stays. The numbers agree with the earlier GB and NL tests (NL: x1.47,
-74 %, 0.84 with the raster scaled to 2024; GB: x1.56, 68 %, 1.11, capture 0.69 with cell centres).
+The rigid buffer is better for NL and the national shares, but significantly worse in GB (plant loads
+x1.36), so the configured candidate stays. On the cluster the national level covers every country
+with plants and a JMP value (about 125), not two.
 
 ## Running it
-Copy `data/validation_data/gbr_catchments/`, `nld_cbs_rwzi/` and `usa_epa_sewersheds/` from the
-laptop to the cluster's `data/validation_data/`; `pip install -e .` once (openpyxl). Then
+Copy `data/validation_data/` (gbr_catchments, nld_cbs_rwzi, usa_epa_sewersheds, jmp_household,
+eu_eurostat, oecd_water_treat) from the laptop to the cluster's `data/validation_data/`;
+`pip install -e .` once (openpyxl). Then
 `snakemake --profile workflow/profiles/slurm sweep --jobs 10 --keep-going`; result in
 `data/sensitivity/sweep_validation/summary.md`.
