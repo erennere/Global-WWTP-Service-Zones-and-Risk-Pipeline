@@ -143,7 +143,14 @@ def _synthetic_countries(a, b, n=30, seed=3):
         r0 = -r_needed / math.log(1 - share)
         total = 1e6
         countries.append(
-            {"iso2": iso2, "iso3": iso3, "status": "ok", "total_people": total, "reported_coverage": share}
+            {
+                "iso2": iso2,
+                "iso3": iso3,
+                "status": "ok",
+                "total_people": total,
+                "n_plants": 10,
+                "reported_coverage": share,
+            }
         )
         for r in radii:
             curves.append(
@@ -155,18 +162,21 @@ def _synthetic_countries(a, b, n=30, seed=3):
                     "served_people": total * (1 - math.exp(-r / r0)),
                 }
             )
-        refs.append({"iso3": iso3, "connected_share": share})
+        refs.append({"iso3": iso3, "jmp_share": share, "oecd_share": share if k % 2 else np.nan})
     return pd.DataFrame(countries), pd.DataFrame(curves), pd.DataFrame(refs)
 
 
 def test_the_fit_recovers_a_known_formula_out_of_sample():
     countries, curves, refs = _synthetic_countries(a=1.5, b=0.4)
-    cfg = {"fit_folds": 5, "fit_seed": 0, "fit_predictors": ["reference", "reported_coverage"]}
+    cfg = {"fit_reference": "jmp", "fit_folds": 5, "fit_seed": 0, "fit_predictors": ["reference", "reported_coverage"]}
     summary, per_country = cr.fit_connection_radius(cfg, countries, curves, refs, {"reported": (0.3, 3.75)})
     fitted = summary[summary["model"].str.startswith("r10k = exp")]
     assert fitted["a"].to_numpy() == pytest.approx([1.5, 1.5], abs=0.02)
     assert fitted["b"].to_numpy() == pytest.approx([0.4, 0.4], abs=0.02)
     assert (fitted["mean_abs_error_pp"] < 0.5).all()
+    # the other source is scored on its own countries; here it equals the reference
+    assert (fitted["check oecd: n"] == 15).all() and (fitted["check oecd: mean_abs_error_pp"] < 0.5).all()
+    assert fitted["served / reference people"].to_numpy() == pytest.approx([1.0, 1.0], abs=0.01)
     current = summary[summary["model"].str.startswith("current")]
     assert float(current["mean_abs_error_pp"].iloc[0]) > 5  # one radius for all misses the spread
     assert set(per_country["predictor"]) == {"reference", "reported_coverage"} and len(per_country) == 60
@@ -197,3 +207,46 @@ def test_references_are_saved_with_a_manifest_and_failures_fail_the_run(tmp_path
     assert manifest["a.csv"]["bytes"] == 6 and manifest["a.csv"]["final_url"] == "https://example.org/a"
     assert "403" in manifest["b.csv"]["error"]
     assert (tmp_path / "references" / "a.csv").read_bytes() == b"col\n1\n"
+
+
+def test_references_are_read_per_source_in_the_year_nearest_the_target(tmp_path):
+    folder = tmp_path / "references"
+    folder.mkdir()
+    pd.DataFrame(
+        {
+            "iso3": ["NLD", "NLD", "IND", "ARG"],
+            "year": [2021, 2022, 2022, 2010],
+            "san_sew_sm_t": [97.0, 97.3, 5.2, 28.0],
+            "san_sew_t": [99.0, 99.0, 14.3, 60.0],
+        }
+    ).to_excel(folder / "jmp.xlsx", sheet_name="san", index=False)
+    (folder / "eurostat.tsv").write_text(
+        "freq,ww_tp,unit,geo\\TIME_PERIOD\t2020 \t2022 \t2023 \n"
+        "A,URB_OTH_CS,PC,NL\t99.4 \t99.5 e\t: \n"
+        "A,URB_OTH_CS,PC,EL\t93.1 \t: \t94.0 \n"
+        "A,URB_OTH_CS,PC,EU27_2020\t90.0 \t91.0 \t: \n"
+        "A,URB_OTH_CS,THS_PER,NL\t17000 \t17100 \t: \n"
+        "A,URB_CS,PC,NL\t99.9 \t99.9 \t: \n"
+    )
+    pd.DataFrame(
+        {
+            "REF_AREA": ["NLD", "NLD", "CHN"],
+            "MEASURE": ["PUBTOTTR", "OTHER", "PUBTOTTR"],
+            "TIME_PERIOD": [2022, 2022, 2004],
+            "OBS_VALUE": [99.6, 1.0, 32.5],
+        }
+    ).to_csv(folder / "oecd.csv", index=False)
+    cfg = {
+        "year": 2022,
+        "reference_files": {"jmp": "jmp.xlsx", "eurostat": "eurostat.tsv", "oecd": "oecd.csv"},
+        "reference_series": {"jmp": "san_sew_sm_t", "eurostat": "URB_OTH_CS", "oecd": "PUBTOTTR"},
+        "eurostat_geo_aliases": {"EL": "GR", "UK": "GB"},
+        "reference_max_year_gap": 5,
+        "paths": {"output_dir": str(tmp_path)},
+    }
+    refs = cr.read_references(cfg).set_index("iso3")
+    assert sorted(refs.index) == ["GRC", "IND", "NLD"]  # ARG 2010 and CHN 2004 are too old; EU27 is no country
+    assert refs.loc["NLD", "jmp_share"] == pytest.approx(0.973) and refs.loc["IND", "jmp_share"] == pytest.approx(0.052)
+    assert refs.loc["NLD", "eurostat_share"] == pytest.approx(0.995)  # flag dropped, PC and URB_OTH_CS only
+    assert refs.loc["GRC", "eurostat_share"] == pytest.approx(0.94) and refs.loc["GRC", "eurostat_year"] == 2023
+    assert refs.loc["NLD", "oecd_share"] == pytest.approx(0.996) and np.isnan(refs.loc["IND", "oecd_share"])

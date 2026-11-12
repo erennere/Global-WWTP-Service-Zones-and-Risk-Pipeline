@@ -14,8 +14,8 @@ section ``connection_radius``; Snakemake target ``connection_radius`` runs the f
     curves      for every country with plants and a WorldPop raster of ``year``: its people, and the
                 people inside service areas for every size measure, radius exponent and r10k of the grid
                 -> <output_dir>/countries.csv, <output_dir>/served_share_curves.csv
-    fit         the cross-validated fit from the curves and <output_dir>/reference_table.csv
-                (iso3, connected_share 0-1, year, source) -> fit_summary.json, fit_countries.csv
+    fit         the connected shares per country from the references (reference_table.csv) and the
+                cross-validated fit -> fit_summary.csv, fit_countries.csv
 
 Stand-in for the service areas, as in ``wwtp.calibration.service_radius`` (approach 1 without basins):
 each 1 km population cell goes to the plant of its country with the smallest distance / sqrt(people)
@@ -354,31 +354,104 @@ def error_summary(predicted, reference):
     }
 
 
+def _nearest_year(frame, key, year, max_gap):
+    """Per ``key``: the row whose ``year`` column is nearest ``year`` (the later one on a tie), if at
+    most ``max_gap`` years away."""
+    frame = frame.assign(_d=(frame["year"] - year).abs(), _neg=-frame["year"])
+    frame = frame[frame["_d"] <= max_gap]
+    return frame.sort_values([key, "_d", "_neg"]).drop_duplicates(key).drop(columns=["_d", "_neg"])
+
+
+def read_references(cfg):
+    """Connected-to-treatment share (0-1) and its year per country (iso3) and source, from the downloads.
+
+    Columns ``<source>_share`` and ``<source>_year`` for every source in ``reference_files``; the year is
+    the one nearest ``year``, at most ``reference_max_year_gap`` years away. JMP: sheet 'san', column ``reference_series['jmp']`` (percent). Eurostat
+    (SDMX TSV, 'freq,ww_tp,unit,geo'): ``ww_tp`` = the series, unit PC; flags after the value are dropped;
+    ``eurostat_geo_aliases`` maps its non-ISO codes. OECD (CSV with labels): MEASURE = the series.
+    """
+    folder = os.path.join(cfg["paths"]["output_dir"], "references")
+    files, series, year = cfg["reference_files"], cfg["reference_series"], int(cfg["year"])
+    _, alpha_2_to_3, _, _ = get_iso_codes()
+    tables = []
+    if "jmp" in files:
+        jmp = pd.read_excel(os.path.join(folder, files["jmp"]), sheet_name="san")
+        jmp = jmp[["iso3", "year", series["jmp"]]].rename(columns={series["jmp"]: "share"}).dropna()
+        tables.append(("jmp", jmp.assign(share=jmp["share"] / 100)))
+    if "eurostat" in files:
+        raw = pd.read_csv(os.path.join(folder, files["eurostat"]), sep="\t", dtype=str)
+        dims = raw.iloc[:, 0].str.split(",", expand=True)
+        raw = raw[(dims[1] == series["eurostat"]) & (dims[2] == "PC")]
+        geo = dims.loc[raw.index, 3].replace(cfg["eurostat_geo_aliases"])
+        rows = []
+        for (_, values), code in zip(raw.iloc[:, 1:].iterrows(), geo):
+            for column, value in values.items():
+                number = str(value).strip().split(" ")[0]
+                if number not in (":", "", "nan") and code in alpha_2_to_3:
+                    rows.append({"iso3": alpha_2_to_3[code], "year": int(column.strip()), "share": float(number) / 100})
+        tables.append(("eurostat", pd.DataFrame(rows, columns=["iso3", "year", "share"])))
+    if "oecd" in files:
+        oecd = pd.read_csv(os.path.join(folder, files["oecd"]), low_memory=False)
+        oecd = oecd[oecd["MEASURE"] == series["oecd"]][["REF_AREA", "TIME_PERIOD", "OBS_VALUE"]].dropna()
+        oecd = oecd.rename(columns={"REF_AREA": "iso3", "TIME_PERIOD": "year", "OBS_VALUE": "share"})
+        tables.append(("oecd", oecd.assign(share=oecd["share"] / 100)))
+    out = None
+    for source, table in tables:
+        table = _nearest_year(table, "iso3", year, int(cfg["reference_max_year_gap"])).rename(
+            columns={"share": f"{source}_share", "year": f"{source}_year"}
+        )
+        out = table if out is None else out.merge(table, on="iso3", how="outer")
+    return out.reset_index(drop=True)
+
+
 def fit_connection_radius(cfg, countries, curves, references, current_r10k):
     """Cross-validated fit per size measure, radius exponent and predictor (see module docstring).
 
-    ``references``: iso3, connected_share (0-1). ``current_r10k``: {size_measure: (exponent, r10k)} of
-    the configured rule, scored on the same countries as the baseline.
+    ``references``: ``read_references`` output; ``fit_reference`` is fitted and scored, the other
+    sources are scored as checks. ``current_r10k``: {size_measure: (exponent, r10k)} of the configured
+    rule, the baseline. Errors are served share minus reference, in percentage points; ``served /
+    reference people`` weights countries by their people.
     """
-    ref = references.set_index("iso3")["connected_share"]
+    fit_source = cfg["fit_reference"]
+    checks = [c[: -len("_share")] for c in references.columns if c.endswith("_share") and c != f"{fit_source}_share"]
+    refs = references.set_index("iso3")
     countries = countries[countries["status"] == "ok"].set_index("iso3")
     summary, per_country = [], []
+
+    def scored(model, predicted, table, extra=None):
+        row = {**key, "model": model, **(extra or {}), **error_summary(predicted, table["reference"])}
+        people = table["people"].to_numpy()
+        row["served / reference people"] = float(
+            np.sum(np.asarray(predicted) * people) / np.sum(table["reference"] * people)
+        )
+        for source in checks:
+            has = table[f"{source}_share"].notna().to_numpy()
+            if has.any():
+                err = np.asarray(predicted)[has] - table.loc[has, f"{source}_share"].to_numpy()
+                row[f"check {source}: n"] = int(has.sum())
+                row[f"check {source}: mean_abs_error_pp"] = float(np.mean(np.abs(err)) * 100)
+                row[f"check {source}: bias_pp"] = float(np.mean(err) * 100)
+        summary.append(row)
+
     for (measure, exponent), curve in curves.groupby(["size_measure", "radius_exponent"]):
         base = []
         for iso2, c in curve.groupby("iso2"):
             info = countries[countries["iso2"] == iso2]
-            if info.empty or info.index[0] not in ref.index:
+            if info.empty or info.index[0] not in refs.index or pd.isna(refs.loc[info.index[0], f"{fit_source}_share"]):
                 continue
             iso3 = info.index[0]
             c = c.sort_values("radius_at_10k_people_km")
             radii = c["radius_at_10k_people_km"].to_numpy()
             shares = np.maximum.accumulate(c["served_people"].to_numpy() / info["total_people"].iloc[0])
-            target = float(ref[iso3])
+            target = float(refs.loc[iso3, f"{fit_source}_share"])
             r_needed, where = needed_radius(radii, shares, target)
             base.append(
                 {
                     "iso3": iso3,
+                    "people": float(info["total_people"].iloc[0]),
+                    "n_plants": int(info["n_plants"].iloc[0]),
                     "reference": target,
+                    **{f"{s}_share": refs.loc[iso3, f"{s}_share"] for s in checks},
                     "reported_coverage": float(info["reported_coverage"].iloc[0]),
                     "radii": radii,
                     "shares": shares,
@@ -392,40 +465,26 @@ def fit_connection_radius(cfg, countries, curves, references, current_r10k):
             logger.warning("%s e %s: only %d countries with a reference; skipped", measure, exponent, len(base))
             continue
         table = pd.DataFrame(base)
-        key = {"size_measure": measure, "radius_exponent": float(exponent), "n_countries": len(table)}
-        key["n_needed_inside_grid"] = int(table["fit_ok"].sum())
+        key = {
+            "size_measure": measure,
+            "radius_exponent": float(exponent),
+            "reference": fit_source,
+            "n_countries": len(table),
+            "n_needed_inside_grid": int(table["fit_ok"].sum()),
+        }
+        current = None
         if measure in current_r10k and math.isclose(current_r10k[measure][0], exponent):
             current = [share_at(r, s, current_r10k[measure][1]) for r, s in zip(table["radii"], table["shares"])]
-            summary.append(
-                {
-                    **key,
-                    "model": f"current r10k {current_r10k[measure][1]} km",
-                    **error_summary(current, table["reference"]),
-                }
-            )
+            scored(f"current r10k {current_r10k[measure][1]} km", current, table)
         median_r = float(np.exp(np.median(table.loc[table["fit_ok"], "log_r"])))
         constant = [share_at(r, s, median_r) for r, s in zip(table["radii"], table["shares"])]
-        summary.append(
-            {
-                **key,
-                "model": f"one r10k for all ({median_r:.2f} km, in sample)",
-                **error_summary(constant, table["reference"]),
-            }
-        )
+        scored(f"one r10k for all ({median_r:.2f} km, in sample)", constant, table)
         for predictor in cfg["fit_predictors"]:
             table["x"] = logit(table[predictor])
             predicted, fold_of = cross_validate(table, int(cfg["fit_folds"]), int(cfg["fit_seed"]))
             ok = table["fit_ok"].to_numpy()
             a, b = fit_line(table.loc[ok, "x"], table.loc[ok, "log_r"])
-            summary.append(
-                {
-                    **key,
-                    "model": f"r10k = exp(a + b logit({predictor})), cross-validated",
-                    "a": a,
-                    "b": b,
-                    **error_summary(predicted, table["reference"]),
-                }
-            )
+            scored(f"r10k = exp(a + b logit({predictor})), cross-validated", predicted, table, {"a": a, "b": b})
             for i, row in table.iterrows():
                 per_country.append(
                     {
@@ -433,10 +492,15 @@ def fit_connection_radius(cfg, countries, curves, references, current_r10k):
                         "size_measure": measure,
                         "radius_exponent": float(exponent),
                         "predictor": predictor,
+                        "n_plants": row["n_plants"],
+                        "people": row["people"],
                         "reference": row["reference"],
+                        **{f"{s}_share": row[f"{s}_share"] for s in checks},
                         "reported_coverage": row["reported_coverage"],
                         "needed_r10k": row["needed_r10k"],
                         "needed_where": row["needed_where"],
+                        "served_share_max_grid": row["shares"][-1],
+                        "served_share_current": current[i] if current is not None else np.nan,
                         "fold": int(fold_of[i]),
                         "predicted_r10k_all_data": math.exp(a + b * row["x"]),
                         "served_share_cross_validated": predicted[i],
@@ -459,6 +523,9 @@ def main(argv=None):
     elif args.command == "curves":
         compute_curves(cfg)
     else:
+        references = read_references(cfg)
+        with atomic_output(os.path.join(out_dir, "reference_table.csv")) as tmp:
+            references.to_csv(tmp, index=False)
         voronoi = load_config(script_name="create_voronoi")
         current = {
             m: (c["radius_exponent"], c["radius_at_10k_people_km"]) for m, c in voronoi["radius_calibration"].items()
@@ -467,7 +534,7 @@ def main(argv=None):
             cfg,
             pd.read_csv(os.path.join(out_dir, "countries.csv"), keep_default_na=False, na_values=[""]),
             pd.read_csv(os.path.join(out_dir, "served_share_curves.csv"), keep_default_na=False, na_values=[""]),
-            pd.read_csv(os.path.join(out_dir, "reference_table.csv")),
+            references,
             current,
         )
         with atomic_output(os.path.join(out_dir, "fit_summary.csv")) as tmp:

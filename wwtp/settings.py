@@ -552,6 +552,9 @@ class RadiusGrid(Strict):
         return self
 
 
+ReferenceSource = Literal["jmp", "eurostat", "oecd"]
+
+
 class ConnectionRadius(Section):
     version: Version
     year: Annotated[int, Field(ge=2000, le=2100)]
@@ -569,6 +572,11 @@ class ConnectionRadius(Section):
     country_boundary_column: str
     reference_urls: dict[str, str] = Field(min_length=1)
     request_timeout_seconds: PositiveInt
+    reference_files: dict[ReferenceSource, str]
+    reference_series: dict[ReferenceSource, str]
+    eurostat_geo_aliases: dict[str, str]
+    reference_max_year_gap: int = Field(ge=0)
+    fit_reference: ReferenceSource
     fit_predictors: list[Literal["reference", "reported_coverage"]] = Field(min_length=1)
     fit_folds: Annotated[int, Field(ge=2)]
     fit_seed: int

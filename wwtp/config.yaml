@@ -862,6 +862,15 @@ connection_radius:
     eurostat_env_ww_con.tsv: 'https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/env_ww_con?format=TSV'
     oecd_water_treat.csv: 'https://sdmx.oecd.org/public/rest/data/OECD.ENV.EPI,DSD_WATER_TREAT@DF_WATER_TREAT,1.0/all?format=csvfilewithlabels'
   request_timeout_seconds: 120
+  # The share of people connected to wastewater treatment, per source, in the year nearest `year`:
+  # JMP "safely managed via sewer" (sewer connections whose wastewater is treated; sheet 'san'),
+  # Eurostat 'connected to urban and other wastewater treatment' (ww_tp URB_OTH_CS, unit PC), OECD
+  # 'public total treatment' (PUBTOTTR). fit_reference is fitted and scored; the others are checks.
+  reference_files: {jmp: 'jmp_household.xlsx', eurostat: 'eurostat_env_ww_con.tsv', oecd: 'oecd_water_treat.csv'}
+  reference_series: {jmp: 'san_sew_sm_t', eurostat: 'URB_OTH_CS', oecd: 'PUBTOTTR'}
+  eurostat_geo_aliases: {EL: 'GR', UK: 'GB'}   # Eurostat country codes that are not ISO 3166
+  reference_max_year_gap: 5   # per country the value of the year nearest `year`; dropped if further away
+  fit_reference: 'jmp'
   # Fit (light; runs anywhere): log r10k = a + b logit(predictor), cross-validated over countries.
   # Predictors: 'reference' (the connected share itself) and 'reported_coverage' (sum of our plants'
   # reported sizes / national population: our data only, so the reference stays a pure check).
