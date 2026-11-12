@@ -66,7 +66,7 @@ config.yaml, section ``sweep_validation``)::
                 -> <output_dir>/references/
     score       every candidate -> units.parquet (people per unit), scores.csv (plants),
                 national_countries.csv, national_regions.csv, national_scores.csv, choice.csv,
-                summary.md
+                summary.md, and results.zip with all of them but units.parquet
 """
 
 from __future__ import annotations
@@ -75,6 +75,7 @@ import argparse
 import logging
 import os
 import re
+import zipfile
 from concurrent.futures import ProcessPoolExecutor
 
 import geopandas as gpd
@@ -560,7 +561,10 @@ def score_table(people, units, cands):
 
 def national_long(served, national):
     """Served and reference share per candidate, country and national reference (countries with both)."""
-    t = served.merge(national, on="iso2")
+    # a candidate without any service area in a country serves nobody there
+    grid = pd.MultiIndex.from_product([served["candidate"].unique(), national["iso2"]], names=["candidate", "iso2"])
+    t = grid.to_frame(index=False).merge(served, on=["candidate", "iso2"], how="left").fillna({"served": 0.0})
+    t = t.merge(national, on="iso2")
     t = t[t["people"] > 0]
     rows = []
     for ref in NATIONAL_REFERENCES:
@@ -807,6 +811,13 @@ def score_all(cfg):
                 frame.to_csv(tmp, index=False)
     with atomic_output(os.path.join(out_dir, "summary.md")) as tmp, open(tmp, "w", encoding="utf-8") as fh:
         fh.write(summary_markdown(choice, scores, nat_scores, regions, decision, weights, cfg["confidence"]))
+    small = ["summary.md", *(name for name in outputs if name.endswith(".csv"))]
+    with (
+        atomic_output(os.path.join(out_dir, "results.zip")) as tmp,
+        zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z,
+    ):
+        for name in small:  # everything but the people per unit: the files to send back
+            z.write(os.path.join(out_dir, name), name)
     return scores, nat_scores, choice
 
 

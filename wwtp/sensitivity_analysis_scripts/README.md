@@ -67,11 +67,7 @@ snakemake --profile workflow/profiles/slurm sweep_layers   # only the service ar
 python -m wwtp.sensitivity_analysis_scripts.sweep_validation references   # by hand
 python -m wwtp.sensitivity_analysis_scripts.sweep_validation score
 ```
-Reference files go to `data/validation_data/` as the laptop has them: `gbr_catchments/`
-(`catchments_consolidated.zip`, `waterbase_catchment_lookup.csv`, `waterbase_consolidated.csv`),
-`nld_cbs_rwzi/` (the CBS xlsx), `usa_epa_sewersheds/Current_Release.zip` (read zipped),
-`jmp_household/jmp_household.xlsx`, `eu_eurostat/eurostat_env_ww_con.tsv`,
-`oecd_water_treat/oecd_water_treat.csv`.
+The reference files are downloaded into `data/validation_data/` by the local rule `national_data_fetch` (`national_data.sources` with `required: true`; files already there are kept). If a download is blocked on the cluster, copy that source's folder from a machine that has it and run again.
 
 ## Parameters (`sweep_validation` in config.yaml)
 | Key | Default | Effect |

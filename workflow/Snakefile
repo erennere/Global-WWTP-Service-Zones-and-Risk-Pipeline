@@ -20,6 +20,9 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 (JMP, Eurostat, OECD), and the recommended candidate
                                 (data/sensitivity/sweep_validation/summary.md)
         sweep_layers                  only the service areas + population of the grid
+    snakemake national_data     downloads the validation references and national plant registers (on
+                                the login node), lists the register plants our list lacks
+                                (data/validation_data/national_data/new_plants.gpkg, results.zip)
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
@@ -74,6 +77,7 @@ TARGETS = {
     "figures": "configured variant's figures (and whatever of the analysis they need)",
     "sweep": "whole sweep grid: service areas + population, validation and the recommended candidate",
     "sweep_layers": "only the service areas + population of the sweep grid",
+    "national_data": "reference data downloaded (login node), national registers: plants our list lacks",
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
@@ -276,13 +280,43 @@ rule sweep_layers:
     input: [wf.population_layer(v, a) for v in SWEEP for a in wf.approaches(v)]
 
 
+ND = wf.config("national_data")["paths"]
+rule national_data_fetch:
+    """Reference files of the validation and national plant registers, downloaded (needs internet: local).
+
+    Only the stamp is an output: Snakemake deletes the outputs of a failed job, and a failed download
+    must not take the files that are already there with it.
+    """
+    localrule: True
+    output: touch(wf.stamp("national_data_fetch"))
+    params: module="pop_validation_scripts.national_data", cli=["fetch"]
+    log: wf.log("national_data_fetch")
+    shell: STAGE
+
+
+rule national_registers:
+    """The downloaded files described, and the register plants our list lacks, in one file."""
+    input: ANNOTATED, wf.stamp("national_data_fetch")
+    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "registers_summary.csv", "peek.md")]
+    params: module="pop_validation_scripts.national_data", cli=["registers"]
+    log: wf.log("national_registers")
+    threads: threads("national_registers")
+    resources: **res("national_registers")
+    shell: STAGE
+
+
+rule national_data:
+    """Reference data downloaded and the new plants of the national registers listed."""
+    input: rules.national_registers.output
+
+
 SV = wf.config("sweep_validation")["paths"]
 rule sweep_validation_references:
     """Plants, ver/unver/single groups, reference units (GB, NL, US, HydroWASTE, UWWTD) and countries (JMP, Eurostat, OECD), once."""
     input:
         wf.population_layer(DEFAULT, wf.figure_approach(DEFAULT)),
-        SV["gb_catchments"], SV["gb_waterbase_lookup"], SV["gb_waterbase"], SV["nl_cbs"], SV["us_sewersheds"],
-        SV["eu_ref_filepath"], SV["jmp"], SV["eurostat"], SV["oecd"],
+        wf.stamp("national_data_fetch"),  # the reference files (national_data.sources with required)
+        SV["eu_ref_filepath"],
     output: [f"{SV['output_dir']}/references/{name}" for name in ("plants.csv", "units.csv", "matches.csv", "gb_catchments.gpkg", "national.csv")]
     params: module="sensitivity_analysis_scripts.sweep_validation", cli=["references"]
     log: wf.log("sweep_validation_references")
@@ -294,7 +328,7 @@ rule sweep_validation_references:
 rule sweep_validation:
     """Every candidate of the sweep against plants and countries; scores and the recommended candidate."""
     input: rules.sweep_layers.input, rules.sweep_validation_references.output
-    output: [f"{SV['output_dir']}/{name}" for name in ("scores.csv", "national_scores.csv", "national_countries.csv", "national_regions.csv", "choice.csv", "summary.md", "units.parquet")]
+    output: [f"{SV['output_dir']}/{name}" for name in ("scores.csv", "national_scores.csv", "national_countries.csv", "national_regions.csv", "choice.csv", "summary.md", "units.parquet", "results.zip")]
     params: module="sensitivity_analysis_scripts.sweep_validation", cli=["score"]
     log: wf.log("sweep_validation")
     threads: threads("sweep_validation")

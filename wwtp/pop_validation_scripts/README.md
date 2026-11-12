@@ -66,3 +66,6 @@ Delete the verification output directory to force a full rerun.
 ## Known Issues / TODOs
 - No explicit `TODO` or `FIXME` markers were found in this module.
 - Validation quality depends on the presence of comparable yearly fields in the reference datasets.
+
+## National reference data (`national_data.py`)
+`fetch` downloads every file of `national_data.sources` (config.yaml) into `data/validation_data/<source>/`: the references the sweep validation needs (`required: true`) and national plant registers and statistics (optional; failures are only recorded in `manifest.json`). `registers` writes, in `data/validation_data/national_data/`: `peek.md` (zip members, layers, columns and first rows of every downloaded file), `register_plants.gpkg` (every register plant with its distance to the nearest plant of ours and its original attributes as JSON), `new_plants.gpkg` / `new_plants.csv` (the register plants farther than `match_distance_m` from every plant of ours: one file for all countries), `registers_summary.csv` and `results.zip`. Snakemake target: `national_data`; the download is a local rule because compute nodes may have no internet.

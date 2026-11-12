@@ -854,6 +854,126 @@ sweep_validation:
     oecd: '{data_dir}/validation_data/oecd_water_treat/oecd_water_treat.csv'
     output_dir: '{data_dir}/sensitivity/sweep_validation'
 
+# Reference data for the validation and national plant registers
+# (wwtp/pop_validation_scripts/national_data.py): `fetch` downloads every file below into
+# <validation_dir>/<source>/ (needs internet; kept if already there), `registers` describes the files
+# (peek.md) and lists the register plants our list lacks (new_plants.gpkg, one file for all countries).
+# kind: http (one GET), ogcapi (OGC API Features collection .../items), arcgis (ArcGIS REST layer).
+# required: the sweep validation reads these; a failed download stops the run. The others are only
+# recorded in manifest.json. Addresses marked 'not checked' were not opened when they were added.
+national_data:
+  version: null
+  request_timeout_seconds: 600
+  page_size: 1000
+  peek_rows: 3
+  # A register plant farther than this from every plant of ours counts as new.
+  match_distance_m: 1000
+  # Coordinate columns of register tables: the first column whose name contains one of these.
+  coordinate_names: {lon: ['longitude', 'long', 'lon'], lat: ['latitude', 'lat']}
+  sources:
+    gbr_catchments:   # Hoffmann et al., release norm-intersection-sum
+      required: true
+      peek: false
+      files:
+        catchments_consolidated.zip: {kind: http, url: 'https://github.com/tillahoffmann/wastewater-catchment-areas/releases/download/norm-intersection-sum/catchments_consolidated.zip'}
+        waterbase_catchment_lookup.csv: {kind: http, url: 'https://github.com/tillahoffmann/wastewater-catchment-areas/releases/download/norm-intersection-sum/waterbase_catchment_lookup.csv'}
+        waterbase_consolidated.csv: {kind: http, url: 'https://github.com/tillahoffmann/wastewater-catchment-areas/releases/download/norm-intersection-sum/waterbase_consolidated.csv'}
+    usa_epa_sewersheds:   # EPA National Sewershed Dataset (git LFS file)
+      required: true
+      peek: false
+      files:
+        Current_Release.zip: {kind: http, url: 'https://media.githubusercontent.com/media/USEPA/Sewersheds/main/Current_Release.zip'}
+    nld_cbs_rwzi:   # CBS inhabitants per RWZI catchment, 1 Jan 2024
+      required: true
+      peek: false
+      files:
+        2025-Aantal-inwoners-per-RWZI-verzorgingsgebied-1-jan-2024.xlsx: {kind: http, url: 'https://www.cbs.nl/-/media/_excel/2025/04/2025-aantal-inwoners-per-rwzi-verzorgingsgebied-1-jan-2024.xlsx'}
+    jmp_household:
+      required: true
+      peek: false
+      files:
+        jmp_household.xlsx: {kind: http, url: 'https://washdata.org/data/country/WLD/household/download'}
+    eu_eurostat:
+      required: true
+      peek: false
+      files:
+        eurostat_env_ww_con.tsv: {kind: http, url: 'https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/env_ww_con?format=TSV'}
+    eu_eurostat_nuts2:   # the same by NUTS 2 region
+      required: false
+      peek: true
+      files:
+        eurostat_env_wwcon_r2.tsv: {kind: http, url: 'https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/env_wwcon_r2?format=TSV'}
+    oecd_water_treat:
+      required: true
+      peek: false
+      files:
+        oecd_water_treat.csv: {kind: http, url: 'https://sdmx.oecd.org/public/rest/data/OECD.ENV.EPI,DSD_WATER_TREAT@DF_WATER_TREAT,1.0/all?format=csvfilewithlabels'}
+    sdg_631:   # WHO / UN-Habitat domestic wastewater safely treated, 2025 summary of the country files
+      required: false
+      peek: true
+      files:
+        who_2025_sdg631_domestic_wastewater_summary.xlsx: {kind: http, url: 'https://cdn.who.int/media/docs/default-source/wash-documents/wash-coverage/2025-sdg-631-files/who-2025-sdg-631-domestic-wastewater-summary-rev.xlsx'}
+    unsd_wastewater:   # UNSD environmental indicators, population connected to treatment (not checked)
+      required: false
+      peek: true
+      files:
+        WasteWater2011_dwnl.xls: {kind: http, url: 'https://unstats.un.org/unsd/environment/excel_file_tables/2010/WasteWater2011_dwnl.xls'}
+    nld_zuiveringseenheid:   # treatment units of all water boards (polygons with their RWZI)
+      required: false
+      peek: true
+      files:
+        zuiveringseenheid.geojson: {kind: ogcapi, url: 'https://api.pdok.nl/rioned/waterschappen-waterketen-gwsw/ogc/v1_0/collections/waterschap_zuiveringseenheid/items'}
+    irl_epa_agglomerations:   # EPA Ireland agglomeration boundaries (WFS)
+      required: false
+      peek: true
+      files:
+        uww_agglomeration_boundaries.geojson: {kind: http, url: 'http://gis.epa.ie/geoserver/EPA/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=EPA:UWW_AgglomerationBoundaries&outputFormat=application%2Fjson&srsName=EPSG:4326'}
+    esp_miteco_agglomerations:   # MITECO aglomeraciones urbanas Q2023
+      required: false
+      peek: true
+      files:
+        aauuq2023.zip: {kind: http, url: 'https://www.mapama.gob.es/app/descargas/descargafichero.aspx?f=aauuq2023.zip'}
+    bra_ana_atlas_esgotos:   # ANA Atlas Esgotos: plants 2019, municipal table, field dictionary
+      required: false
+      peek: true
+      files:
+        Estacao_Tratamento_Esgoto_2019.zip: {kind: http, url: 'https://metadados.snirh.gov.br/geonetwork/srv/api/records/1d8cea87-3d7b-49ff-86b8-966d96c9eb01/attachments/Estacao_Tratamento_Esgoto_2019.zip'}
+        ATLAS_Esgotos_Tabela_ETEs_2019.xlsx: {kind: http, url: 'https://metadados.snirh.gov.br/geonetwork/srv/api/records/1d8cea87-3d7b-49ff-86b8-966d96c9eb01/attachments/ATLAS_Esgotos_Tabela_ETEs_2019.xlsx'}
+        ATLAS_Esgotos_Tabela_Completa_por_Municipio.xlsx: {kind: http, url: 'https://metadados.snirh.gov.br/geonetwork/srv/api/records/1d8cea87-3d7b-49ff-86b8-966d96c9eb01/attachments/ATLAS_Esgotos_Tabela_Completa_por_Municipio.xlsx'}
+        Dicionario_Informacoes_ATLAS_Esgotos.xlsx: {kind: http, url: 'https://metadados.snirh.gov.br/geonetwork/srv/api/records/1d8cea87-3d7b-49ff-86b8-966d96c9eb01/attachments/Dicionario_Informacoes_ATLAS_Esgotos.xlsx'}
+    can_eccc_wser:   # Wastewater Systems Effluent Regulations reported data
+      required: false
+      peek: true
+      files:
+        Resaeu-Wser-identification.csv: {kind: http, url: 'https://data-donnees.az.ec.gc.ca/api/file?path=%2Fsubstances%2Fplaninfrastruture%2Fwastewater-systems-effluent-regulations-reported-data%2FResaeu-Wser-identification.csv'}
+        Resaeu-Wser-data-dictionary.csv: {kind: http, url: 'https://data-donnees.az.ec.gc.ca/api/file?path=%2Fsubstances%2Fplaninfrastruture%2Fwastewater-systems-effluent-regulations-reported-data%2FResaeu-Wser-dictionnaire-des-donnees-data-dictionary.csv'}
+    aus_ga_wwtf:   # Geoscience Australia National Wastewater Treatment Facilities
+      required: false
+      peek: true
+      files:
+        wastewater_treatment_facilities.geojson: {kind: arcgis, url: 'https://services.ga.gov.au/gis/rest/services/Wastewater_Treatment_Facilities/MapServer/0'}
+    jpn_mlit_p22:   # MLIT 国土数値情報 下水道関連施設 (non-commercial terms; address not checked)
+      required: false
+      peek: true
+      files:
+        P22-12_GML.zip: {kind: http, url: 'https://nlftp.mlit.go.jp/ksj/gml/data/P22/P22-12/P22-12_GML.zip'}
+    mex_inegi_iter_2020:   # Censo 2020, results by locality (address not checked)
+      required: false
+      peek: true
+      files:
+        iter_00_cpv2020_csv.zip: {kind: http, url: 'https://www.inegi.org.mx/contenidos/programas/ccpv/2020/datosabiertos/iter/iter_00_cpv2020_csv.zip'}
+  # Plant registers: every point (or the representative point) of the file is a plant.
+  registers:
+    bra_ana_2019: {source: 'bra_ana_atlas_esgotos', file: 'Estacao_Tratamento_Esgoto_2019.zip', iso2: 'BR', year: 2019}
+    can_wser: {source: 'can_eccc_wser', file: 'Resaeu-Wser-identification.csv', iso2: 'CA', year: 2025}
+    aus_ga: {source: 'aus_ga_wwtf', file: 'wastewater_treatment_facilities.geojson', iso2: 'AU', year: 2012}
+    jpn_p22: {source: 'jpn_mlit_p22', file: 'P22-12_GML.zip', iso2: 'JP', year: 2012}
+  paths:
+    data_dir: null
+    annotated_all_filepath: null
+    validation_dir: '{data_dir}/validation_data'
+    output_dir: '{data_dir}/validation_data/national_data'
+
 # Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
 # unit, and the served-population cartogram. Scripts read these through
 # figures/fig1/fig1_config.py; their outputs and inputs live under data_dir.
@@ -913,6 +1033,7 @@ workflow:
     composite_area_population_plots: {threads: 4, mem_mb: 8192, runtime: 1440}
     pop_at_risk_figures: {threads: 8, mem_mb: 8192, runtime: 1440}
     interactive_unconnected_industrial_map: {threads: 2, mem_mb: 4096, runtime: 120}
+    national_registers: {threads: 2, mem_mb: 16384, runtime: 240}
     sweep_validation_references: {threads: 16, mem_mb: 65536, runtime: 720}
     sweep_validation: {threads: 16, mem_mb: 131072, runtime: 1440}
   paths:

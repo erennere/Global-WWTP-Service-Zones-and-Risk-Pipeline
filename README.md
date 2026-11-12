@@ -154,10 +154,13 @@ snakemake --profile workflow/profiles/slurm risk       # configured variant, the
 snakemake --profile workflow/profiles/slurm analysis   # service_areas + risk
 snakemake --profile workflow/profiles/slurm figures    # its figures (plus whatever of the analysis they still need)
 snakemake --profile workflow/profiles/slurm sweep      # whole sweep grid: service areas + population, validation and the recommended candidate
+snakemake --profile workflow/profiles/slurm national_data   # downloads the validation references and national plant registers (login node); lists the register plants our list lacks
 snakemake --profile workflow/profiles/slurm all        # analysis + figures + sweep
 snakemake --profile workflow/profiles/slurm fig1       # Figure 1 from its prepared inputs
 snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations  # grids, OSM context, images, labels
 ```
+
+The sweep validation's reference files (GB catchments, CBS, EPA sewersheds, JMP, Eurostat, OECD) are downloaded by the local rule `national_data_fetch` (URLs in `national_data.sources`); it needs internet on the node that runs Snakemake and keeps files that are already in `data/validation_data/`. `national_data` also writes `data/validation_data/national_data/new_plants.gpkg` (plants of the national registers farther than `match_distance_m` from every plant of ours, one file for all countries), `peek.md` (structure of every downloaded file) and `results.zip`.
 
 `sweep_layers` builds only the service areas + population of the sweep grid, without the validation (`sweep_validation`: plants against GB and NL catchments, countries and SDG regions against JMP, Eurostat and OECD; see `wwtp/sensitivity_analysis_scripts/README.md`; result in `data/sensitivity/sweep_validation/summary.md`). Approach 0 never reads the basins, so the sweep computes it once per weighting and extent (at the configured level) and hard-links those files to the other levels' names (`share_approach0_pop__*`): 144 instead of 216 `create_voronoi` and `add_pop` jobs. The linked layers keep the shared level's `HYBAS_ID`/`basin_area` columns; the sweep validation scores approach 0 once and takes the groups from the configured level.
 

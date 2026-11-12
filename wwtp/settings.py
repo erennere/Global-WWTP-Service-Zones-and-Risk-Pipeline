@@ -560,6 +560,48 @@ class SweepValidation(Section):
         return self
 
 
+class NationalFile(Strict):
+    kind: Literal["http", "ogcapi", "arcgis"]
+    url: str = Field(pattern=r"^https?://")
+
+
+class NationalSource(Strict):
+    required: bool
+    peek: bool
+    files: dict[str, NationalFile] = Field(min_length=1)
+
+
+class NationalRegister(Strict):
+    source: str
+    file: str
+    iso2: str = Field(pattern=r"^[A-Z]{2}$")
+    year: Year
+
+
+class CoordinateNames(Strict):
+    lon: list[str] = Field(min_length=1)
+    lat: list[str] = Field(min_length=1)
+
+
+class NationalData(Section):
+    version: Version
+    request_timeout_seconds: PositiveInt
+    page_size: PositiveInt
+    peek_rows: PositiveInt
+    match_distance_m: PositiveFloat
+    coordinate_names: CoordinateNames
+    sources: dict[str, NationalSource] = Field(min_length=1)
+    registers: dict[str, NationalRegister]
+    paths: Paths
+
+    @model_validator(mode="after")
+    def registers_name_downloaded_files(self):
+        for name, register in self.registers.items():
+            if register.source not in self.sources or register.file not in self.sources[register.source].files:
+                raise ValueError(f"register {name}: {register.source}/{register.file} is not among the sources")
+        return self
+
+
 # --------------------------------------------------------------------------- #
 # Snakemake                                                                   #
 # --------------------------------------------------------------------------- #
@@ -627,6 +669,7 @@ SECTIONS: dict[str, type[Section]] = {
     "pop_at_risk_figures": PopAtRiskFigures,
     "sweep": Sweep,
     "sweep_validation": SweepValidation,
+    "national_data": NationalData,
     "figure1": Figure1,
     "workflow": Workflow,
 }

@@ -21,11 +21,10 @@ def work(tmp_path, monkeypatch):
     monkeypatch.setenv("WWTP_SERVICE_PIPELINE_CONFIG", str(tmp_path / "config.yaml"))
     monkeypatch.delenv("WWTP_CONFIG_OVERLAYS", raising=False)
     wf.config.cache_clear()
-    references = wf.config("sweep_validation")["paths"]  # inputs of the sweep validation, from outside
     for path in (
         wf.config("create_voronoi")["paths"]["annotated_all_filepath"],
         wf.stamp("download_pop"),
-        *(references[k] for k in references if k not in ("data_dir", "pop_tif_dir", "output_dir")),
+        wf.config("sweep_validation")["paths"]["eu_ref_filepath"],  # pipeline input of the sweep validation
     ):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "a").close()
@@ -76,7 +75,7 @@ FIGURES = {
 }
 INDUSTRIAL = {"find_unconnected_industrial_areas", "download_and_vectorize"}  # configured variant only
 COMPARISONS = {"verification_script", "hw_comparison", "eu_comparison"}
-SWEEP = {"sweep_validation_references", "sweep_validation", "sweep_layers", "sweep"}
+SWEEP = {"national_data_fetch", "sweep_validation_references", "sweep_validation", "sweep_layers", "sweep"}
 
 
 def test_snakemake_alone_runs_nothing(work):

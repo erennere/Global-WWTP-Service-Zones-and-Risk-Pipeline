@@ -270,7 +270,7 @@ def test_references_and_choice_end_to_end(tmp_path, monkeypatch):
     c = choice.set_index("candidate")
     assert c.loc["good", "best"] and c.loc["good", "recommended"] and not c.loc["bad", "shortlist"]
     out = cfg["paths"]["output_dir"]
-    for name in ("units.parquet", "national_countries.csv", "national_regions.csv", "summary.md"):
+    for name in ("units.parquet", "national_countries.csv", "national_regions.csv", "summary.md", "results.zip"):
         assert os.path.exists(os.path.join(out, name))
     regions = pd.read_csv(os.path.join(out, "national_regions.csv"))
     world = regions[
