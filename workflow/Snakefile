@@ -15,8 +15,9 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 (makes the service areas first if they are missing)
     snakemake analysis          service_areas + risk
     snakemake figures           configured variant's figures (and whatever of the analysis they need)
-    snakemake sweep             whole sweep grid: service areas + population, HydroWASTE/UWWTD scores
-                                and ranking
+    snakemake sweep             whole sweep grid: service areas + population, validated against real
+                                catchments (GB, NL, US) and HydroWASTE/UWWTD, and the recommended
+                                candidate (data/sensitivity/sweep_validation/summary.md)
         sweep_layers                  only the service areas + population of the grid
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
@@ -34,7 +35,6 @@ import os
 import sys
 
 from wwtp import workflow as wf
-from wwtp.sensitivity_analysis_scripts.sweep_ver_ranking import NUM_TASKS as RANKING_TASKS
 
 PY = sys.executable
 DEFAULT = wf.default_variant()
@@ -71,7 +71,7 @@ TARGETS = {
     "risk": "configured variant: non-served population, river risk, population differences, industrial areas",
     "analysis": "service_areas + risk",
     "figures": "configured variant's figures (and whatever of the analysis they need)",
-    "sweep": "whole sweep grid: service areas + population, HydroWASTE/UWWTD scores and ranking",
+    "sweep": "whole sweep grid: service areas + population, validation and the recommended candidate",
     "sweep_layers": "only the service areas + population of the sweep grid",
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
@@ -275,44 +275,35 @@ rule sweep_layers:
     input: [wf.population_layer(v, a) for v in SWEEP for a in wf.approaches(v)]
 
 
-SCORES = wf.config("sweep_ver_ranking")["paths"]["output_dir"]
-rule compare_pop_sweep_hw_eu:
-    """HydroWASTE and UWWTD agreement of every population layer of the sweep."""
-    input: rules.sweep_layers.input
-    output: touch(wf.stamp("compare_pop_sweep_hw_eu"))
-    params: module="sensitivity_analysis_scripts.compare_pop_sweep_hw_eu", cli=[]
-    log: wf.log("compare_pop_sweep_hw_eu")
-    threads: threads("compare_pop_sweep_hw_eu")
-    resources: **res("compare_pop_sweep_hw_eu")
-    shell: STAGE
-
-
-rule sweep_ver_ranking_task:
-    input: rules.sweep_layers.input
-    output: f"{SCORES}/partial/task_{{task}}_metrics.csv"
-    params: module="sensitivity_analysis_scripts.sweep_ver_ranking", cli=lambda w: ["--task-id", str(int(w.task))]
-    log: wf.log("sweep_ver_ranking_{task}")
-    threads: threads("sweep_ver_ranking")
-    resources: **res("sweep_ver_ranking")
-    shell: STAGE
-
-
-rule sweep_ver_ranking_merge:
-    """Verified / unverified / single-plant ranking of the sweep, merged from its tasks."""
+SV = wf.config("sweep_validation")["paths"]
+rule sweep_validation_references:
+    """Plants, ver/unver/single groups and reference units (GB, NL, US, HydroWASTE, UWWTD), once."""
     input:
-        wf.stamp("compare_pop_sweep_hw_eu"),
-        expand(f"{SCORES}/partial/task_{{task:02d}}_metrics.csv", task=range(RANKING_TASKS)),
-    output: f"{SCORES}/sweep_ver_ranking_full_metrics.csv"
-    params: module="sensitivity_analysis_scripts.sweep_ver_ranking", cli=["--merge"]
-    log: wf.log("sweep_ver_ranking_merge")
-    threads: threads("sweep_ver_ranking")
-    resources: **res("sweep_ver_ranking")
+        wf.population_layer(DEFAULT, wf.figure_approach(DEFAULT)),
+        SV["gb_catchments"], SV["gb_waterbase_lookup"], SV["gb_waterbase"], SV["nl_cbs"], SV["us_sewersheds"],
+        SV["eu_ref_filepath"],
+    output: [f"{SV['output_dir']}/references/{name}" for name in ("plants.csv", "units.csv", "matches.csv", "gb_catchments.gpkg")]
+    params: module="sensitivity_analysis_scripts.sweep_validation", cli=["references"]
+    log: wf.log("sweep_validation_references")
+    threads: threads("sweep_validation_references")
+    resources: **res("sweep_validation_references")
+    shell: STAGE
+
+
+rule sweep_validation:
+    """Every candidate of the sweep against the references; scores and the recommended candidate."""
+    input: rules.sweep_layers.input, rules.sweep_validation_references.output
+    output: [f"{SV['output_dir']}/{name}" for name in ("scores.csv", "choice.csv", "summary.md", "units.parquet", "served_by_country.csv")]
+    params: module="sensitivity_analysis_scripts.sweep_validation", cli=["score"]
+    log: wf.log("sweep_validation")
+    threads: threads("sweep_validation")
+    resources: **res("sweep_validation")
     shell: STAGE
 
 
 rule sweep:
-    """The sweep grid: service areas + population of every variant, their scores and ranking."""
-    input: rules.sweep_layers.input, rules.sweep_ver_ranking_merge.output
+    """The sweep grid: service areas + population of every variant, validated, and the choice."""
+    input: rules.sweep_layers.input, rules.sweep_validation.output
 
 
 # --------------------------------------------------------------------------- #

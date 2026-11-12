@@ -430,7 +430,7 @@ def test_borrowed_thresholds_are_explicit():
     config_path = os.path.join(os.path.dirname(cv.__file__), "config.yaml")
     with open(config_path, encoding="utf-8") as fh:
         raw = yaml.safe_load(fh)
-    for section in ("create_voronoi", "eu_comparison", "compare_pop_sweep_hw_eu", "sweep_ver_ranking"):
+    for section in ("create_voronoi", "eu_comparison"):
         assert raw[section]["threshold"] is not None, section
     for section in ("create_rasters", "find_pop_in_danger_pop"):
         assert raw[section]["annotations"]["max_workers"] is not None, section

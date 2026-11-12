@@ -796,7 +796,7 @@ pop_at_risk_figures:
 
 # The sensitivity grid. `snakemake sweep` (workflow/Snakefile) builds the service
 # areas and population layers of every combination (wwtp.workflow.sweep_variants);
-# compare_pop_sweep_hw_eu and sweep_ver_ranking score them. Each level needs its
+# sweep_validation scores them and chooses one. Each level needs its
 # basin file from combine_watersheds. Without distance weighting (weight_func '')
 # only 'linear' runs, and 'size' weights only run with 'mult'; 'add' is available.
 sweep:
@@ -806,30 +806,38 @@ sweep:
   sweep_rigid_buffers: [9000, 11000, 13000, 15000]
   sweep_size_measures: ['reported', 'footprint']
 
-compare_pop_sweep_hw_eu:
-  max_workers: null
-  threshold: 500  # UWWTD match distance (m), as in eu_comparison
-  hw_weight: 0.7
-  eu_reference_factor: null
+# Validation of the sweep and the choice of a candidate (variant x approach; approach 0 once):
+# wwtp/sensitivity_analysis_scripts/sweep_validation.py. People per plant against real catchments
+# (gb: Hoffmann et al., population raster; nl: CBS per RWZI), the EPA sewersheds the radius was
+# calibrated on (us), and HydroWASTE reported / UWWTD capacity (inputs of variants with reported
+# sizes). Plants are grouped once, on the configured variant's basins, into ver / unver / single.
+sweep_validation:
+  country_output_column: null
+  basin_column_name: null
+  max_workers: 16
+  threshold: null              # UWWTD match distance (m), as eu_comparison
+  eu_reference_factor: null    # as eu_comparison
+  percent_verification: null   # as verification_script
+  # Population year of each reference (the candidates' <year>_zonal_sum; gb also its raster).
+  reference_years: {gb: 2024, nl: 2024, us: 2020, hw: 2024, uwwtd: 2024}
+  gb_match_distance_m: 1000    # our plant to the UWWTD plant of a linked GB catchment
+  us_match_distance_m: 500     # our plant to its EPA sewershed polygon
+  # The choice: mean class-balanced error over these references; the best candidate replaces the
+  # configured one only if it is better in each of them with this confidence (paired bootstrap).
+  decide_on: ['gb', 'nl']
+  bootstrap_samples: 1000
+  bootstrap_seed: 0
+  confidence: 0.95
   paths:
     data_dir: null
+    pop_tif_dir: null
     eu_ref_filepath: null
-
-# Ranks the 'ver'/'unver'/'single' splits of the sweep grid.
-# Shares the sweep-aggregation shape, EU reference layer and hw_weight scoring of
-# compare_pop_sweep_hw_eu above, so it is declared after it and inherits from it.
-sweep_ver_ranking:
-  max_workers: null
-  threshold: 500  # UWWTD match distance (m), as in eu_comparison
-  hw_weight: null
-  eu_reference_factor: null
-  percent_verification: null
-  figures:
-    approach: null
-  paths:
-    data_dir: null
-    eu_ref_filepath: null
-    output_dir: '{data_dir}/sensitivity/ver_ranking'
+    gb_catchments: '{data_dir}/validation_data/gbr_catchments/catchments_consolidated.zip'
+    gb_waterbase_lookup: '{data_dir}/validation_data/gbr_catchments/waterbase_catchment_lookup.csv'
+    gb_waterbase: '{data_dir}/validation_data/gbr_catchments/waterbase_consolidated.csv'
+    nl_cbs: '{data_dir}/validation_data/nld_cbs_rwzi/2025-Aantal-inwoners-per-RWZI-verzorgingsgebied-1-jan-2024.xlsx'
+    us_sewersheds: '{data_dir}/validation_data/usa_epa_sewersheds/Current_Release.zip'
+    output_dir: '{data_dir}/sensitivity/sweep_validation'
 
 # Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
 # unit, and the served-population cartogram. Scripts read these through
@@ -890,8 +898,8 @@ workflow:
     composite_area_population_plots: {threads: 4, mem_mb: 8192, runtime: 1440}
     pop_at_risk_figures: {threads: 8, mem_mb: 8192, runtime: 1440}
     interactive_unconnected_industrial_map: {threads: 2, mem_mb: 4096, runtime: 120}
-    compare_pop_sweep_hw_eu: {threads: 8, mem_mb: 65536, runtime: 5760}
-    sweep_ver_ranking: {threads: 8, mem_mb: 65536, runtime: 5760}
+    sweep_validation_references: {threads: 2, mem_mb: 32768, runtime: 720}
+    sweep_validation: {threads: 16, mem_mb: 131072, runtime: 1440}
   paths:
     data_dir: null
     log_dir: '{data_dir}/workflow/logs'

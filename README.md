@@ -138,7 +138,7 @@ The repository is organized around one canonical processing chain and several op
 | Validation stage | `wwtp/pop_validation_scripts/` | Compare outputs against HydroWASTE and Waterbase-UWWTD |
 | Industrial stage | `wwtp/industrial_analysis/` | Measure industrial land not covered by eligible WWTPs |
 | Figures stage | `wwtp/figures_scripts/` | Build maps, plots, and publication outputs |
-| Sweep stage | `wwtp/sensitivity_analysis_scripts/` | Score and rank the parameter sweep |
+| Sweep stage | `wwtp/sensitivity_analysis_scripts/` | Validate the parameter sweep against real catchments and choose a candidate |
 
 Each major processing directory has its own README that explains the role of the stage, the purpose of each script, the local data flow, and the configuration settings that matter for that part of the pipeline.
 
@@ -153,13 +153,13 @@ snakemake --profile workflow/profiles/slurm service_areas  # configured variant:
 snakemake --profile workflow/profiles/slurm risk       # configured variant, the rest: non-served population, river risk, population differences, industrial areas
 snakemake --profile workflow/profiles/slurm analysis   # service_areas + risk
 snakemake --profile workflow/profiles/slurm figures    # its figures (plus whatever of the analysis they still need)
-snakemake --profile workflow/profiles/slurm sweep      # whole sweep grid: service areas + population, HydroWASTE/UWWTD scores and ranking
+snakemake --profile workflow/profiles/slurm sweep      # whole sweep grid: service areas + population, validation and the recommended candidate
 snakemake --profile workflow/profiles/slurm all        # analysis + figures + sweep
 snakemake --profile workflow/profiles/slurm fig1       # Figure 1 from its prepared inputs
 snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations  # grids, OSM context, images, labels
 ```
 
-`sweep_layers` builds only the service areas + population of the sweep grid, without the scores and ranking. Approach 0 never reads the basins, so the sweep computes it once per weighting and extent (at the configured level) and hard-links those files to the other levels' names (`share_approach0_pop__*`): 144 instead of 216 `create_voronoi` and `add_pop` jobs. The linked layers keep the shared level's `HYBAS_ID`/`basin_area` columns; the sweep scoring does not read them.
+`sweep_layers` builds only the service areas + population of the sweep grid, without the validation (`sweep_validation`: GB and NL catchments decide, see `wwtp/sensitivity_analysis_scripts/README.md`; result in `data/sensitivity/sweep_validation/summary.md`). Approach 0 never reads the basins, so the sweep computes it once per weighting and extent (at the configured level) and hard-links those files to the other levels' names (`share_approach0_pop__*`): 144 instead of 216 `create_voronoi` and `add_pop` jobs. The linked layers keep the shared level's `HYBAS_ID`/`basin_area` columns; the sweep validation scores approach 0 once and takes the groups from the configured level.
 
 - The configured variant is the one `create_voronoi` sets in `wwtp/config.yaml` (level, version, buffer, weighting, size measure); the sweep grid is the `sweep` section. Change either there or in an overlay, not on the command line, so the files Snakemake expects match what the stages write.
 - One-time stages are never part of a run unless named: `combine_locations`, the image annotation (`annotation_grids`, `wastewater_join`, `download_bing_annotate`, `merge_annotations`, together `annotations`) and `download_pop`. A run takes their outputs as they are (`all_annotated_v2.gpkg`, the WorldPop rasters behind `{data_dir}/workflow/stamps/download_pop.done`) and stops before submitting anything if one is missing. Include them for one run with `--config run_once=annotations,download_pop` after the targets (`--config` takes every word that follows it, so `snakemake analysis --config run_once=merge_annotations`), or for good in `workflow.run_once`; forcing them (`-R annotation_grids`) also needs them named. If the WorldPop rasters are already in place without the stamp, `touch` it.

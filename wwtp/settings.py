@@ -525,17 +525,31 @@ class Sweep(Section):
     sweep_size_measures: list[SizeMeasure] = Field(min_length=1)
 
 
-class ComparePopSweepHwEu(Section):
+SweepReference = Literal["gb", "nl", "us", "hw", "uwwtd"]
+
+
+class SweepValidation(Section):
+    country_output_column: str
+    basin_column_name: str
     max_workers: PositiveInt
     threshold: NonNegativeInt
-    hw_weight: Fraction
     eu_reference_factor: PositiveFloat
+    percent_verification: Fraction
+    reference_years: dict[SweepReference, Annotated[int, Field(ge=2000, le=2100)]]
+    gb_match_distance_m: PositiveFloat
+    us_match_distance_m: PositiveFloat
+    decide_on: list[SweepReference] = Field(min_length=1)
+    bootstrap_samples: PositiveInt
+    bootstrap_seed: NonNegativeInt
+    confidence: Annotated[float, Field(gt=0.5, lt=1)]
     paths: Paths
 
-
-class SweepVerRanking(ComparePopSweepHwEu):
-    percent_verification: Fraction
-    figures: Figures
+    @model_validator(mode="after")
+    def every_reference_has_a_year(self):
+        missing = set(SweepReference.__args__) - set(self.reference_years)
+        if missing:
+            raise ValueError(f"reference_years lacks {sorted(missing)}")
+        return self
 
 
 # --------------------------------------------------------------------------- #
@@ -604,8 +618,7 @@ SECTIONS: dict[str, type[Section]] = {
     "sizes_interactive_map": SizesInteractiveMap,
     "pop_at_risk_figures": PopAtRiskFigures,
     "sweep": Sweep,
-    "compare_pop_sweep_hw_eu": ComparePopSweepHwEu,
-    "sweep_ver_ranking": SweepVerRanking,
+    "sweep_validation": SweepValidation,
     "figure1": Figure1,
     "workflow": Workflow,
 }

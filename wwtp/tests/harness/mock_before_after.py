@@ -275,30 +275,6 @@ def table_sum(path):
     return {"rows": len(df), **{f"sum[{c}]": round(float(num[c].sum()), 1) for c in pop_cols[:4]}}
 
 
-def hw_eu_metrics(code_root, cfg_path, pop_file, eu_ref, factor, threshold):
-    """HW and EU agreement scores, computed with the version's own comparison code."""
-    snippet = textwrap.dedent(f"""
-        import json, math
-        import {package_of(code_root)}.sensitivity_analysis_scripts.compare_pop_sweep_hw_eu as c
-        c._init_summary_worker({eu_ref!r}, {factor!r}, {threshold!r})
-        record = dict(alias='a', filepath={pop_file!r}, filename='f', version='2', level='8', buffer='x',
-                      weight_type='w', weight_func='', approach='1', only_round=False)
-        try:
-            rows = c._process_single_record(record)
-            out = {{r['source']: {{k: (None if isinstance(v, float) and math.isnan(v) else v)
-                                  for k, v in r.items() if k in ('n', 'median_ndi', 'median_abs_ndi', 'median_alpha',
-                                                                 'spearman_r')}} for r in rows}}
-        except Exception as err:
-            out = {{'error': repr(err)[:300]}}
-        print(json.dumps(out, default=float))
-    """)
-    res = subprocess.run(
-        [PYTHON, "-c", snippet], cwd=code_root, env=env_for(code_root, cfg_path), capture_output=True, text=True
-    )
-    lines = res.stdout.strip().splitlines()
-    return json.loads(lines[-1]) if lines else {"error": res.stderr.strip().splitlines()[-1][:300]}
-
-
 def collect(code_root, cfg_path, paths, data_dir, sites_total, hashes):
     out = {}
     cv = paths["create_voronoi"]
@@ -359,17 +335,6 @@ def collect(code_root, cfg_path, paths, data_dir, sites_total, hashes):
     out["comparison_plots"] = {
         "png_files": len(glob.glob(os.path.join(vd or "", "plots", "**", "*.png"), recursive=True))
     }
-    eu = paths["eu_comparison"]
-    pop1 = [f for f in _gpkgs(paths["add_pop"].get("pop_output_dir")) if "appr_1_v" in os.path.basename(f)]
-    if pop1:
-        out["validation_scores"] = hw_eu_metrics(
-            code_root,
-            cfg_path,
-            pop1[0],
-            eu.get("eu_ref_filepath"),
-            eu.get("__eu_reference_factor", 1),
-            eu.get("__threshold", 500),
-        )
     ind = paths["find_unconnected_industrial_areas"].get("industrial_unconnected_output")
     if ind and os.path.exists(ind):
         g = gpd.read_file(ind)

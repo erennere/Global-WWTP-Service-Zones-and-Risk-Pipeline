@@ -321,9 +321,8 @@ def ensure_duckdb_spatial(connection=None):
 def load_eu_reference_layer(filepath, factor, capacity_column="uwwCapacity", pop_column="POP_SERVED_EU"):
     """Load the UWWTD reference layer, project it, and derive the served-population column.
 
-    All three EU-comparison entry points (``eu_comparison``,
-    ``compare_pop_sweep_hw_eu``, ``sweep_ver_ranking``) used to inline this and had
-    drifted: two applied ``factor`` and one dropped it, and each picked its own
+    The EU-comparison entry points (``eu_comparison`` and the sweep scoring, now
+    ``sweep_validation``) used to inline this and had drifted: two applied ``factor`` and one dropped it, and each picked its own
     projection by hand (a hardcoded 3857 in one, a hardcoded UTM zone in the
     others). The CRS is now estimated from the layer itself, so the metre
     distances every caller thresholds on are actually metres.

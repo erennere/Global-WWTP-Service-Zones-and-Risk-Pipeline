@@ -277,7 +277,7 @@ def resolve_latest_zonal_sum_column(
     The five previous implementations differed in exactly three ways, so those
     are the parameters rather than hidden behavior:
 
-    - ``exclude_years`` - ``compare_pop_sweep_hw_eu`` ignores 2014, the others do not.
+    - ``exclude_years`` - the former sweep scoring ignored 2014, the others do not.
     - ``lexicographic`` - ``sizes_interactive_map`` picked ``sorted(cols)[-1]``
       instead of ranking by parsed year.
     - ``keep_unparseable`` - most callers rank a name whose year will not parse

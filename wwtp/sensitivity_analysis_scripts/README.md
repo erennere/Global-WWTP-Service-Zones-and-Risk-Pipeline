@@ -1,68 +1,66 @@
 # sensitivity_analysis_scripts
 
-## Sections
-| Section | Purpose |
-| --- | --- |
-| `What This Module Does` | Explains the aim of the sweep and comparison stage |
-| `How It Fits In` | Shows how this stage relates to the main production workflow |
-| `Scripts in This Folder` | Summarises the role, inputs, and outputs of each script |
-| `Execution Flow` | Gives a compact visual view of the sweep workflow |
-| `Run Instructions` | Lists the commands most users will actually run |
-| `Smart Behaviors` | Notes practical details about sweep logic and deduplication |
-| `Parameters` | Collects the configuration settings specific to this stage |
-| `Known Issues / TODOs` | Flags current caveats and limitations |
-
 ## What This Module Does
-This module runs parameter sweeps and cross-run evaluation for the core model. It stress-tests level, buffer, weight method, weight function, and industrial-analysis choices so you can see how sensitive the outputs are to configuration changes.
+The sweep builds service areas and population layers for many settings (basin level, rigid buffer or
+size-based radius, weighting) and both approaches. `sweep_validation.py` scores every candidate
+against people per plant from real catchments and recommends one.
 
 ## How It Fits In
-It is an experiment and evaluation layer on top of the main pipeline. It reuses the same workers as the production flow but runs them across many parameter combinations and then scores the resulting outputs.
+It is an evaluation layer on top of the main pipeline: the same `create_voronoi` and `add_pop` rules,
+run for every combination of the `sweep` section (`wwtp.workflow.sweep_variants`, 108 variants), then
+one validation job. Approach 0 does not read the basins, so it is built once per weighting and buffer and
+hard-linked to the other levels (`wwtp.workflow.approach0_source`); it is scored once.
 
 ## Scripts in This Folder
-| Script | Role | What it does | Key inputs | Key outputs |
-| --- | --- | --- | --- | --- |
-| `compare_pop_sweep_hw_eu.py` | Python worker | Aggregates and scores sweep outputs | population-enriched sweep layers and references | alias maps, summaries, and ranking tables |
-| `sweep_ver_ranking.py` | Python worker | Scores each sweep run's verification subsets against the EU reference | verification `.gpkg` outputs and the EU reference layer | per-subset and overall ranking CSVs |
+| Script | What it does | Key inputs | Key outputs |
+| --- | --- | --- | --- |
+| `sweep_validation.py references` | Our plants and their groups (ver / unver / single, on the configured variant's basins); reference units matched to them | configured population layer, reference files (below), GB population raster | `references/plants.csv`, `units.csv`, `matches.csv`, `gb_catchments.gpkg` |
+| `sweep_validation.py score` | People per reference unit for every candidate, error measures per reference and group, bootstrap choice | every sweep population layer, the references | `units.parquet`, `scores.csv`, `choice.csv`, `summary.md`, `served_by_country.csv` |
 
-## Execution Flow
-```mermaid
-graph TD
-  A[(sweep section of config.yaml)] --> B[create_voronoi + add_pop per variant: target sweep]
-  B --> J[compare_pop_sweep_hw_eu]
-  B --> M[sweep_ver_ranking --task-id 0..9]
-  M --> N[sweep_ver_ranking --merge]
-  J --> K[(comparison tables and figures)]
-  N --> O[(ranking tables)]
-```
-The grid is `wwtp.workflow.sweep_variants()`: every level, weighting and buffer of the `sweep` section (108 variants by default). Approach 0 does not depend on the basin level, so its layers are made once per weighting and buffer and linked to the other levels (`wwtp.workflow.approach0_source`).
+## References and roles
+| Key | People per unit | Our plant | Role |
+| --- | --- | --- | --- |
+| `gb` | population raster in Hoffmann et al.'s catchments (same raster as the service areas: geometry only) | nearest to the catchment's UWWTD plant (1 km), or the only plant in an unlinked catchment | independent, decides |
+| `nl` | CBS inhabitants per RWZI, 1 Jan 2024 | `uwwCode` = `NL` + RWZI code | independent, decides |
+| `us` | census 2020 people of EPA sourced sewersheds | CWNS ID, one to one, plant at its polygon | calibration (the radius rule was fitted on these) |
+| `hw` | HydroWASTE `POP_SERVED`, reported (QUAL_POP 1) | the plant itself | input for candidates with reported sizes, else independent |
+| `uwwtd` | UWWTD capacity x `eu_reference_factor` (p.e., not only residents) | nearest UWWTD plant within `threshold` | as `hw` |
+
+Groups (the former verification split, `verification_script.find_verification_watersheds`), fixed once
+so that every candidate is scored on the same plants: `ver` = basins with more than one plant, at least
+`percent_verification` of them with a detected footprint; `unver` = other basins with more than one
+plant; `single` = the only plant of its basin. Measures are given for `all` and each group.
+
+## Measures and the choice
+Per candidate, reference and group: class-balanced error (mean over <10k, 10k-100k, >100k people of the
+class median |log10 predicted / reference|), typical error, share within a factor 2, median bias, total
+ratio, ratio per size class, units without people (counted as infinitely wrong), and for `gb` the
+capture (reference people inside the candidate's service area).
+
+Choice: score = mean class-balanced error over `decide_on` (gb, nl). A paired bootstrap over the
+reference units gives the shortlist (not worse than the best at `confidence`). The best candidate is
+recommended only if it beats the configured one in every `decide_on` reference at `confidence`;
+otherwise the configured one stays. `summary.md` lists the top 10, the decision and both candidates'
+measures for every reference and group.
 
 ## Run Instructions
 ```bash
-snakemake --profile workflow/profiles/slurm sweep          # service areas, population, HydroWASTE/UWWTD comparison and ranking
+snakemake --profile workflow/profiles/slurm sweep          # layers, validation, choice
 snakemake --profile workflow/profiles/slurm sweep_layers   # only the service areas and population layers
-python -m wwtp.sensitivity_analysis_scripts.sweep_ver_ranking --task-id 0   # one ranking task
+python -m wwtp.sensitivity_analysis_scripts.sweep_validation references   # by hand
+python -m wwtp.sensitivity_analysis_scripts.sweep_validation score
 ```
+Reference files go to `data/validation_data/` as the laptop has them: `gbr_catchments/`
+(`catchments_consolidated.zip`, `waterbase_catchment_lookup.csv`, `waterbase_consolidated.csv`),
+`nld_cbs_rwzi/` (the CBS xlsx), `usa_epa_sewersheds/Current_Release.zip` (read zipped).
 
-## Smart Behaviors
-- The grid has rigid buffers and size-based radii for every level and weighting. Without distance weighting (`weight_func` '') only `linear` runs, since the method has no effect; `size` weights only run with `mult`.
-- Every variant is its own Snakemake rules (`create_voronoi__<tag>__a<approach>`, `add_pop__...`); Snakemake reruns only missing or outdated layers, so an interrupted sweep continues where it stopped.
-- `sweep_ver_ranking` splits the grid into 10 tasks (seeded shuffle) and merges their partial metrics.
-
-## Parameters
-| Config key | Default | Effect |
+## Parameters (`sweep_validation` in config.yaml)
+| Key | Default | Effect |
 | --- | --- | --- |
-| `sweep.sweep_levels`, `sweep_weight_funcs`, `sweep_weight_methods`, `sweep_rigid_buffers`, `sweep_size_measures` | see config | The grid |
-| `compare_pop_sweep_hw_eu.paths.eu_ref_filepath` | null | EU reference input |
-| `compare_pop_sweep_hw_eu.threshold` | null | Comparison threshold |
-| `compare_pop_sweep_hw_eu.hw_weight` | `0.7` | Weight of the HydroWASTE term in the combined score |
-| `compare_pop_sweep_hw_eu.eu_reference_factor` | `1` | Multiplier applied to `uwwCapacity` to obtain served population |
-| `sweep_ver_ranking.percent_verification` | template | Share of each run's sites used for verification |
-| `sweep_ver_ranking.hw_weight` / `eu_reference_factor` | null | Inherited from `compare_pop_sweep_hw_eu` so both rankings score identically |
-
-The former `eu_utm` key is gone: the EU reference layer's projection is now
-estimated from the layer itself (`geo_utils.estimate_utm_crs`) by the shared
-`load_eu_reference_layer` helper, so metre distances stay honest wherever the
-reference data sits.
-
-## Known Issues / TODOs
-- No explicit `TODO` or `FIXME` markers were found in this module.
+| `reference_years` | gb 2024, nl 2024, us 2020, hw 2024, uwwtd 2024 | `<year>_zonal_sum` compared with each reference; gb also its raster |
+| `decide_on` | `['gb', 'nl']` | references of the decision score |
+| `bootstrap_samples`, `bootstrap_seed`, `confidence` | 1000, 0, 0.95 | the paired bootstrap |
+| `gb_match_distance_m`, `us_match_distance_m` | 1000, 500 | plant matching |
+| `threshold`, `eu_reference_factor` | from `eu_comparison` | UWWTD matching and capacity factor |
+| `percent_verification` | from `verification_script` | the `ver` group |
+| `paths.*` | `data/validation_data/...` | reference files; `output_dir` `data/sensitivity/sweep_validation` |
