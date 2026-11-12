@@ -195,7 +195,13 @@ def test_B8_straddling_industrial_area_is_connected():
 # US census population in EPA sewersheds (replaces B9's NND x k rule, the     #
 # area ceiling and the footprint-only radius)                                 #
 # --------------------------------------------------------------------------- #
-FOOTPRINT_TO_PEOPLE = {"intercept": 1.369, "slope": 0.738, "unsized_people": 2014.0}
+FOOTPRINT_TO_PEOPLE = {
+    "intercept": 1.369,
+    "slope": 0.738,
+    "unsized_people": 2014.0,
+    "country_offsets": {},
+    "unsized_people_by_country": {},
+}
 RADIUS_KW = dict(
     buffer=9000,
     dynamic_buffering=True,
@@ -209,11 +215,12 @@ RADIUS_KW = dict(
     radius_by_connection=None,
     connected_share={},
     country_column="ISO_2",
+    size_scale={},
 )
 
 
 def _plants(xs, footprint, lagoon=False, **columns):
-    data = {"footprint_m2": [footprint] * len(xs), "lagoon_detected": [lagoon] * len(xs)}
+    data = {"footprint_m2": [footprint] * len(xs), "lagoon_detected": [lagoon] * len(xs), "ISO_2": ["ZZ"] * len(xs)}
     data.update({k: v if isinstance(v, list) else [v] * len(xs) for k, v in columns.items()})
     return gpd.GeoDataFrame(data, geometry=[Point(x, 0) for x in xs], crs=32632)
 
@@ -252,6 +259,30 @@ def test_lagoons_and_undetected_plants_get_the_size_free_people():
     lagoon = sa.calculate_buffer(_plants([0], 400_000, lagoon=True), None, **RADIUS_KW)[0]
     undetected = sa.calculate_buffer(_plants([0], 0), None, **RADIUS_KW)[0]
     assert lagoon == undetected == pytest.approx(3750 * (2014 / 1e4) ** 0.35)
+
+
+def test_plant_size_has_country_offsets_unsized_values_and_a_national_scale():
+    """Footprint estimate x 10 ** offset of the country; its own size-free people; then every size,
+    reported or estimated, x the country's scale. Countries without a value keep the general ones."""
+    plants = _plants([0, 1, 2, 3, 4, 5], 10_000, POP_SERVED=[None, None, None, None, 50_000, 50_000])
+    plants["ISO_2"] = ["AA", "BB", "AA", "BB", "AA", "BB"]
+    plants["footprint_m2"] = [10_000, 10_000, 0, 0, 10_000, 10_000]
+    to_people = {**FOOTPRINT_TO_PEOPLE, "country_offsets": {"AA": 0.5}, "unsized_people_by_country": {"AA": 90_000.0}}
+    fit = 10 ** (1.369 + 0.738 * 4)
+    people = sa.plant_size_people(plants, **{**RADIUS_KW, "footprint_to_people": to_people})
+    assert people == pytest.approx([fit * 10**0.5, fit, 90_000, 2014, 50_000, 50_000])
+    scaled = sa.plant_size_people(plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_scale": {"BB": 0.5}})
+    assert scaled == pytest.approx([fit * 10**0.5, fit / 2, 90_000, 1007, 50_000, 25_000])
+    footprint = sa.plant_size_people(
+        plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_measure": "footprint", "size_scale": {"AA": 2}}
+    )
+    assert footprint == pytest.approx([2 * fit * 10**0.5, fit, 180_000, 2014, 2 * fit * 10**0.5, fit])
+    # a factor k on the sizes of a country is a factor k ** exponent on its radii
+    radius = sa.calculate_buffer(plants, None, **{**RADIUS_KW, "footprint_to_people": to_people})
+    doubled = sa.calculate_buffer(
+        plants, None, **{**RADIUS_KW, "footprint_to_people": to_people, "size_scale": {"AA": 2.0}}
+    )
+    assert doubled / radius == pytest.approx([2**0.35, 1, 2**0.35, 1, 2**0.35, 1])
 
 
 def test_radius_never_exceeds_max_buffer():

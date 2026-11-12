@@ -86,11 +86,14 @@ class Workers(Strict):
 
 
 class FootprintToPeople(Strict):
-    """people = 10 ** (intercept + slope * log10(footprint m2)); unsized plants get unsized_people."""
+    """people = 10 ** (intercept + country offset + slope * log10(footprint m2)); unsized plants get
+    unsized_people, or their country's value in unsized_people_by_country (ISO 3166 alpha-2 keys)."""
 
     intercept: float
     slope: PositiveFloat
     unsized_people: PositiveFloat
+    country_offsets: dict[str, float]
+    unsized_people_by_country: dict[str, PositiveFloat]
 
 
 class RadiusByConnection(Strict):
@@ -138,6 +141,7 @@ class ServiceAreaParams(RunParams):
     footprint_to_people: FootprintToPeople
     radius_calibration: dict[SizeMeasure, RadiusCalibration]
     connected_share: dict[str, Fraction]
+    size_scale: dict[SizeMeasure, dict[str, PositiveFloat]]
     scipy_true: bool
     cv2_true: bool
     industrial_category_numbers: list[int]
@@ -632,6 +636,13 @@ class RadiusGrid(Strict):
 ReferenceSource = Literal["jmp", "eurostat", "oecd"]
 
 
+class SizeScaleLimits(Strict):
+    """Limits of the national size scale (connected people / sum of plant sizes); 1 and 1 = no scale."""
+
+    min: Annotated[float, Field(gt=0, le=1)]
+    max: Annotated[float, Field(ge=1)]
+
+
 class ConnectionRadius(Section):
     version: Version
     year: Annotated[int, Field(ge=2000, le=2100)]
@@ -658,6 +669,8 @@ class ConnectionRadius(Section):
     fit_folds: Annotated[int, Field(ge=2)]
     fit_seed: int
     calibration_caps_km: list[PositiveFloat] = Field(min_length=1)
+    calibration_size_scale_limits: list[SizeScaleLimits] = Field(min_length=1)
+    size_country_min_plants: PositiveInt
     paths: Paths
 
 

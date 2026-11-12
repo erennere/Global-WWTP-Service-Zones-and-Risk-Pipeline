@@ -164,7 +164,10 @@ def test_registers_give_the_new_plants_in_one_file(tmp_path):
     assert {"areas.shp:areas", "plants.shp:plants"} == set(every.loc[every["register"] == "zz_shp", "layer"])
     assert pd.read_csv(out / "new_plants.csv")["distance_to_ours_m"].min() > 1000
     with zipfile.ZipFile(out / "results.zip") as z:
-        assert set(z.namelist()) == {"new_plants.csv", "registers_summary.csv", "peek.md"}
+        assert set(z.namelist()) == {"new_plants.csv", "register_plants.csv", "registers_summary.csv", "peek.md"}
+    listed = pd.read_csv(out / "register_plants.csv")  # every register plant with the nearest plant of ours
+    same = listed[~listed["new"]]
+    assert len(listed) == 5 and sorted(zip(same["ours_lon"], same["ours_lat"])) == [(10.0, 50.0), (11.0, 50.0)]
     peek = (out / "peek.md").read_text()
     assert "plants.shp" in peek and "NAME" in peek and "System Name" in peek and "absent.csv: not downloaded" in peek
 

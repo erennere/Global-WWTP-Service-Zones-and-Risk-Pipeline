@@ -26,8 +26,11 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
-    snakemake connection_radius   calibration inputs for a radius scale from the connection rate
-                                (wwtp/calibration/connection_radius.py)
+    snakemake calibration       everything the calibration needs from the cluster, before any sweep:
+                                national_data + the plant sizes by country, the national size scale and
+                                the radius rule from national connection statistics
+                                (data/calibration/connection_radius/calibration_results.zip)
+        connection_radius             only the calibration tables (wwtp/calibration/connection_radius.py)
 
 One-time stages (combine_locations, the four annotation rules, download_pop) are left out
 of every run: their outputs are taken as they are. Name them to include them in one run,
@@ -83,7 +86,8 @@ TARGETS = {
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
-    "connection_radius": "calibration inputs: national connection statistics + served-share curves per country",
+    "calibration": "before any sweep: national_data + size and radius calibration tables, in one zip to send back",
+    "connection_radius": "only the calibration tables: plant sizes by country, national size scale, radius rule",
 }
 
 
@@ -300,7 +304,7 @@ rule national_data_fetch:
 rule national_registers:
     """The downloaded files described, and the register plants our list lacks, in one file."""
     input: ANNOTATED, wf.stamp("national_data_fetch")
-    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "registers_summary.csv", "peek.md")]
+    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "register_plants.csv", "registers_summary.csv", "peek.md")]
     params: module="pop_validation_scripts.national_data", cli=["registers"]
     log: wf.log("national_registers")
     threads: threads("national_registers")
@@ -542,19 +546,49 @@ rule connection_radius_references:
     shell: PY + " -m wwtp.{params.module} {params.cli:q} > {log} 2>&1"
 
 
+# Settings whose change reruns the step (rule params; see wf.calibration_params)
+CURVE_SETTINGS = ("year", "aggregate_cells", "candidate_plants", "size_measures", "radius_exponents", "radius_grid",
+                  "max_buffer", "footprint_to_people", "reported_size_columns", "reported_size_skip")
+CALIBRATE_SETTINGS = ("footprint_to_people", "size_country_min_plants", "fit_reference", "reference_series",
+                      "reference_max_year_gap", "calibration_caps_km", "calibration_size_scale_limits")
 rule connection_radius_curves:
     """Served share against the radius scale for every country with plants and a WorldPop raster."""
     input: ANNOTATED, wf.stamp("download_pop")
-    output: f"{CR}/countries.csv", f"{CR}/served_share_curves.csv"
-    params: module="calibration.connection_radius", cli=["curves"]
+    output: f"{CR}/countries.csv", f"{CR}/served_share_curves.csv", f"{CR}/plants.csv"
+    params: module="calibration.connection_radius", cli=["curves"], **wf.calibration_params(*CURVE_SETTINGS)
     log: wf.log("connection_radius_curves")
     threads: threads("connection_radius_curves")
     resources: **res("connection_radius_curves")
     shell: STAGE
 
 
-rule connection_radius:
+rule connection_radius_calibrate:
+    """Country parts of the plant size, the national size scale and the radius rule (light: local)."""
     input: rules.connection_radius_references.output, rules.connection_radius_curves.output
+    output: [f"{CR}/{name}" for name in ("reference_table.csv", "plant_size_countries.csv", "calibration_by_cap.csv", "calibration_countries.csv")]
+    params: module="calibration.connection_radius", cli=["calibrate"], **wf.calibration_params(*CALIBRATE_SETTINGS)
+    log: wf.log("connection_radius_calibrate")
+    localrule: True
+    shell: STAGE
+
+
+rule connection_radius:
+    input: rules.connection_radius_calibrate.output
+
+
+rule calibration_results:
+    """The calibration tables and the national_data results in one file to send back."""
+    input: rules.connection_radius_calibrate.output, rules.national_registers.output
+    output: f"{CR}/calibration_results.zip"
+    params: module="calibration.connection_radius", cli=["pack"]
+    log: wf.log("calibration_results")
+    localrule: True
+    shell: STAGE
+
+
+rule calibration:
+    """Everything the calibration needs from the cluster; the sweep runs after its values are in config.yaml."""
+    input: rules.calibration_results.output
 
 
 include: "rules/fig1.smk"

@@ -126,11 +126,21 @@ def test_size_weights_follow_people_not_footprint():
     """Two plants with equal footprint: the one with 100x the reported people gets the larger cell."""
     size = dict(
         size_measure="reported",
-        footprint_to_people={"intercept": 1.5, "slope": 0.7, "unsized_people": 2500},
+        footprint_to_people={
+            "intercept": 1.5,
+            "slope": 0.7,
+            "unsized_people": 2500,
+            "country_offsets": {},
+            "unsized_people_by_country": {},
+        },
         reported_size_columns=["POP_SERVED"],
         reported_size_skip={},
+        country_column="ISO_2",
+        size_scale={},
     )
-    sites = _sites([(0, 0), (10_000, 0)], POP_SERVED=[1_000_000, 10_000], footprint_m2=[20_000, 20_000])
+    sites = _sites(
+        [(0, 0), (10_000, 0)], POP_SERVED=[1_000_000, 10_000], footprint_m2=[20_000, 20_000], ISO_2=["ZZ", "ZZ"]
+    )
     clip = box(-15_000, -15_000, 25_000, 15_000)
     cells = _solve(sites, clip, scale_weights=True, size_kwargs=size, size_weights=True)
     assert cells[1].area > 20 * cells[2].area

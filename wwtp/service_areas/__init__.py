@@ -10,6 +10,7 @@ from .size import (
     calculate_area,
     reported_size_people,
     plant_size_people,
+    detected_footprint,
     service_radius_m,
     calculate_buffer,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "calculate_area",
     "reported_size_people",
     "plant_size_people",
+    "detected_footprint",
     "service_radius_m",
     "calculate_buffer",
     "normalize_plane",

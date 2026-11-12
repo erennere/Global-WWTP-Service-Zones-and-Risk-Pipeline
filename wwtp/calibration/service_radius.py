@@ -9,7 +9,12 @@ Two steps, both from published data matched to our own plants. They produce
    size S (``reported_size_columns`` without the skipped values, e.g.
    HydroWASTE ``QUAL_POP`` 4) fit ``log10 S = intercept + slope log10 F``.
    ``unsized_people`` is the median reported size of lagoon plants and plants
-   without detections.
+   without detections. Country parts (``fit_country_sizes``; run with the
+   pipeline's country join by ``wwtp.calibration.connection_radius calibrate``):
+   ``country_offsets``, the median of ``log10 S - (intercept + slope log10 F)``
+   in countries with enough such plants, and ``unsized_people_by_country``, the
+   median reported size of a country's size-free plants or, without enough of
+   them, a fixed share of the median size of its plants with a footprint.
 
 2. **Radius** (``radius_calibration``). Census 2020 block-group population
    centroids (USpopcenters, ``block_group2020.rda``) in states where almost
@@ -34,7 +39,7 @@ Usage::
     python -m wwtp.calibration.service_radius \\
         --plants data/all_merged_v2.gpkg \\
         --epa-gdb data/validation_data/usa_epa_sewersheds/Version_1_3.gdb \\
-        --blockgroups block_group2020.rda --out notes/service_radius_calibration.json
+        --blockgroups block_group2020.rda --country US --out notes/service_radius_calibration.json
 """
 
 from __future__ import annotations
@@ -123,6 +128,62 @@ def fit_footprint_to_people(plants, reported_size_columns, reported_size_skip):
         "n_fit": int(fit.sum()),
         "n_unsized": int(unsized.sum()),
     }
+
+
+def fit_country_sizes(plants, to_people, min_plants):
+    """Country parts of the plant size: ``country_offsets`` and ``unsized_people_by_country``.
+
+    Parameters
+    ----------
+    plants : pandas.DataFrame
+        One row per plant: ``country``, ``footprint_m2``, ``sized`` (footprint usable, see
+        ``service_areas.detected_footprint``) and ``reported`` (people; NaN where none).
+    to_people : dict
+        ``intercept`` and ``slope`` of the fit over all countries.
+    min_plants : int
+        Fewest plants a country value rests on.
+
+    Returns
+    -------
+    (pandas.DataFrame, float)
+        Per country: ``n_plants``; ``n_fit`` and ``offset``, the median of ``log10 reported -
+        (intercept + slope * log10 footprint)`` over its sized plants with a reported size (NaN below
+        ``min_plants``); ``n_sized`` and ``sized_median``, the median footprint estimate (with the
+        offset) of all its sized plants (NaN below ``min_plants``); ``n_unsized_reported`` and
+        ``unsized_median``, the median reported size of its size-free plants (NaN below
+        ``min_plants``); ``unsized_people``, that median or else ``ratio * sized_median``, and
+        ``unsized_from`` ('own', 'ratio' or ''). ``ratio`` is the median, over the countries with both,
+        of ``unsized_median / sized_median``.
+    """
+    sized = plants["sized"].to_numpy(dtype=bool)
+    reported = plants["reported"].to_numpy(dtype=float)
+    has = np.isfinite(reported) & (reported > 0)
+    country = plants["country"]
+    footprint = plants["footprint_m2"].to_numpy(dtype=float)
+    estimate = np.full(len(plants), np.nan)
+    estimate[sized] = float(to_people["intercept"]) + float(to_people["slope"]) * np.log10(footprint[sized])
+    residual = pd.Series(np.log10(np.where(has, reported, 1.0)) - estimate, index=plants.index)
+
+    def medians(values, mask):
+        grouped = values[mask].groupby(country[mask]).agg(["size", "median"])
+        return grouped["size"], grouped["median"].where(grouped["size"] >= min_plants)
+
+    n_fit, offset = medians(residual, sized & has)
+    with_offset = pd.Series(estimate, index=plants.index) + country.map(offset).fillna(0.0)
+    n_sized, sized_median = medians(np.power(10.0, with_offset), sized)
+    n_unsized, unsized_median = medians(pd.Series(reported, index=plants.index), ~sized & has)
+    table = pd.DataFrame({"n_plants": country.groupby(country).size()})
+    table["n_fit"], table["offset"] = n_fit, offset
+    table["n_sized"], table["sized_median"] = n_sized, sized_median
+    table["n_unsized_reported"], table["unsized_median"] = n_unsized, unsized_median
+    for column in ("n_fit", "n_sized", "n_unsized_reported"):
+        table[column] = table[column].fillna(0).astype(int)
+    ratio = float((table["unsized_median"] / table["sized_median"]).median())
+    table["unsized_people"] = table["unsized_median"].fillna(ratio * table["sized_median"])
+    table["unsized_from"] = np.where(
+        table["unsized_median"].notna(), "own", np.where(table["unsized_people"].notna(), "ratio", "")
+    )
+    return table.rename_axis("country").reset_index(), ratio
 
 
 # --------------------------------------------------------------------------- #
@@ -234,6 +295,9 @@ def main():
     parser.add_argument("--plants", required=True, help="Merged plant GeoPackage or CSV with lon/lat/footprint_m2")
     parser.add_argument("--epa-gdb", required=True, help="EPA National Sewershed Dataset Version_1_3.gdb")
     parser.add_argument("--blockgroups", required=True, help="USpopcenters block_group2020.rda")
+    parser.add_argument(
+        "--country", required=True, help="ISO 3166 alpha-2 of the calibration states' country; its sizes apply"
+    )
     parser.add_argument("--out", default=None, help="Write the full result as JSON")
     args = parser.parse_args()
 
@@ -247,8 +311,19 @@ def main():
     )
     matches = us_matches(plants, args.epa_gdb, DEFAULT_STATES)
     result = {"footprint_to_people": to_people, "radius_calibration": {}}
+    # The states lie in one country, so its country values of the size apply to every plant that can
+    # take people from them; the national size scale comes after this step (connection_radius).
+    country_column = cfg["country_output_column"]
+    plants[country_column] = args.country
+    sizing = {
+        **to_people,
+        "country_offsets": cfg["footprint_to_people"]["country_offsets"],
+        "unsized_people_by_country": cfg["footprint_to_people"]["unsized_people_by_country"],
+    }
     for measure in ("reported", "footprint"):
-        size = plant_size_people(plants, measure, to_people, cfg["reported_size_columns"], cfg["reported_size_skip"])
+        size = plant_size_people(
+            plants, measure, sizing, cfg["reported_size_columns"], cfg["reported_size_skip"], country_column, {}
+        )
         res = choose_radius(plants, size, matches, args.blockgroups, cfg["max_buffer"])
         result["radius_calibration"][measure] = res
         print(

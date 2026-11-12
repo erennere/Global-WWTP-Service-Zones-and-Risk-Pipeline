@@ -173,7 +173,13 @@ BUFFER_KWARGS = {
     "dynamic_buffering": True,
     "max_buffer": 50000,
     "size_measure": "reported",
-    "footprint_to_people": {"intercept": 1.369, "slope": 0.738, "unsized_people": 2014.0},
+    "footprint_to_people": {
+        "intercept": 1.369,
+        "slope": 0.738,
+        "unsized_people": 2014.0,
+        "country_offsets": {},
+        "unsized_people_by_country": {},
+    },
     "reported_size_columns": ["POP_SERVED"],
     "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
     "radius_exponent": 0.35,
@@ -181,6 +187,7 @@ BUFFER_KWARGS = {
     "radius_by_connection": None,
     "connected_share": {},
     "country_column": "ISO_2",
+    "size_scale": {},
 }
 
 

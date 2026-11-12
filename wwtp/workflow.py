@@ -242,22 +242,41 @@ def resources(stage):
 
 
 def sizing_params(variant):
-    """Extra rule params of a size-based variant: the radius calibration it runs with.
+    """Extra rule params of a size-based variant: the plant sizes and the radius calibration it runs with.
 
-    Its file names do not carry the calibration, so Snakemake would keep service areas made with an
-    older one; as a rule param, a change reruns them (rigid-buffer variants get none and stay).
+    Its file names do not carry them, so Snakemake would keep service areas made with older values; as
+    rule params, a change reruns them. Variants that use no plant size (rigid buffer without size
+    weights) get none and stay.
     """
-    if not variant.dynamic_buffering:
+    if not (variant.dynamic_buffering or variant.weight_method == "size"):
         return {}
     kwargs = config("create_voronoi", variant)["calculate_buffer_kwargs"]
-    shares = hashlib.sha256(json.dumps(kwargs["connected_share"], sort_keys=True).encode()).hexdigest()[:12]
-    signature = {
-        "exponent": kwargs["radius_exponent"],
-        "r10k": kwargs["radius_at_10k_people_km"],
-        "by_connection": kwargs["radius_by_connection"],
-        "connected_share": shares,
-    }
-    return {"radius": json.dumps(signature, sort_keys=True)}
+
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:12]
+
+    sizes = {"footprint_to_people": digest(kwargs["footprint_to_people"]), "size_scale": digest(kwargs["size_scale"])}
+    params = {"sizes": json.dumps(sizes, sort_keys=True)}
+    if variant.dynamic_buffering:
+        signature = {
+            "exponent": kwargs["radius_exponent"],
+            "r10k": kwargs["radius_at_10k_people_km"],
+            "by_connection": kwargs["radius_by_connection"],
+            "connected_share": digest(kwargs["connected_share"]),
+        }
+        params["radius"] = json.dumps(signature, sort_keys=True)
+    return params
+
+
+def calibration_params(*keys):
+    """Rule param of a calibration step: a digest of the ``connection_radius`` settings it runs with.
+
+    Its outputs do not carry them, so a change (the plant-size model for the curves, the caps and
+    limits for ``calibrate``) would leave old tables in place; as a rule param it reruns the step.
+    """
+    cfg = config("connection_radius")
+    payload = json.dumps({key: cfg[key] for key in keys}, sort_keys=True, default=str)
+    return {"settings": hashlib.sha256(payload.encode()).hexdigest()[:12]}
 
 
 def stamp(name, variant=None):

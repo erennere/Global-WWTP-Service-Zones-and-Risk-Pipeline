@@ -10,8 +10,8 @@ Commands (``python -m wwtp.pop_validation_scripts.national_data <command>``)::
                ``required`` source fails the run; the others are only recorded.
     registers  peek.md: structure of every downloaded file of the sources with ``peek`` (zip members,
                layers, columns, first rows), so that parsers can be written without the data at hand.
-               register_plants.gpkg: every plant of the ``registers`` as a point with its original
-               attributes (JSON) and its distance to the nearest plant of ours.
+               register_plants.gpkg / .csv: every plant of the ``registers`` as a point with its original
+               attributes (JSON), its distance to the nearest plant of ours and that plant's coordinates.
                new_plants.gpkg / new_plants.csv: the register plants farther than ``match_distance_m``
                from every plant of ours - one file for all countries.
                registers_summary.csv, and results.zip with the small files to send back.
@@ -320,7 +320,7 @@ def read_register(cfg, register):
 
 
 def build_registers(cfg):
-    """peek.md, register_plants.gpkg, new_plants.gpkg / .csv, registers_summary.csv, results.zip."""
+    """peek.md, register_plants.gpkg / .csv, new_plants.gpkg / .csv, registers_summary.csv, results.zip."""
     out = cfg["paths"]["output_dir"]
     os.makedirs(out, exist_ok=True)
     ours = read_located_plants(cfg["paths"]["annotated_all_filepath"]).to_crs(4326)
@@ -335,9 +335,11 @@ def build_registers(cfg):
             summary.append({"register": register, "status": f"{type(err).__name__}: {err}"[:300]})
             logger.warning("%s: %s", register, summary[-1]["status"])
             continue
-        distance, _ = tree.query(sphere_xyz(part["lon"], part["lat"]))
+        distance, nearest = tree.query(sphere_xyz(part["lon"], part["lat"]))
         part["distance_to_ours_m"] = distance
         part["new"] = distance > limit
+        # the nearest of our plants, by its coordinates (the key to its footprint and sizes)
+        part["ours_lon"], part["ours_lat"] = points.x.to_numpy()[nearest], points.y.to_numpy()[nearest]
         plants.append(part)
         summary.append(
             {
@@ -350,7 +352,8 @@ def build_registers(cfg):
             }
         )
     summary = pd.DataFrame(summary)
-    columns = ["register", "iso2", "year", "layer", "lon", "lat", "attrs", "distance_to_ours_m", "new", "geometry"]
+    columns = ["register", "iso2", "year", "layer", "lon", "lat", "attrs", "distance_to_ours_m", "new"]
+    columns += ["ours_lon", "ours_lat", "geometry"]
     table = (
         pd.concat(plants, ignore_index=True)
         if plants
@@ -363,6 +366,7 @@ def build_registers(cfg):
             frame.to_file(tmp, driver="GPKG")
     for name, text in (
         ("new_plants.csv", pd.DataFrame(new.drop(columns="geometry")).to_csv(index=False)),
+        ("register_plants.csv", pd.DataFrame(table.drop(columns="geometry")).to_csv(index=False)),
         ("registers_summary.csv", summary.to_csv(index=False)),
         ("peek.md", peek_all(cfg)),
     ):

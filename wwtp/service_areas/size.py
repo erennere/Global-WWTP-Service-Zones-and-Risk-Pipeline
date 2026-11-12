@@ -134,32 +134,17 @@ def reported_size_people(df, columns, skip_quality):
     return out.to_numpy(dtype=float)
 
 
-def plant_size_people(df, size_measure, footprint_to_people, reported_size_columns, reported_size_skip, **_):
-    """Plant size in people, used for both the service radius and the Voronoi weight.
+def detected_footprint(df):
+    """Detected footprint (m2) per row and whether it says anything about the plant's size.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Plant records with ``footprint_m2`` (from ``calculate_area``; falls back to
-        ``total_area``) and optionally ``lagoon_detected`` and the reported columns.
-    size_measure : {'reported', 'footprint'}
-        ``reported``: the reported size where there is one (see
-        ``reported_size_people``), the footprint estimate elsewhere.
-        ``footprint``: the footprint estimate for every plant.
-    footprint_to_people : dict
-        ``intercept`` and ``slope`` of ``log10 people = intercept + slope * log10
-        footprint_m2`` and ``unsized_people`` for lagoon plants and plants
-        without detections, whose footprint says nothing about their size.
-    reported_size_columns, reported_size_skip
-        Passed to ``reported_size_people`` (used with ``reported`` only).
+    The footprint is ``footprint_m2`` (from ``calculate_area``; falls back to ``total_area``). It is
+    usable where it is positive and the plant is not a lagoon plant (``lagoon_detected``).
 
     Returns
     -------
-    numpy.ndarray
-        People per row (always > 0).
+    (numpy.ndarray, numpy.ndarray)
+        Footprint in m2 (0 where missing) and the boolean mask of sized plants.
     """
-    if size_measure not in SIZE_MEASURES:
-        raise ValueError(f"size_measure must be one of {SIZE_MEASURES}, got {size_measure!r}")
     if "footprint_m2" in df.columns:
         footprint = pd.to_numeric(df["footprint_m2"], errors="coerce")
     elif "total_area" in df.columns:
@@ -168,20 +153,70 @@ def plant_size_people(df, size_measure, footprint_to_people, reported_size_colum
         footprint = pd.Series(0.0, index=df.index)
     footprint = np.nan_to_num(footprint.to_numpy(dtype=float), nan=0.0)
     lagoon = _truthy(df[LAGOON_COLUMN]).to_numpy() if LAGOON_COLUMN in df.columns else np.zeros(len(df), bool)
-    sized = (footprint > 0) & ~lagoon
+    return footprint, (footprint > 0) & ~lagoon
+
+
+def plant_size_people(
+    df, size_measure, footprint_to_people, reported_size_columns, reported_size_skip, country_column, size_scale, **_
+):
+    """Plant size in people, used for both the service radius and the Voronoi weight.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Plant records with ``footprint_m2`` (from ``calculate_area``; falls back to
+        ``total_area``), ``country_column`` and optionally ``lagoon_detected`` and
+        the reported columns.
+    size_measure : {'reported', 'footprint'}
+        ``reported``: the reported size where there is one (see
+        ``reported_size_people``), the footprint estimate elsewhere.
+        ``footprint``: the footprint estimate for every plant.
+    footprint_to_people : dict
+        The footprint estimate. ``intercept`` and ``slope`` of ``log10 people =
+        intercept + offset + slope * log10 footprint_m2`` with ``offset`` the
+        plant's country in ``country_offsets`` (0 for other countries).
+        ``unsized_people`` for lagoon plants and plants without detections, whose
+        footprint says nothing about their size; ``unsized_people_by_country``
+        replaces it in the countries it lists.
+    reported_size_columns, reported_size_skip
+        Passed to ``reported_size_people`` (used with ``reported`` only).
+    country_column : str
+        Column holding the plant's country (ISO 3166 alpha-2).
+    size_scale : dict
+        ``{country: factor}`` applied to every size of that country, reported or
+        estimated, so that the sizes of a country add up to its connected people
+        (``create_voronoi.size_scale`` for the size measure); 1 for other
+        countries. ``{}`` gives the sizes before this step.
+
+    Returns
+    -------
+    numpy.ndarray
+        People per row (always > 0).
+    """
+    if size_measure not in SIZE_MEASURES:
+        raise ValueError(f"size_measure must be one of {SIZE_MEASURES}, got {size_measure!r}")
+    footprint, sized = detected_footprint(df)
+    country = df[country_column]
+    offset = country.map(footprint_to_people["country_offsets"]).fillna(0.0).to_numpy(dtype=float)
+    unsized = (
+        country.map(footprint_to_people["unsized_people_by_country"])
+        .fillna(float(footprint_to_people["unsized_people"]))
+        .to_numpy(dtype=float)
+    )
     people = np.where(
         sized,
         np.power(
             10.0,
             float(footprint_to_people["intercept"])
+            + offset
             + float(footprint_to_people["slope"]) * np.log10(np.where(sized, footprint, 1.0)),
         ),
-        float(footprint_to_people["unsized_people"]),
+        unsized,
     )
     if size_measure == "reported":
         reported = reported_size_people(df, reported_size_columns, reported_size_skip)
         people = np.where(np.isfinite(reported), reported, people)
-    return people
+    return people * country.map(size_scale).fillna(1.0).to_numpy(dtype=float)
 
 
 def connected_share_logit(share):
@@ -217,10 +252,9 @@ def calculate_buffer(df, weights, *args, **kwargs):
         Voronoi weights; unused, kept for the ``calculate_buffer_fn`` signature.
     **kwargs
         ``buffer`` (m), ``dynamic_buffering``, ``max_buffer`` (m), and with
-        dynamic buffering ``size_measure``, ``footprint_to_people``,
-        ``reported_size_columns``, ``reported_size_skip``, ``radius_exponent``,
-        ``radius_at_10k_people_km``, ``radius_by_connection`` (or None),
-        ``connected_share`` and ``country_column`` (starter takes them from
+        dynamic buffering the arguments of ``plant_size_people`` and
+        ``radius_exponent``, ``radius_at_10k_people_km``, ``radius_by_connection``
+        (or None) and ``connected_share`` (starter takes them from
         ``radius_calibration`` for the size measure and ``connected_share``).
 
     Returns

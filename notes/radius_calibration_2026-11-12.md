@@ -1,5 +1,8 @@
 # Radius scale calibrated on 126 countries (2026-11-12)
 
+Superseded in its numbers by `size_calibration_2026-11-12.md` (plant size by country, national size
+scale, rule refitted with it); the method and the tests below still hold.
+
 The service radius is `r10k * (people / 10,000) ** e`. Until now e and r10k came from one source: EPA
 sewersheds in seven US states. This note replaces the single r10k by a rule calibrated on national
 statistics from every region, and records what was tested and rejected.

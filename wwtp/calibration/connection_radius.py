@@ -7,18 +7,29 @@ tests one global formula ``r10k = exp(a + b * logit(x))``, with x the national c
 own reported coverage), fitted on some countries and checked on the others.
 
 Subcommands (``python -m wwtp.calibration.connection_radius <command>``; settings in config.yaml,
-section ``connection_radius``; Snakemake target ``connection_radius`` runs the first two)::
+section ``connection_radius``; Snakemake target ``calibration`` runs references, curves, calibrate and
+pack)::
 
     references  the national connection statistics (reference_urls), saved unparsed to
                 <output_dir>/references/ with manifest.json (URL, time, bytes, sha256)
-    curves      for every country with plants and a WorldPop raster of ``year``: its people, and the
-                people inside service areas for every size measure, radius exponent and r10k of the grid
-                -> <output_dir>/countries.csv, <output_dir>/served_share_curves.csv
+    curves      for every country with plants and a WorldPop raster of ``year``: its people, the sum of
+                its plant sizes, and the people inside service areas for every size measure, radius
+                exponent and r10k of the grid -> countries.csv, served_share_curves.csv; and the plants
+                with their country, footprint and sizes -> plants.csv. Sizes are those before the
+                national size scale (``create_voronoi.size_scale``), which ``calibrate`` derives.
     fit         the connected shares per country from the references (reference_table.csv) and the
                 cross-validated fit -> fit_summary.csv, fit_countries.csv
-    calibrate   the rule the pipeline uses (create_voronoi.radius_calibration.<measure>.by_connection):
-                r10k = min(cap, exp(a + b logit(C))), a and b per cap, tested by leaving one SDG region
-                out -> calibration_by_cap.csv, calibration_countries.csv
+    calibrate   what the pipeline uses, from the outputs of ``curves``:
+                - the country parts of the plant size (``footprint_to_people.country_offsets`` and
+                  ``unsized_people_by_country``) -> plant_size_countries.csv, next to the config values;
+                - the national size scale, k = connected people / sum of plant sizes within the limits
+                  of ``calibration_size_scale_limits`` ([1, 1] = none), and the radius rule
+                  r10k = min(cap, exp(a + b logit(C))), a and b per pair of limits and cap, tested by
+                  leaving one SDG region out -> calibration_by_cap.csv, calibration_countries.csv
+                A factor k on every size of a country is a factor k ** e on its radii, so the curves
+                of ``curves`` serve every k.
+    pack        the tables above and the results of ``national_data`` in one file
+                -> calibration_results.zip
 
 Stand-in for the service areas, as in ``wwtp.calibration.service_radius`` (approach 1 without basins):
 each 1 km population cell goes to the plant of its country with the smallest distance / sqrt(people)
@@ -36,6 +47,7 @@ import logging
 import math
 import os
 import re
+import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -50,12 +62,14 @@ from ..geo_utils import read_located_plants
 from ..service_areas.size import connected_share_logit
 from ..service_areas import (
     calculate_area,
+    detected_footprint,
     download_overture_maps,
     intersects_with_country_db,
     plant_size_people,
     reported_size_people,
 )
 from ..starter import load_config
+from .service_radius import fit_country_sizes
 from ..utils import atomic_output, configure_logging, get_iso_codes, requests_session_with_retries
 
 logger = logging.getLogger(__name__)
@@ -126,10 +140,11 @@ def aggregate_cells(path, factor):
 
 
 def load_plants(cfg):
-    """Our plants (with a location) with their country, lon/lat and sizes in people per size measure.
+    """Our plants (with a location) with their country, lon/lat, footprint and sizes in people per size measure.
 
     The country is joined from the same boundary layer, the footprint computed and the sizes taken the
-    same way as in create_voronoi.
+    same way as in create_voronoi, but without the national size scale: ``size_<measure>`` are the sizes
+    it is derived from.
     """
     paths = cfg["paths"]
     gdf = read_located_plants(paths["annotated_all_filepath"]).to_crs(4326)
@@ -144,11 +159,18 @@ def load_plants(cfg):
     )
     point = gdf.geometry.representative_point()
     out = pd.DataFrame({"iso2": gdf[country].to_numpy(), "lon": point.x.to_numpy(), "lat": point.y.to_numpy()})
+    out["footprint_m2"], out["sized"] = detected_footprint(gdf)
     out["reported"] = reported_size_people(gdf, cfg["reported_size_columns"], cfg["reported_size_skip"])
     for measure in cfg["size_measures"]:
         out[f"size_{measure}"] = np.asarray(
             plant_size_people(
-                gdf, measure, cfg["footprint_to_people"], cfg["reported_size_columns"], cfg["reported_size_skip"]
+                gdf,
+                measure,
+                cfg["footprint_to_people"],
+                cfg["reported_size_columns"],
+                cfg["reported_size_skip"],
+                country,
+                {},
             ),
             dtype=float,
         )
@@ -207,7 +229,7 @@ def country_curves(iso2, raster, plants, settings):
 
 
 def compute_curves(cfg):
-    """countries.csv and served_share_curves.csv for every country with plants."""
+    """countries.csv and served_share_curves.csv for every country with plants, and plants.csv."""
     plants = load_plants(cfg)
     _, alpha_2_to_3, _, _ = get_iso_codes()
     settings = {
@@ -229,6 +251,7 @@ def compute_curves(cfg):
             "n_plants": int(len(group)),
             "n_plants_reported": int(np.isfinite(group["reported"]).sum()),
             "reported_people": float(np.nansum(group["reported"])),
+            **{f"sum_size_{m}": float(group[f"size_{m}"].sum()) for m in settings["size_measures"]},
             "status": "ok" if raster else "no raster",
         }
         countries.append(row)
@@ -256,6 +279,8 @@ def compute_curves(cfg):
         pd.DataFrame(countries).to_csv(tmp, index=False)
     with atomic_output(os.path.join(out_dir, "served_share_curves.csv")) as tmp:
         pd.DataFrame(curves).to_csv(tmp, index=False)
+    with atomic_output(os.path.join(out_dir, "plants.csv")) as tmp:
+        plants.round({"lon": 5, "lat": 5}).to_csv(tmp, index=False)
     return pd.DataFrame(countries), pd.DataFrame(curves)
 
 
@@ -514,14 +539,27 @@ def fit_connection_radius(cfg, countries, curves, references, current_r10k):
     return pd.DataFrame(summary), pd.DataFrame(per_country)
 
 
-def calibrate_by_region(cfg, countries, curves, references):
-    """The radius scale as a capped function of the connected share, tested by leaving one region out.
+def size_scale(connected_people, sum_size, limits):
+    """Factor on every plant size of a country: connected people / sum of its plant sizes, within limits."""
+    return np.clip(np.asarray(connected_people, dtype=float) / np.asarray(sum_size, dtype=float), *limits)
 
-    ``r10k = min(cap, exp(a + b * logit(C)))`` with C the ``fit_reference`` share. For every size
-    measure, radius exponent and cap of ``calibration_caps_km``: a and b on all countries (needed radii
-    above the cap count as the cap), and the error of the served share when each SDG region is predicted
-    from a fit on the other regions. ``cap`` 0 stands for one radius for all (the best on the other
-    regions), the baseline. Returns one row per combination and the per-country table of the fits.
+
+def calibrate_by_region(cfg, countries, curves, references):
+    """The national size scale and the capped radius rule, tested by leaving one region out.
+
+    For every size measure, radius exponent e, pair of limits of ``calibration_size_scale_limits`` and
+    cap of ``calibration_caps_km``:
+
+    - ``k = connected people / sum of plant sizes`` of the country, within the limits (connected people
+      = the ``fit_reference`` share C x the people of its raster; limits [1, 1] = no scale). With it
+      every radius of the country grows by ``k ** e``: its served share at r10k is its curve at
+      ``r10k * k ** e``, and the r10k it needs is the unscaled one / ``k ** e``.
+    - ``r10k = min(cap, exp(a + b * logit(C)))``: a and b on all countries (needed radii above the cap
+      count as the cap), and the error of the served share when each SDG region is predicted from a
+      fit on the other regions. ``cap`` 0 stands for one radius for all (the best on the other
+      regions), the baseline.
+
+    Returns one row per combination and the per-country table of the fits.
     """
     source = cfg["fit_reference"]
     refs = references.dropna(subset=[f"{source}_share", "region_sdg"]).set_index("iso3")
@@ -540,9 +578,11 @@ def calibrate_by_region(cfg, countries, curves, references):
             needed, where = needed_radius(radii, shares, target)
             table.append(
                 {
+                    "iso2": iso2,
                     "iso3": info["iso3"].iloc[0],
                     "region": refs.loc[info["iso3"].iloc[0], "region_sdg"],
                     "people": float(info["total_people"].iloc[0]),
+                    "sum_size": float(info[f"sum_size_{measure}"].iloc[0]),
                     "reference": target,
                     "radii": radii,
                     "shares": shares,
@@ -557,11 +597,7 @@ def calibrate_by_region(cfg, countries, curves, references):
             t["reference"].to_numpy(),
             t["people"].to_numpy(),
         )
-
-        def served(r10k, t=t):
-            return np.array(
-                [share_at(r, s, min(max(v, r[0]), r[-1])) for r, s, v in zip(t["radii"], t["shares"], r10k)]
-            )
+        raw_scale = share * people / t["sum_size"].to_numpy()
 
         def errors(pred, share=share, people=people):
             err = (pred - share) * 100
@@ -573,38 +609,96 @@ def calibrate_by_region(cfg, countries, curves, references):
                 "within_10pp": float(np.mean(np.abs(err) <= 10)),
             }
 
-        key = {"size_measure": measure, "radius_exponent": float(exponent), "n_countries": len(t)}
         grid = radius_grid(cfg["radius_grid"])
-        single = np.zeros(len(t))
-        for region in t["region"].unique():
-            test = (t["region"] == region).to_numpy()
-            best = min(grid, key=lambda r: np.mean(np.abs(served(np.full(len(t), r)) - share)[~test]))
-            single[test] = served(np.full(len(t), best))[test]
-        rows.append({**key, "cap_km": 0.0, "a": np.nan, "b": np.nan, **errors(single)})
-        for cap in cfg["calibration_caps_km"]:
-            log_needed = np.log(np.minimum(t["needed"].to_numpy(), cap))
-            pred = np.zeros(len(t))
+        for limits in cfg["calibration_size_scale_limits"]:
+            scale = size_scale(share * people, t["sum_size"], (limits["min"], limits["max"]))
+            factor = scale ** float(exponent)  # on every radius of the country
+
+            def served(r10k, t=t, factor=factor):
+                return np.array(
+                    [
+                        share_at(r, s, min(max(v * f, r[0]), r[-1]))
+                        for r, s, v, f in zip(t["radii"], t["shares"], r10k, factor)
+                    ]
+                )
+
+            key = {
+                "size_measure": measure,
+                "radius_exponent": float(exponent),
+                "scale_min": float(limits["min"]),
+                "scale_max": float(limits["max"]),
+                "n_countries": len(t),
+            }
+            needed = t["needed"].to_numpy() / factor
+            single = np.zeros(len(t))
             for region in t["region"].unique():
                 test = (t["region"] == region).to_numpy()
-                a, b = fit_line(x[~test & ok], log_needed[~test & ok])
-                pred[test] = served(np.minimum(np.exp(a + b * x), cap))[test]
-            a, b = fit_line(x[ok], log_needed[ok])
-            rows.append({**key, "cap_km": float(cap), "a": a, "b": b, **errors(pred)})
-            detail.append(
-                pd.DataFrame(
-                    {
-                        **key,
-                        "cap_km": float(cap),
-                        "iso3": t["iso3"],
-                        "region": t["region"],
-                        "reference": share,
-                        "needed_r10k": t["needed"],
-                        "r10k": np.minimum(np.exp(a + b * x), cap),
-                        "served_share_region_left_out": pred,
-                    }
+                best = min(grid, key=lambda r: np.mean(np.abs(served(np.full(len(t), r)) - share)[~test]))
+                single[test] = served(np.full(len(t), best))[test]
+            rows.append({**key, "cap_km": 0.0, "a": np.nan, "b": np.nan, **errors(single)})
+            for cap in cfg["calibration_caps_km"]:
+                log_needed = np.log(np.minimum(needed, cap))
+                pred = np.zeros(len(t))
+                for region in t["region"].unique():
+                    test = (t["region"] == region).to_numpy()
+                    a, b = fit_line(x[~test & ok], log_needed[~test & ok])
+                    pred[test] = served(np.minimum(np.exp(a + b * x), cap))[test]
+                a, b = fit_line(x[ok], log_needed[ok])
+                rows.append({**key, "cap_km": float(cap), "a": a, "b": b, **errors(pred)})
+                detail.append(
+                    pd.DataFrame(
+                        {
+                            **key,
+                            "cap_km": float(cap),
+                            "iso2": t["iso2"],
+                            "iso3": t["iso3"],
+                            "region": t["region"],
+                            "reference": share,
+                            "size_scale_unlimited": raw_scale,
+                            "size_scale": scale,
+                            "needed_r10k": needed,
+                            "r10k": np.minimum(np.exp(a + b * x), cap),
+                            "served_share_region_left_out": pred,
+                        }
+                    )
                 )
-            )
     return pd.DataFrame(rows), pd.concat(detail, ignore_index=True)
+
+
+def country_sizes(cfg, plants):
+    """The country parts of the plant size from our plants, next to the values in config.yaml."""
+    to_people = cfg["footprint_to_people"]
+    table, ratio = fit_country_sizes(
+        plants.rename(columns={"iso2": "country"}), to_people, int(cfg["size_country_min_plants"])
+    )
+    table["config_offset"] = table["country"].map(to_people["country_offsets"])
+    table["config_unsized_people"] = table["country"].map(to_people["unsized_people_by_country"])
+    table["unsized_ratio"] = ratio
+    return table
+
+
+RESULT_FILES = (
+    "countries.csv",
+    "served_share_curves.csv",
+    "plants.csv",
+    "reference_table.csv",
+    "plant_size_countries.csv",
+    "calibration_by_cap.csv",
+    "calibration_countries.csv",
+)
+
+
+def pack_results(out_dir, national_zip):
+    """calibration_results.zip: the calibration tables and, under national_data/, the national results."""
+    with (
+        atomic_output(os.path.join(out_dir, "calibration_results.zip")) as tmp,
+        zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as archive,
+    ):
+        for name in RESULT_FILES:
+            archive.write(os.path.join(out_dir, name), name)
+        with zipfile.ZipFile(national_zip) as national:
+            for member in national.infolist():
+                archive.writestr(f"national_data/{member.filename}", national.read(member))
 
 
 # --------------------------------------------------------------------------- #
@@ -612,45 +706,47 @@ def calibrate_by_region(cfg, countries, curves, references):
 # --------------------------------------------------------------------------- #
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=["references", "curves", "fit", "calibrate"])
+    parser.add_argument("command", choices=["references", "curves", "fit", "calibrate", "pack"])
     args = parser.parse_args(argv)
     cfg = load_config(script_name="connection_radius")
     out_dir = cfg["paths"]["output_dir"]
+
+    def read(name):
+        return pd.read_csv(os.path.join(out_dir, name), keep_default_na=False, na_values=[""])
+
+    def write(frame, name):
+        with atomic_output(os.path.join(out_dir, name)) as tmp:
+            frame.to_csv(tmp, index=False)
+
     if args.command == "references":
         download_references(cfg)
     elif args.command == "curves":
         compute_curves(cfg)
     elif args.command == "calibrate":
-        table, detail = calibrate_by_region(
-            cfg,
-            pd.read_csv(os.path.join(out_dir, "countries.csv"), keep_default_na=False, na_values=[""]),
-            pd.read_csv(os.path.join(out_dir, "served_share_curves.csv"), keep_default_na=False, na_values=[""]),
-            read_references(cfg),
-        )
-        with atomic_output(os.path.join(out_dir, "calibration_by_cap.csv")) as tmp:
-            table.to_csv(tmp, index=False)
-        with atomic_output(os.path.join(out_dir, "calibration_countries.csv")) as tmp:
-            detail.to_csv(tmp, index=False)
+        references = read_references(cfg)
+        write(references, "reference_table.csv")
+        sizes = country_sizes(cfg, read("plants.csv"))
+        write(sizes, "plant_size_countries.csv")
+        table, detail = calibrate_by_region(cfg, read("countries.csv"), read("served_share_curves.csv"), references)
+        write(table, "calibration_by_cap.csv")
+        write(detail, "calibration_countries.csv")
+        print(sizes.dropna(subset=["offset", "unsized_people"], how="all").round(3).to_string(index=False))
         print(table.round(3).to_string(index=False))
+    elif args.command == "pack":
+        national = load_config(script_name="national_data")["paths"]["output_dir"]
+        pack_results(out_dir, os.path.join(national, "results.zip"))
     else:
         references = read_references(cfg)
-        with atomic_output(os.path.join(out_dir, "reference_table.csv")) as tmp:
-            references.to_csv(tmp, index=False)
+        write(references, "reference_table.csv")
         voronoi = load_config(script_name="create_voronoi")
         current = {
             m: (c["radius_exponent"], c["radius_at_10k_people_km"]) for m, c in voronoi["radius_calibration"].items()
         }
         summary, per_country = fit_connection_radius(
-            cfg,
-            pd.read_csv(os.path.join(out_dir, "countries.csv"), keep_default_na=False, na_values=[""]),
-            pd.read_csv(os.path.join(out_dir, "served_share_curves.csv"), keep_default_na=False, na_values=[""]),
-            references,
-            current,
+            cfg, read("countries.csv"), read("served_share_curves.csv"), references, current
         )
-        with atomic_output(os.path.join(out_dir, "fit_summary.csv")) as tmp:
-            summary.to_csv(tmp, index=False)
-        with atomic_output(os.path.join(out_dir, "fit_countries.csv")) as tmp:
-            per_country.to_csv(tmp, index=False)
+        write(summary, "fit_summary.csv")
+        write(per_country, "fit_countries.csv")
         print(summary.round(3).to_string(index=False))
 
 

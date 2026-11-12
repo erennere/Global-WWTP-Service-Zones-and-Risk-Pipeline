@@ -257,16 +257,33 @@ def test_load_config_dynamic_buffering_uses_size_measure_token_and_empty_weight_
 
 SIZE_CONFIG = {
     "size_measure": "reported",
-    "footprint_to_people": {"intercept": 1.0, "slope": 0.8, "unsized_people": 2000},
+    "footprint_to_people": {
+        "intercept": 1.0,
+        "slope": 0.8,
+        "unsized_people": 2000,
+        "country_offsets": {"CN": 0.7},
+        "unsized_people_by_country": {"CN": 90000},
+    },
     "reported_size_columns": ["POP_SERVED"],
     "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
+    "size_scale": {"reported": {"NL": 0.9}, "footprint": {"NL": 1.5}},
 }
 SIZE_KWARGS = {
     "size_measure": "reported",
-    "footprint_to_people": {"intercept": 1.0, "slope": 0.8, "unsized_people": 2000.0},
     "reported_size_columns": ["POP_SERVED"],
     "reported_size_skip": {"POP_SERVED": {"QUAL_POP": [4]}},
+    "country_column": "ISO_2",
 }
+
+
+def _size_kwargs(cfg):
+    """The size arguments: the tables are merged into those of config.yaml, so they are read back."""
+    to_people = cfg["footprint_to_people"]
+    assert (to_people["intercept"], to_people["slope"], to_people["unsized_people"]) == (1.0, 0.8, 2000.0)
+    assert to_people["country_offsets"]["CN"] == 0.7 and to_people["unsized_people_by_country"]["CN"] == 90000.0
+    assert cfg["size_scale"]["reported"]["NL"] == 0.9 and cfg["size_scale"]["footprint"]["NL"] == 1.5
+    # the scale of the size measure, not the whole table
+    return {**SIZE_KWARGS, "footprint_to_people": to_people, "size_scale": cfg["size_scale"]["reported"]}
 
 
 def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_test_config):
@@ -297,14 +314,13 @@ def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_te
         "buffer": 9000,
         "dynamic_buffering": True,
         "max_buffer": 50000,
-        **SIZE_KWARGS,
+        **_size_kwargs(cfg),
         "radius_exponent": 0.3,
         "radius_at_10k_people_km": 4.0,
         "radius_by_connection": {"intercept": 1.4, "slope": 0.2, "max_km": 5.0},
         "connected_share": cfg["connected_share"],
-        "country_column": cfg["country_output_column"],
     }
-    assert cfg["connected_share"]["NL"] == 0.97
+    assert cfg["connected_share"]["NL"] == 0.97 and cfg["country_output_column"] == "ISO_2"
 
 
 def test_fixed_buffering_needs_no_radius_calibration(write_test_config):
@@ -325,7 +341,7 @@ def test_fixed_buffering_needs_no_radius_calibration(write_test_config):
         "buffer": 9000,
         "dynamic_buffering": False,
         "max_buffer": 50000,
-        **SIZE_KWARGS,
+        **_size_kwargs(cfg),
     }
     assert cfg["buffer_path_token"] == "9000"
 

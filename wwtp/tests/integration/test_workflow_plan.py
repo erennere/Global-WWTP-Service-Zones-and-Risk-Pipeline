@@ -76,6 +76,14 @@ FIGURES = {
 INDUSTRIAL = {"find_unconnected_industrial_areas", "download_and_vectorize"}  # configured variant only
 COMPARISONS = {"verification_script", "hw_comparison", "eu_comparison"}
 SWEEP = {"national_data_fetch", "sweep_validation_references", "sweep_validation", "sweep_layers", "sweep"}
+CALIBRATION = {
+    "national_data_fetch",
+    "national_registers",
+    "connection_radius_references",
+    "connection_radius_curves",
+    "connection_radius_calibrate",
+    "calibration_results",
+}
 
 
 def test_snakemake_alone_runs_nothing(work):
@@ -97,6 +105,16 @@ def test_snakemake_alone_runs_nothing(work):
             FIGURES | RISK | INDUSTRIAL | {"hw_comparison", "eu_comparison", "find_diff_pop"},
         ),
         ("all", FIGURES | RISK | (SWEEP - {"sweep_layers", "sweep"}), set()),  # target rules are not jobs here
+        (
+            "calibration",  # comes before any sweep: no service areas, no population layers
+            CALIBRATION,
+            FIGURES | RISK | INDUSTRIAL | COMPARISONS | (SWEEP - CALIBRATION) | {"create_voronoi", "add_pop"},
+        ),
+        (
+            "connection_radius",
+            CALIBRATION - {"national_data_fetch", "national_registers", "calibration_results"},
+            SWEEP,
+        ),
     ],
 )
 def test_each_target_plans_only_its_part(work, target, wanted, unwanted):
@@ -106,6 +124,16 @@ def test_each_target_plans_only_its_part(work, target, wanted, unwanted):
     assert wanted <= kinds, wanted - kinds
     assert not kinds & unwanted, kinds & unwanted
     assert not kinds & ONE_TIME_RULES
+
+
+def test_a_new_plant_size_reruns_the_sized_service_areas_and_the_curves(work):
+    """Sizes are rule params: variants that use a plant size and the calibration curves carry them."""
+    assert wf.sizing_params(wf.default_variant()).keys() == {"sizes", "radius"}
+    rigid = [v for v in wf.sweep_variants() if not v.dynamic_buffering]
+    assert {tuple(wf.sizing_params(v)) for v in rigid if v.weight_method == "size"} == {("sizes",)}
+    assert {tuple(wf.sizing_params(v)) for v in rigid if v.weight_method != "size"} == {()}
+    before = wf.calibration_params("footprint_to_people", "year")
+    assert before == wf.calibration_params("footprint_to_people", "year") != wf.calibration_params("year")
 
 
 def test_a_run_starts_after_the_one_time_stages(work):

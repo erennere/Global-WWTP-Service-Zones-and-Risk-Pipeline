@@ -502,6 +502,7 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         "reported_size_skip",
         "radius_calibration",
         "connected_share",
+        "size_scale",
         "country_output_column",
     }
     if calculate_buffer_keys.issubset(cfg):
@@ -518,6 +519,9 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
                     "footprint_to_people": dict(cfg["footprint_to_people"]),
                     "reported_size_columns": list(cfg["reported_size_columns"]),
                     "reported_size_skip": dict(cfg["reported_size_skip"]),
+                    "country_column": cfg["country_output_column"],
+                    # factor per country on every size, so that they add up to its connected people
+                    "size_scale": dict(cfg["size_scale"][cfg["size_measure"]]),
                 }
             )
         if cfg["dynamic_buffering"]:
@@ -529,7 +533,6 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
                     # r10k by country where the calibration has a connection rule (else None)
                     "radius_by_connection": row["by_connection"],
                     "connected_share": dict(cfg["connected_share"]),
-                    "country_column": cfg["country_output_column"],
                 }
             )
         derived["calculate_buffer_kwargs"] = kwargs

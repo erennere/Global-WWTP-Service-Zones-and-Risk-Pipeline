@@ -94,7 +94,7 @@ Weight transformation functions are controlled by `create_voronoi.weight_method`
 To avoid disproportionately large Voronoi cells, especially in sparse areas, cells are clipped to a buffer around each location after creation.
 
 - Static buffering: disable dynamic buffering with `create_voronoi.dynamic_buffering: false`. The `--buffer` flag overrides the config value at runtime.
-- Dynamic buffering: enable with `create_voronoi.dynamic_buffering: true`. Each plant's radius grows with its size in people (`create_voronoi.size_measure`: `reported` or `footprint`; numbers in `create_voronoi.radius_calibration`).
+- Dynamic buffering: enable with `create_voronoi.dynamic_buffering: true`. Each plant's radius grows with its size in people (`create_voronoi.size_measure`: `reported` or `footprint`; numbers in `create_voronoi.radius_calibration`). The size is the reported one or the footprint estimate (`footprint_to_people`, with a country offset and a country value for plants without a usable footprint), times the country's `size_scale`, which makes the sizes of a country add up to its connected people.
 
 The sweep analysis scripts support sensitivity analysis across combinations of model parameters. The configurable hooks that govern those runs are `create_voronoi.calculate_area_fn`, `create_voronoi.calculate_buffer_fn`, and `create_voronoi.prepare_data_fn`, which are resolved at runtime through `wwtp/pipelines.py`.
 
@@ -158,8 +158,10 @@ snakemake --profile workflow/profiles/slurm national_data   # downloads the vali
 snakemake --profile workflow/profiles/slurm all        # analysis + figures + sweep
 snakemake --profile workflow/profiles/slurm fig1       # Figure 1 from its prepared inputs
 snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations  # grids, OSM context, images, labels
-snakemake --profile workflow/profiles/slurm connection_radius   # calibration inputs: national connection statistics + served-share curves per country
+snakemake --profile workflow/profiles/slurm calibration  # before any sweep: national_data + plant sizes by country, national size scale, radius rule; one zip to send back
 ```
+
+`calibration` is the one cluster run the calibration needs, and it makes no service areas: `national_data`, then for every country the served share against the radius scale (`connection_radius_curves`, with the plant sizes before the national scale) and from it and our plants the tables behind `create_voronoi.footprint_to_people` (country offsets, size-free plants by country), `size_scale` and `radius_calibration.*.by_connection` (`connection_radius_calibrate`; nothing is written to config.yaml). Everything to send back is in `data/calibration/connection_radius/calibration_results.zip`. The sweep runs after those values are set. `connection_radius` makes only the tables.
 
 The sweep validation's reference files (GB catchments, CBS, EPA sewersheds, JMP, Eurostat, OECD) are downloaded by the local rule `national_data_fetch` (URLs in `national_data.sources`); it needs internet on the node that runs Snakemake and keeps files that are already in `data/validation_data/`. `national_data` also writes `data/validation_data/national_data/new_plants.gpkg` (plants of the national registers farther than `match_distance_m` from every plant of ours, one file for all countries), `peek.md` (structure of every downloaded file) and `results.zip`.
 

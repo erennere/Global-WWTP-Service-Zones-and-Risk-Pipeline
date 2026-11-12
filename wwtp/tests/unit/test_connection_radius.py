@@ -2,6 +2,7 @@
 
 import json
 import math
+import zipfile
 
 import numpy as np
 import pandas as pd
@@ -113,8 +114,10 @@ def test_curves_for_a_country_with_plants_and_a_raster(tmp_path, monkeypatch):
     nl = countries.set_index("iso2").loc["NL"]
     assert nl["status"] == "ok" and nl["n_plants"] == 5 and nl["n_plants_reported"] == 3
     assert nl["reported_coverage"] == pytest.approx(1.7e5 / nl["total_people"])
+    assert nl["sum_size_reported"] == pytest.approx(1.756e5) and nl["sum_size_footprint"] == pytest.approx(1.556e5)
     assert countries.set_index("iso2").loc["BE", "status"] == "no raster"
     assert len(curves) == 2 * 2 * 12
+    assert pd.read_csv(tmp_path / "out" / "plants.csv")["size_footprint"].tolist() == plants["size_footprint"].tolist()
     for _, curve in curves.groupby(["size_measure", "radius_exponent"]):
         served = curve.sort_values("radius_at_10k_people_km")["served_people"].to_numpy()
         assert np.all(np.diff(served) >= 0) and served[-1] <= nl["total_people"] + 1e-6
@@ -256,24 +259,27 @@ def test_references_are_read_per_source_in_the_year_nearest_the_target(tmp_path)
     assert refs.loc["NLD", "oecd_share"] == pytest.approx(0.996) and np.isnan(refs.loc["IND", "oecd_share"])
 
 
-def test_the_capped_rule_is_recovered_and_tested_by_leaving_regions_out():
-    """Countries whose needed r10k is min(cap, exp(a + b logit C)): the fit returns a and b, errors near zero."""
-    rng = np.random.default_rng(5)
+def _capped_world(a, b, cap, size_error, exponent=0.3, n=40, seed=5):
+    """Countries that need r10k = min(cap, exp(a + b logit C)) once their plant sizes add up to their
+    connected people; the sizes at hand are off by the factor ``size_error(k)`` (1 = right)."""
+    rng = np.random.default_rng(seed)
     radii = cr.radius_grid({"start": 0.5, "stop": 40.0, "count": 60})
-    a, b, cap = 1.4, 0.2, 5.0
     countries, curves, refs = [], [], []
-    for k in range(40):
+    for k in range(n):
         iso2, iso3, share = f"Q{k:02d}", f"QQ{k:02d}", rng.uniform(0.05, 0.95)
-        needed = min(cap, math.exp(a + b * cr.logit(share)))
+        error = size_error(k)  # sizes at hand = right sizes * error
+        needed = min(cap, math.exp(a + b * cr.logit(share))) / error**exponent  # too-large sizes need a smaller r10k
         r0 = -needed / math.log(1 - share)
-        countries.append({"iso2": iso2, "iso3": iso3, "status": "ok", "total_people": 1e6})
+        countries.append(
+            {"iso2": iso2, "iso3": iso3, "status": "ok", "total_people": 1e6, "sum_size_reported": share * 1e6 * error}
+        )
         refs.append({"iso3": iso3, "jmp_share": share, "region_sdg": f"region {k % 4}"})
         for r in radii:
             curves.append(
                 {
                     "iso2": iso2,
                     "size_measure": "reported",
-                    "radius_exponent": 0.3,
+                    "radius_exponent": exponent,
                     "radius_at_10k_people_km": r,
                     "served_people": 1e6 * (1 - math.exp(-r / r0)),
                 }
@@ -281,14 +287,79 @@ def test_the_capped_rule_is_recovered_and_tested_by_leaving_regions_out():
     cfg = {
         "fit_reference": "jmp",
         "calibration_caps_km": [5.0, 40.0],
+        "calibration_size_scale_limits": [{"min": 1.0, "max": 1.0}, {"min": 0.1, "max": 10.0}],
         "radius_grid": {"start": 0.5, "stop": 40.0, "count": 60},
     }
-    table, detail = cr.calibrate_by_region(cfg, pd.DataFrame(countries), pd.DataFrame(curves), pd.DataFrame(refs))
-    t = table.set_index("cap_km")
-    # the line is fitted to min(needed, cap), so a and b are not those of the uncapped rule
-    assert t.loc[5.0, "b"] > 0 and t.loc[40.0, "b"] > 0
-    assert (
-        t.loc[5.0, "mean_abs_error_pp"] < 0.5 * t.loc[0.0, "mean_abs_error_pp"]
-    )  # one radius for all misses the spread
-    assert t.loc[5.0, "mean_abs_error_pp"] < 3
-    assert len(detail) == 2 * 40 and detail["r10k"].max() <= 40.0
+    return cfg, pd.DataFrame(countries), pd.DataFrame(curves), pd.DataFrame(refs)
+
+
+def test_the_capped_rule_is_recovered_and_tested_by_leaving_regions_out():
+    """Countries whose needed r10k is min(cap, exp(a + b logit C)): the fit returns a and b, errors near zero."""
+    table, detail = cr.calibrate_by_region(*_capped_world(1.4, 0.2, 5.0, size_error=lambda k: 1.0))
+    for limits in (1.0, 0.1):  # sizes that already add up to the connected people: the scale changes nothing
+        t = table[table["scale_min"] == limits].set_index("cap_km")
+        # the line is fitted to min(needed, cap), so a and b are not those of the uncapped rule
+        assert t.loc[5.0, "b"] > 0 and t.loc[40.0, "b"] > 0
+        assert (
+            t.loc[5.0, "mean_abs_error_pp"] < 0.5 * t.loc[0.0, "mean_abs_error_pp"]
+        )  # one radius for all misses the spread
+        assert t.loc[5.0, "mean_abs_error_pp"] < 3
+    assert len(detail) == 2 * 2 * 40 and detail["r10k"].max() <= 40.0
+    assert detail["size_scale"].to_numpy() == pytest.approx(1.0)
+
+
+def test_the_size_scale_removes_country_errors_of_the_plant_sizes():
+    """Sizes 4x too large or too small by country: scaled to the connected people the rule fits again."""
+    world = _capped_world(1.4, 0.2, 5.0, size_error=lambda k: (4.0, 0.25, 1.0)[k % 3])
+    table, detail = cr.calibrate_by_region(*world)
+    t = table.set_index(["scale_min", "cap_km"])
+    assert t.loc[(0.1, 5.0), "mean_abs_error_pp"] < 3 < t.loc[(1.0, 5.0), "mean_abs_error_pp"]
+    scaled = detail[(detail["scale_min"] == 0.1) & (detail["cap_km"] == 5.0)].set_index("iso2")
+    assert scaled.loc[["Q00", "Q01", "Q02"], "size_scale"].to_numpy() == pytest.approx([0.25, 4.0, 1.0])
+    assert scaled["needed_r10k"].max() == pytest.approx(5.0, rel=0.01)  # the needed radius of the scaled sizes
+    assert detail.loc[detail["scale_min"] == 1.0, "needed_r10k"].max() > 7.0  # 5 km * 4 ** 0.3 without the scale
+    assert cr.size_scale([50.0, 5.0, 100.0], [10.0, 100.0, 100.0], (1 / 3, 3)) == pytest.approx([3.0, 1 / 3, 1.0])
+
+
+def test_country_sizes_and_the_packed_results(tmp_path):
+    rng = np.random.default_rng(7)
+    rows = []
+    for country, n, offset, unsized in (("AA", 80, 0.5, 9e4), ("BB", 80, -0.3, 1e3), ("CC", 10, 2.0, 5e5)):
+        footprint = 10 ** rng.uniform(3, 5, n)
+        people = 10 ** (1.5 + offset + 0.7 * np.log10(footprint) + rng.normal(0, 0.05, n))
+        sized = np.arange(n) % 2 == 0
+        reported = np.where(sized, people, unsized * 10 ** rng.normal(0, 0.05, n))
+        rows.append(pd.DataFrame({"iso2": country, "footprint_m2": footprint, "sized": sized, "reported": reported}))
+    plants = pd.concat(rows, ignore_index=True)
+    plants.loc[plants["iso2"] == "BB", "reported"] = plants["reported"].where(plants["sized"])  # no size-free records
+    cfg = {
+        "footprint_to_people": {
+            "intercept": 1.5,
+            "slope": 0.7,
+            "country_offsets": {"AA": 0.45},
+            "unsized_people_by_country": {"BB": 1234.0},
+        },
+        "size_country_min_plants": 30,
+    }
+    t = cr.country_sizes(cfg, plants).set_index("country")
+    assert t.loc["AA", "offset"] == pytest.approx(0.5, abs=0.03)
+    assert t.loc["BB", "offset"] == pytest.approx(-0.3, abs=0.03)
+    assert np.isnan(t.loc["CC", "offset"]) and t.loc["CC", "unsized_from"] == ""  # 10 plants: too few for a value
+    assert t.loc["AA", "unsized_people"] == pytest.approx(9e4, rel=0.05) and t.loc["AA", "unsized_from"] == "own"
+    # BB has no size-free plant with a record: the ratio of AA (its only source) times BB's median sized plant
+    ratio = t.loc["AA", "unsized_median"] / t.loc["AA", "sized_median"]
+    assert t["unsized_ratio"].iloc[0] == pytest.approx(ratio)
+    assert t.loc["BB", "unsized_people"] == pytest.approx(ratio * t.loc["BB", "sized_median"])
+    assert t.loc["BB", "unsized_from"] == "ratio"
+    assert t.loc["AA", "config_offset"] == 0.45 and t.loc["BB", "config_unsized_people"] == 1234.0
+
+    out = tmp_path / "out"
+    out.mkdir()
+    for name in cr.RESULT_FILES:
+        (out / name).write_text(name)
+    with zipfile.ZipFile(tmp_path / "national.zip", "w") as z:
+        z.writestr("new_plants.csv", "register\n")
+    cr.pack_results(str(out), str(tmp_path / "national.zip"))
+    with zipfile.ZipFile(out / "calibration_results.zip") as z:
+        assert set(z.namelist()) == {*cr.RESULT_FILES, "national_data/new_plants.csv"}
+        assert z.read("national_data/new_plants.csv") == b"register\n"
