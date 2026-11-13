@@ -82,3 +82,24 @@ Footprint sizes: chosen scale 1/3-3, no cap (a 1.321, b 0.197): plants x1.480 ag
 national 7.1 pp (JMP) / 11.5 pp (SDG 6.3.1), better nationally than any reported-size rule.
 Mexico: served share 42-52 % against drainage (sewer or septic) 96 %: the upper bound does not bind.
 New plants (`new_plants.csv`, one file, no size, not merged): AU 1,490 (691 in both the register and HydroWASTE), CA 91 (Canada's register, 1-86 km from our plants, median 9 km), JP 77, NZ 123; 1,781 in all.
+
+## Rerun with the bootstrap (13 Nov, afternoon): final values
+Spain's agglomerations are still missing (no polygon layer in the download folder); the other five
+references as before.
+
+reported (the paper's measure): scale 0.1-10, cap 5.75 km, a 1.387, b 0.187. 24 of 52 settings pass
+the bootstrap; the chosen one is worse per plant than the fixed radius in 94.8 % of the samples (just
+inside the 95 % limit): the national error falls with every larger cap while the per-plant error
+rises, so the choice is always the largest cap the catchments allow. Plants x1.41 against x1.38
+(US 1.40/1.39, GB 1.42/1.33, IE 1.49/1.33, NL CBS 1.30/1.42, NL units 1.33/1.54; totals US 0.84 ->
+1.07, NL 0.86 -> 0.97, IE 1.47 -> 1.80). National, region left out: JMP 7.2 pp (fixed 14.8;
+people-weighted 5.3 against 10.3), SDG 6.3.1 12.5 (20.1), Eurostat 12.3 (19.9), OECD 13.3 (24.7);
+service areas below SDG/Eurostat/OECD by 10-12 pp on average. Leaving one reference country out:
+always 0.1-10, caps 4 (NL out) to 40 (IE out). Mexico: 51 % served against 96 % of dwellings with
+drainage.
+
+footprint: scale 1/3-3, no cap (40 km), a 1.321, b 0.197; plants x1.48 against x1.49; JMP 7.1 pp,
+SDG 6.3.1 11.5 pp.
+
+Written to config.yaml (create_voronoi.radius_calibration.*.by_connection, size_scale.footprint;
+size_scale.reported unchanged). Figures and Methods numbers: `snakemake calibration_figures`.

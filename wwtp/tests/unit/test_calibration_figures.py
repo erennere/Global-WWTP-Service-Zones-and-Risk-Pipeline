@@ -67,11 +67,13 @@ def _tables(rng):
                 pd.DataFrame({"conf": c.conf, "reference": ref, "unit": [f"u{i}" for i in range(40)], "pred": pred})
             )
             check.append({"conf": c.conf, **{k: getattr(c, k) for k in KEY}, "reference": ref, "iso2": iso2,
-                          "class_balanced_error": float(np.median(np.abs(np.log10(pred / truth))))})  # fmt: skip
+                          "class_balanced_error": float(np.median(np.abs(np.log10(pred / truth)))),
+                          "total_ratio": float(pred.sum() / truth.sum())})  # fmt: skip
     configurations = confs[confs["cap_km"].notna()].assign(
         plants_x=[1.40, 1.45, 1.38, 1.50],
         national_error_pp=[13.0, 12.0, 11.0, 10.0],
         allowed=[True, False, True, False],
+        share_worse=[0.4, 0.99, 0.4, 0.99],
     )
     choice = pd.DataFrame(
         [
@@ -85,8 +87,22 @@ def _tables(rng):
                 "a": 1.2,
                 "b": 0.15,
                 "plants_x": 1.38,
+                "share_worse": 0.4,
                 "national_error_pp": 11.0,
-            }
+            },
+            {
+                "size_measure": "reported",
+                "left_out": "GB",
+                "choice": "rule",
+                "scale_min": 0.1,
+                "scale_max": 10.0,
+                "cap_km": 40.0,
+                "a": 1.2,
+                "b": 0.15,
+                "plants_x": 1.4,
+                "share_worse": 0.5,
+                "national_error_pp": 10.0,
+            },
         ]  # fmt: skip
     )
     return {
@@ -144,6 +160,8 @@ def test_render_writes_figures_and_numbers(tmp_path):
     assert numbers["AllowedConfigurations"] == "2" and numbers["Configurations"] == "4"
     assert numbers["UnitsUsSewersheds"] == "40" and numbers["DrainageMxIter"] == "96"
     assert numbers["EurostatCountries"] == "5" and numbers["OecdCountries"] == "0"
+    assert numbers["ShareWorse"] == "40.0" and numbers["LeaveOneOutCapHigh"] == "40"
+    assert numbers["LeaveOneOutSameLimits"] == "1" and "TypicalIeAgglomerationsChosen" in numbers
     assert all(re.fullmatch(r"[A-Za-z]+", k) for k in numbers)  # usable LaTeX macro names
 
 

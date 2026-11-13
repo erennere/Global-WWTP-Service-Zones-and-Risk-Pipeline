@@ -124,9 +124,12 @@ catchments (with replacement within each size class, the same draw for every set
 setting when its per-plant error was larger than that of the fixed radius in at least \calConfidence\,\%
 of the samples (\calAllowedConfigurations{} of \calConfigurations{} settings remained). Among those we
 chose the one with the smallest national error, the mean of the JMP error (region left out) and the
-SDG 6.3.1 error (Extended Data Fig.~\ref{fig:ed-catchments}e). The chosen setting is
-$r_{\mathrm{cap}}=\calCap$\,km, $a=\calRuleA$ and $b=\calRuleB$, with national scale limits
-\calScaleChosen.
+SDG 6.3.1 error (Extended Data Fig.~\ref{fig:ed-catchments}e). The national error falls with every
+larger cap while the per-plant error rises, so the choice is the largest cap the catchments allow. The
+chosen setting is $r_{\mathrm{cap}}=\calCap$\,km, $a=\calRuleA$ and $b=\calRuleB$, with national
+scale limits \calScaleChosen. Repeating the choice with one reference country left out at a time gave
+the same scale limits in \calLeaveOneOutSameLimits{} of \calLeaveOneOutRuns{} cases and caps between
+\calLeaveOneOutCapLow{} and \calLeaveOneOutCapHigh\,km: the scale limits are robust, the cap less so.
 
 \paragraph{Results.} Leaving each region out, the rule reduced the mean absolute error of the served
 share against JMP from \calErrFixedJmp{} to \calErrRuleJmp{} percentage points (population-weighted:
@@ -137,8 +140,18 @@ Fig.~\ref{fig:ed-service-radius}c--e). Against Eurostat and OECD the error fell 
 \calErrFixedOecd{} to \calErrRuleOecd{} points (\calOecdCountries). The service areas cover fewer
 people than these statistics report (mean difference \calBiasRuleSdg, \calBiasRuleEurostat{} and
 \calBiasRuleOecd{} points), consistent with small plants missing from our list. Per plant, the chosen
-setting is not detectably worse than the fixed radius (typical factor \calPlantErrChosen{} against
-\calPlantErrFixed; Extended Data Fig.~\ref{fig:ed-catchments}a--d). In Mexico, whose census reports the
+setting is slightly worse than the fixed radius on average (typical factor \calPlantErrChosen{}
+against \calPlantErrFixed; worse in \calShareWorse\,\% of the bootstrap samples), better in the
+Netherlands (CBS counts \calTypicalNlCbsChosen{} against \calTypicalNlCbsFixed; purification units
+\calTypicalNlUnitsChosen{} against \calTypicalNlUnitsFixed), about the same in the United States
+(\calTypicalUsSewershedsChosen{} against \calTypicalUsSewershedsFixed) and worse in Great Britain
+(\calTypicalGbCatchmentsChosen{} against \calTypicalGbCatchmentsFixed) and Ireland
+(\calTypicalIeAgglomerationsChosen{} against \calTypicalIeAgglomerationsFixed; Extended Data
+Fig.~\ref{fig:ed-catchments}a--d). The totals moved closer to the references in the United States
+(predicted over reference \calSumRatioUsSewershedsFixed{} to \calSumRatioUsSewershedsChosen) and
+the Netherlands (\calSumRatioNlCbsFixed{} to \calSumRatioNlCbsChosen); in Ireland the service areas
+hold more people than the agglomeration polygons (\calSumRatioIeAgglomerationsFixed{} to
+\calSumRatioIeAgglomerationsChosen). In Mexico, whose census reports the
 dwellings with drainage (sewer or septic tank) for \calDistrictsMxIter{} municipalities, the service
 areas hold \calServedMxIter\,\% of the population against \calDrainageMxIter\,\% of dwellings with
 drainage, which is an upper bound for the population connected to a sewer.
@@ -185,8 +198,8 @@ drainage, which is an upper bound for the population connected to a sewer.
   \textbf{a}--\textbf{d}, People inside the service area of each plant (stand-in, chosen setting)
   against the reference: the population inside the EPA sewershed (United States), the sewage catchment
   (Great Britain) and the EPA agglomeration (Ireland), and the inhabitants counted by CBS (Netherlands).
-  Grey band: within a factor of 2. Typical: antilogarithm of the class-balanced error; sum ratio:
-  predicted over reference total.
+  Grey band: within a factor of 2; plants with fewer than 50 people are drawn at 50. Typical:
+  antilogarithm of the class-balanced error; sum ratio: predicted over reference total.
   \textbf{e}, Per-plant error (typical factor, mean over the reference countries) against national
   error (mean of the JMP error with the region left out and the SDG 6.3.1 error) for every setting:
   lines join the caps (\calCapLow\,km to no cap) of one pair of scale limits. Diamond: fixed radius;

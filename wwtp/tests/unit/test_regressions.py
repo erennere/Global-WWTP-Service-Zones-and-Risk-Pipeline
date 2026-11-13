@@ -362,7 +362,7 @@ def test_starter_reads_the_radius_for_the_configured_size_measure():
     assert cfg["weight_method"] == "size" and cfg["weight_type"] == "sz" and cfg["buffer_path_token"] == "rep"
     assert kw["size_measure"] == "reported" and kw["radius_exponent"] == pytest.approx(0.3)
     assert kw["radius_at_10k_people_km"] == pytest.approx(3.75)
-    assert kw["radius_by_connection"]["max_km"] == pytest.approx(5.5) and kw["country_column"] == "ISO_2"
+    assert kw["radius_by_connection"]["max_km"] == pytest.approx(5.75) and kw["country_column"] == "ISO_2"
     assert 0 <= min(kw["connected_share"].values()) and max(kw["connected_share"].values()) <= 1
     assert kw["connected_share"]["NO"] > 0  # the codes are text: YAML must not read Norway as false
     other = load_config(script_name="create_voronoi", size_measure="footprint")

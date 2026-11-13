@@ -308,13 +308,11 @@ create_voronoi:
   # incomplete or over-complete by country; with k the sizes of a country add up to the people JMP
   # counts as connected (raw k: median 1.74; US 1.16, GB 0.95, NL 0.93, China 1.19, India 0.34,
   # Thailand 0.04, Türkiye 5.2). A factor k is a factor k ** radius_exponent on the radius.
-  # Chosen with the radius rule below (wwtp.calibration.connection_radius calibrate, run of 13 Nov:
-  # limits calibration_size_scale_limits x caps): the smallest national error, leaving one SDG region
-  # out, among the pairs that keep the mean plant-level error on the US sewersheds, GB catchments and
-  # NL CBS plants at or below that of the fixed radius with the same sizes. reported: 10.1 -> 7.5 pp
-  # (people-weighted 7.5 -> 5.3), plants x1.440 against x1.445. footprint: every pair with a scale
-  # raises the plant-level error (x1.50-1.62 against x1.457), so none.
-  # notes/size_calibration_2026-11-12.md.
+  # Limits chosen with the radius rule below (wwtp.calibration.plant_check, run of 13 Nov with the
+  # bootstrap): the smallest national error (mean of JMP, leaving one SDG region out, and SDG 6.3.1)
+  # among the settings not worse per plant than the fixed radius in >= 95 % of 1,000 bootstrap samples
+  # of the US, GB, NL and IE catchments. reported: 0.1-10 (chosen with every reference country left
+  # out too); footprint: 1/3-3. notes/plant_check_2026-11-13.md.
   size_scale:
     reported: {
       'AE': 10.00, 'AF': 2.91, 'AL': 1.99, 'AM': 0.10, 'AT': 0.59, 'AZ': 10.00, 'BA': 3.88, 'BD': 0.10,
@@ -334,7 +332,24 @@ create_voronoi:
       'TN': 5.56, 'TO': 0.10, 'TR': 5.24, 'TT': 9.29, 'TZ': 5.02, 'UA': 2.21, 'UG': 0.66, 'US': 1.16,
       'UZ': 1.90, 'VE': 10.00, 'VN': 1.65, 'YE': 10.00, 'ZA': 1.25, 'ZW': 0.46
     }
-    footprint: {}
+    footprint: {
+      'AE': 3.00, 'AF': 2.91, 'AL': 1.99, 'AM': 0.33, 'AT': 1.90, 'AZ': 3.00, 'BA': 3.00, 'BD': 0.33,
+      'BE': 2.38, 'BF': 0.53, 'BG': 2.17, 'BH': 3.00, 'BR': 3.00, 'BT': 1.60, 'BW': 0.33, 'BY': 0.53,
+      'BZ': 0.33, 'CA': 0.45, 'CD': 3.00, 'CH': 1.99, 'CI': 3.00, 'CL': 3.00, 'CN': 1.38, 'CO': 2.39,
+      'CR': 3.00, 'CU': 3.00, 'CV': 0.33, 'CY': 3.00, 'CZ': 1.89, 'DE': 1.71, 'DK': 2.06, 'DO': 3.00,
+      'DZ': 3.00, 'EC': 3.00, 'EE': 2.95, 'EG': 3.00, 'ES': 1.99, 'ET': 1.80, 'FI': 1.38, 'FJ': 3.00,
+      'FR': 2.12, 'GB': 2.85, 'GE': 3.00, 'GH': 2.19, 'GM': 0.33, 'GR': 2.04, 'HR': 1.25, 'HU': 1.50,
+      'IE': 2.81, 'IL': 3.00, 'IN': 0.47, 'IQ': 2.81, 'IR': 3.00, 'IT': 1.38, 'JM': 3.00, 'JO': 3.00,
+      'KE': 1.93, 'KG': 3.00, 'KH': 3.00, 'KN': 0.33, 'KR': 3.00, 'KW': 3.00, 'KZ': 2.23, 'LA': 0.33,
+      'LB': 3.00, 'LS': 0.33, 'LT': 2.93, 'LU': 1.74, 'LV': 3.00, 'LY': 2.81, 'MA': 2.63, 'MD': 0.72,
+      'ME': 1.11, 'MG': 3.00, 'MK': 0.79, 'ML': 3.00, 'MM': 0.62, 'MN': 3.00, 'MT': 3.00, 'MU': 3.00,
+      'MX': 3.00, 'MY': 2.22, 'MZ': 3.00, 'NE': 1.54, 'NG': 3.00, 'NL': 1.55, 'NO': 2.61, 'NP': 0.33,
+      'OM': 2.85, 'PA': 3.00, 'PE': 3.00, 'PG': 3.00, 'PH': 3.00, 'PL': 1.90, 'PT': 1.90, 'PY': 1.08,
+      'QA': 3.00, 'RO': 1.75, 'RS': 1.69, 'RU': 1.80, 'SA': 3.00, 'SE': 2.22, 'SG': 3.00, 'SI': 3.00,
+      'SK': 2.41, 'SL': 3.00, 'SN': 3.00, 'SV': 3.00, 'SZ': 0.99, 'TD': 3.00, 'TG': 1.59, 'TH': 0.33,
+      'TN': 3.00, 'TO': 0.33, 'TR': 3.00, 'TT': 3.00, 'TZ': 3.00, 'UA': 2.21, 'UG': 0.66, 'US': 3.00,
+      'UZ': 1.90, 'VE': 3.00, 'VN': 1.65, 'YE': 3.00, 'ZA': 3.00, 'ZW': 0.46
+    }
   # Service radius (dynamic_buffering: true), per size_measure:
   #   radius_km = radius_at_10k_people_km * (people / 10000) ** radius_exponent,
   #   at most max_buffer
@@ -351,20 +366,22 @@ create_voronoi:
     reported:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.367, slope: 0.182, max_km: 5.5}
+      by_connection: {intercept: 1.387, slope: 0.187, max_km: 5.75}
     footprint:
       radius_exponent: 0.5
       radius_at_10k_people_km: 4.25
-      by_connection: {intercept: 1.197, slope: 0.137, max_km: 4.0}
+      by_connection: {intercept: 1.321, slope: 0.197, max_km: 40.0}
   # The radius at 10,000 people by country (by_connection; without it radius_at_10k_people_km everywhere):
   #   r10k_km = min(max_km, exp(intercept + slope * logit(C))), C = connected_share of the plant's
   #   country; countries without a value keep radius_at_10k_people_km.
   # Calibrated on 126 countries (wwtp.calibration.connection_radius calibrate, run of 13 Nov): the
   # national share of people served, from WorldPop 2022 and our plants, against JMP "safely managed
-  # via sewer". Leaving one SDG region out, the mean error of the served share is 7.5 pp (reported,
-  # with size_scale; 10.1 pp without it, 15.0 pp with 3.75 km everywhere) and 16.0 pp (footprint;
-  # 15.8 pp with one radius for all). max_km and the size_scale limits chosen as described at
-  # size_scale. notes/size_calibration_2026-11-12.md.
+  # via sewer". Leaving one SDG region out, the mean error of the served share against JMP is 7.2 pp
+  # (reported, with size_scale; people-weighted 5.3; 14.8 pp with 3.75 km everywhere) and 7.1 pp
+  # (footprint); against SDG 6.3.1 (not fitted) 12.5 and 11.5 pp. Per plant (US, GB, NL, IE
+  # catchments): reported x1.41 against x1.38 with the fixed radius (worse in 94.8 % of the bootstrap
+  # samples, just inside the 95 % limit), footprint x1.48 against x1.49. max_km 40 = no cap below
+  # max_buffer. max_km and the size_scale limits chosen as described at size_scale.
   # Share of people whose sewage reaches treatment (JMP household file, san_sew_sm_t, value of the
   # year nearest 2022; ISO 3166 alpha-2).
   connected_share: {

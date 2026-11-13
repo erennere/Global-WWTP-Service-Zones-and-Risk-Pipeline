@@ -245,7 +245,7 @@ def place_labels(ax, points, texts, cfg):
         for dx, dy, ha, va in offsets:
             t = ax.annotate(text, (x, y), xytext=(dx, dy), textcoords="offset points", ha=ha, va=va, zorder=5,
                             fontsize=cfg["font_size_pt"] - SMALL, color=cfg["colors"]["secondary"], path_effects=halo)  # fmt: skip
-            box = t.get_window_extent(fig.canvas.get_renderer()).expanded(1.05, 1.1)
+            box = t.get_window_extent(fig.canvas.get_renderer()).expanded(1.25, 1.2)
             if not any(box.overlaps(b) for b in placed):
                 placed.append(box)
                 break
@@ -523,8 +523,10 @@ def figure_catchments(tables, cal, cfg, fixed_national):
         if np.isclose(lo_, pick["scale_min"]) and np.isclose(hi_, pick["scale_max"]):
             for _, r in g[g["cap_km"].isin(cfg["label_caps_km"])].iterrows():
                 ax.annotate(f"cap {r['cap_km']:g} km" if r["cap_km"] < max(cfg["label_caps_km"]) else "no cap",
-                            (r["plants_x"], r["national_error_pp"]), xytext=(3, 3), textcoords="offset points",
-                            fontsize=cfg["font_size_pt"] - 1.5, color=colors["secondary"])  # fmt: skip
+                            (r["plants_x"], r["national_error_pp"]), xytext=(0, -4), textcoords="offset points",
+                            ha="center", va="top", fontsize=cfg["font_size_pt"] - 1.5, color=colors["secondary"],
+                            path_effects=[patheffects.withStroke(linewidth=1.5, foreground=colors["surface"])],
+                            zorder=6)  # fmt: skip
     base = 10 ** float(pc[pc["conf"] == fixed_conf].groupby("iso2")["class_balanced_error"].mean().mean())
     ax.axvline(base, color=colors["muted"], lw=0.5, ls=(0, (3, 2)))
     ax.scatter([base], [fixed_national], marker="D", s=18, color=colors["ink"], zorder=4, label="fixed radius")
@@ -658,6 +660,25 @@ def write_numbers(tables, voronoi, cal, cfg, shares, errors, fixed_national, pla
         if r.status == "ok":
             numbers[f"Units{macro_name(r.reference)}"] = tex_int(r.units)
             numbers[f"People{macro_name(r.reference)}"] = f"{float(r.people) / 1e6:.2g}"
+    fixed_conf, pick_conf, _ = configuration_ids(tables, measure)
+    pc = tables["plant_check"]
+    for conf, label in ((fixed_conf, "Fixed"), (pick_conf, "Chosen")):
+        for r in pc[pc["conf"] == conf].itertuples():
+            numbers[f"Typical{macro_name(r.reference)}{label}"] = f"{10**r.class_balanced_error:.2f}"
+            numbers[f"SumRatio{macro_name(r.reference)}{label}"] = f"{r.total_ratio:.2f}"
+    numbers["ShareWorse"] = f"{float(pick['share_worse']) * 100:.1f}"
+    loo = tables["choice"]
+    loo = loo[(loo["size_measure"] == measure) & (loo["left_out"].fillna("") != "")]
+    numbers["LeaveOneOutRuns"] = tex_int(len(loo))
+    numbers["LeaveOneOutSameLimits"] = tex_int(
+        int(
+            (
+                np.isclose(loo["scale_min"], choice["scale_min"]) & np.isclose(loo["scale_max"], choice["scale_max"])
+            ).sum()
+        )
+    )
+    numbers["LeaveOneOutCapLow"] = f"{loo['cap_km'].min():g}"
+    numbers["LeaveOneOutCapHigh"] = f"{loo['cap_km'].max():g}"
     for name in cal["check_references"]:  # national references that are not fitted
         known = shares[name].notna()
         numbers[f"{macro_name(name)}Countries"] = tex_int(int(known.sum()))
