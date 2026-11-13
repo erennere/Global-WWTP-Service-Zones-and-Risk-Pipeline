@@ -16,8 +16,7 @@ gb_catchments       Hoffmann et al. catchment(s) of one plant (``match_gb`` of t
                     validation)                                                                raster
 nl_cbs              CBS RWZI; our plant with uwwCode NL + RWZI code                             CBS count
 polygons            every polygon layer in a national_data folder (NL purification units,      population
-                    Irish and Spanish agglomerations, French agglomerations of Grand Est and  raster
-                    Puy-de-Dôme, ...): our plants of the country within
+                    Irish and Spanish agglomerations, ...): our plants of the country within  raster
                     ``polygon_match_distance_m`` of a polygon, each to the nearest polygon
 ==================  =========================================================================  ==========
 

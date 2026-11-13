@@ -21,7 +21,6 @@ uncovered countries in `pop_validation_scripts/national_data.py`. Settings: `con
 | plants | purification units (zuiveringseenheid, polygons) | NL | plant check |
 | plants | EPA agglomeration boundaries (1,076 polygons) | IE | plant check |
 | plants | MITECO agglomerations Q2023 | ES | plant check once downloaded (connection failed on 12 Nov) |
-| plants | agglomerations d'assainissement: Grand Est layer (catchment sectors of the plants, SIG-GR) and Puy-de-Dôme (DDT 63) | FR | plant check once saved by hand into their folders (data.gouv.fr refuses automated downloads) |
 | districts | Census 2020 localities (ITER): drainage by municipality | MX | upper-bound check, reported |
 | national | JMP sewered and treated | 126 countries | fit (leaving one SDG region out) |
 | national | SDG 6.3.1 2025: sewer volume share x share delivered to treatment | ~165 | check, and half of the national error in the choice |
@@ -38,9 +37,9 @@ countries) is not above the fixed radius's. `plant_choice.csv` also gives the ch
 reference country left out; if no rule keeps the plant-level error, the fixed radius stays.
 
 ## Not used, and why
-- France: no national file; the two territorial layers above are used (people from the raster in
-  the polygon). Files of kind `manual` in `national_data.sources`: saved by hand, any file name,
-  every polygon layer in the folder is read.
+- France: no national file; the territorial layers on data.gouv.fr (Grand Est catchment sectors,
+  Puy-de-Dôme agglomerations) could not be used (the files did not work) and are left out. The file
+  kind `manual` (saved by hand into a source folder) stays for such cases.
 - Germany NRW (Kommunale Kläranlagen NRW): the open.nrw entry lists no download; the data are only
   in the ELWAS-WEB viewer, and the organisation's policy blocks that site for Claude's browser, so
   its requests could not be inspected and no scraper was written. Options: an export from ELWAS-WEB
