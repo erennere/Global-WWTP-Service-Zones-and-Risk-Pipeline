@@ -21,6 +21,7 @@ uncovered countries in `pop_validation_scripts/national_data.py`. Settings: `con
 | plants | purification units (zuiveringseenheid, polygons) | NL | plant check |
 | plants | EPA agglomeration boundaries (1,076 polygons) | IE | plant check |
 | plants | MITECO agglomerations Q2023 | ES | plant check once downloaded (connection failed on 12 Nov) |
+| plants | agglomerations d'assainissement: Grand Est layer (catchment sectors of the plants, SIG-GR) and Puy-de-Dôme (DDT 63) | FR | plant check once saved by hand into their folders (data.gouv.fr refuses automated downloads) |
 | districts | Census 2020 localities (ITER): drainage by municipality | MX | upper-bound check, reported |
 | national | JMP sewered and treated | 126 countries | fit (leaving one SDG region out) |
 | national | SDG 6.3.1 2025: sewer volume share x share delivered to treatment | ~165 | check, and half of the national error in the choice |
@@ -37,10 +38,13 @@ countries) is not above the fixed radius's. `plant_choice.csv` also gives the ch
 reference country left out; if no rule keeps the plant-level error, the fixed radius stays.
 
 ## Not used, and why
-- France: no national file of agglomeration or catchment polygons found; the agglomeration layer on
-  data.gouv.fr is regional (Grand Est), without people per unit.
+- France: no national file; the two territorial layers above are used (people from the raster in
+  the polygon). Files of kind `manual` in `national_data.sources`: saved by hand, any file name,
+  every polygon layer in the folder is read.
 - Germany NRW (Kommunale Kläranlagen NRW): the open.nrw entry lists no download; the data are only
-  in the ELWAS-WEB viewer.
+  in the ELWAS-WEB viewer, and the organisation's policy blocks that site for Claude's browser, so
+  its requests could not be inspected and no scraper was written. Options: an export from ELWAS-WEB
+  in Eren's own browser (saved into a folder like the French files), or a request to LANUK.
 - Eurostat NUTS 2 (`env_wwcon_r2`): discontinued (last update 2016, years to 2013); removed from the
   downloads.
 - Brazil ANA Atlas Esgotos: the files exist at the configured addresses but the server refused the

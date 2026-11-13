@@ -19,7 +19,8 @@ Commands (``python -m wwtp.pop_validation_scripts.national_data <command>``)::
                into our plant list.
                registers_summary.csv, and results.zip with the small files to send back.
 
-File kinds: ``http`` (one GET), ``ogcapi`` (OGC API Features: pages of ``page_size`` followed through the
+File kinds: ``manual`` (a page whose files are saved into ``<validation_dir>/<source>/`` by hand, any file
+name; nothing is downloaded), ``http`` (one GET), ``ogcapi`` (OGC API Features: pages of ``page_size`` followed through the
 ``next`` links, saved as one GeoJSON), ``arcgis`` (ArcGIS REST layer: ``query`` in pages, saved as one
 GeoJSON).
 """
@@ -136,6 +137,14 @@ def fetch_all(cfg):
         os.makedirs(os.path.join(root, source), exist_ok=True)
         for name, spec in entry["files"].items():
             target, key = source_path(cfg, source, name), f"{source}/{name}"
+            if spec["kind"] == "manual":  # saved by hand from the page: listed, never downloaded here
+                present = sorted(f for f in os.listdir(os.path.join(root, source)) if not f.startswith("."))
+                manifest[key] = {"url": spec["url"], "kind": "manual", "files": present}
+                if not present:
+                    manifest[key]["error"] = f"manual: save the file(s) from {spec['url']} in {source}/"
+                    if entry["required"]:
+                        missing.append(key)
+                continue
             if os.path.exists(target) and os.path.getsize(target) > 0:
                 if key not in manifest or "error" in manifest[key]:
                     manifest[key] = {"url": spec["url"], "bytes": os.path.getsize(target), "note": "already there"}
@@ -235,7 +244,15 @@ def peek_all(cfg):
         if not entry["peek"]:
             continue
         out.append(f"## {source}")
-        for name in entry["files"]:
+        for name, spec in entry["files"].items():
+            if spec["kind"] == "manual":  # every file saved in the folder
+                folder = os.path.join(cfg["paths"]["validation_dir"], source)
+                present = (
+                    sorted(f for f in os.listdir(folder) if not f.startswith(".")) if os.path.isdir(folder) else []
+                )
+                out += [peek_file(os.path.join(folder, f), rows) for f in present] or [f"### {name}: not saved yet"]
+                out.append("")
+                continue
             path = source_path(cfg, source, name)
             out.append(peek_file(path, rows) if os.path.exists(path) else f"### {name}: not downloaded")
             out.append("")

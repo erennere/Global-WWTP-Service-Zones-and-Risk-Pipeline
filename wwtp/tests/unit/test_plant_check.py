@@ -1,5 +1,6 @@
 """wwtp.calibration.plant_check: references from polygons, the stand-in per configuration, districts, the choice."""
 
+import os
 import zipfile
 
 import geopandas as gpd
@@ -147,3 +148,29 @@ def test_the_choice_takes_the_best_national_error_the_plants_allow():
     worse = rows.assign(class_balanced_error=np.where(rows["cap_km"].isna(), 0.0, rows["class_balanced_error"]))
     none = pc.choose(worse, calibration, ["jmp", "sdg631"]).set_index("left_out")
     assert none.loc["", "choice"] == "fixed radius" and np.isnan(none.loc["", "cap_km"])
+
+
+def test_every_polygon_layer_of_a_folder_is_read_and_other_files_are_left_out(tmp_path):
+    folder = tmp_path / "fra"
+    folder.mkdir()
+    gpd.GeoDataFrame({"nom": ["a"]}, geometry=[box(3.0, 45.7, 3.1, 45.8)], crs=4326).to_file(folder / "agglo.geojson")
+    shp = tmp_path / "shp"
+    shp.mkdir()
+    gpd.GeoDataFrame(
+        {"nom": ["b", "c"]}, geometry=[box(3.2, 45.7, 3.3, 45.8), box(3.4, 45.7, 3.5, 45.8)], crs=4326
+    ).to_crs(2154).to_file(shp / "agglo2.shp")  # another CRS, zipped
+    gpd.GeoDataFrame({"nom": ["step"]}, geometry=gpd.points_from_xy([3.05], [45.75]), crs=4326).to_file(
+        shp / "step.shp"
+    )
+    with zipfile.ZipFile(folder / "download.zip", "w") as z:
+        for f in os.listdir(shp):
+            z.write(shp / f, f)
+    (folder / "notes.txt").write_text("not spatial")
+    polygons = pc.read_polygons(str(folder))
+    assert len(polygons) == 3 and polygons.crs.to_epsg() == 4326  # the plant points are left out
+    assert polygons.total_bounds == pytest.approx([3.0, 45.7, 3.5, 45.8], abs=1e-6)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    (empty / "notes.txt").write_text("nothing")
+    with pytest.raises(FileNotFoundError, match="no polygon layer"):
+        pc.read_polygons(str(empty))

@@ -1050,6 +1050,18 @@ national_data:
       files:
         Resaeu-Wser-identification.csv: {kind: http, url: 'https://data-donnees.az.ec.gc.ca/api/file?path=%2Fsubstances%2Fplaninfrastruture%2Fwastewater-systems-effluent-regulations-reported-data%2FResaeu-Wser-identification.csv'}
         Resaeu-Wser-data-dictionary.csv: {kind: http, url: 'https://data-donnees.az.ec.gc.ca/api/file?path=%2Fsubstances%2Fplaninfrastruture%2Fwastewater-systems-effluent-regulations-reported-data%2FResaeu-Wser-dictionnaire-des-donnees-data-dictionary.csv'}
+    # France: agglomerations d'assainissement as polygons exist only per territory on data.gouv.fr.
+    # Saved by hand (data.gouv.fr refuses automated downloads): any file name, into the folder.
+    fra_grand_est_agglomerations:   # catchment sectors of the treatment plants (SIG-GR, from datagrandest.fr)
+      required: false
+      peek: true
+      files:
+        agglomerations: {kind: manual, url: 'https://www.data.gouv.fr/datasets/41c881fb-38f4-4b78-88be-6236e82983ee-uuid'}
+    fra_puy_de_dome_agglomerations:   # agglomerations set by the prefect (DDT 63), two shapefiles
+      required: false
+      peek: true
+      files:
+        agglomerations: {kind: manual, url: 'https://www.data.gouv.fr/datasets/agglomeration-dassainissement-du-puy-de-dome'}
     aus_ga_wwtf:   # Geoscience Australia National Wastewater Treatment Facilities
       required: false
       peek: true
@@ -1160,10 +1172,13 @@ connection_radius:
   # files of real catchments downloaded by national_data (folder, file, country). A reference whose
   # file is missing is listed in plant_check_status.csv and left out.
   plant_reference_kinds: ['us_sewersheds', 'gb_catchments', 'nl_cbs']
+  # Polygons: every polygon layer of the files in the source folder.
   plant_reference_polygons:
-    nl_units: {iso2: 'NL', source: 'nld_zuiveringseenheid', file: 'zuiveringseenheid.geojson'}
-    ie_agglomerations: {iso2: 'IE', source: 'irl_epa_agglomerations', file: 'uww_agglomeration_boundaries.geojson'}
-    es_agglomerations: {iso2: 'ES', source: 'esp_miteco_agglomerations', file: 'aauuq2023.zip'}
+    nl_units: {iso2: 'NL', source: 'nld_zuiveringseenheid'}
+    ie_agglomerations: {iso2: 'IE', source: 'irl_epa_agglomerations'}
+    es_agglomerations: {iso2: 'ES', source: 'esp_miteco_agglomerations'}
+    fr_grand_est: {iso2: 'FR', source: 'fra_grand_est_agglomerations'}
+    fr_puy_de_dome: {iso2: 'FR', source: 'fra_puy_de_dome_agglomerations'}
   # Our plant to a polygon of plant_reference_polygons (outfall plants often lie just outside).
   polygon_match_distance_m: 1000
   # Census localities: served share by municipality against the share of dwellings with drainage

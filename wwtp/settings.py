@@ -578,7 +578,9 @@ class SweepValidation(Section):
 
 
 class NationalFile(Strict):
-    kind: Literal["http", "ogcapi", "arcgis"]
+    """A file to download; ``manual``: the page the files are saved from by hand (any name, into the folder)."""
+
+    kind: Literal["http", "ogcapi", "arcgis", "manual"]
     url: str = Field(pattern=r"^https?://")
 
 
@@ -669,11 +671,10 @@ class Sdg631Columns(Strict):
 
 
 class PolygonReference(Strict):
-    """A polygon file of real catchments (downloaded by national_data): source folder, file, country."""
+    """Real catchments as polygons: every polygon layer of the files in a national_data source folder."""
 
     iso2: str = Field(pattern=r"^[A-Z]{2}$")
     source: str
-    file: str
 
 
 class LocalityColumns(Strict):

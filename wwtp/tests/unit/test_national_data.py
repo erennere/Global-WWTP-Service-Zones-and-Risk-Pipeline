@@ -97,6 +97,7 @@ def test_fetch_saves_every_kind_keeps_existing_files_and_records_failures(tmp_pa
     monkeypatch.setattr(nd, "requests_session_with_retries", lambda: session)
     sources = {
         "a": {"required": True, "peek": True, "files": {"a.csv": {"kind": "http", "url": "https://x.org/a.csv"}}},
+        "hand": {"required": False, "peek": True, "files": {"any": {"kind": "manual", "url": "https://x.org/page"}}},
         "b": {"required": False, "peek": True, "files": {
             "b.geojson": {"kind": "ogcapi", "url": "https://x.org/collections/c/items"},
             "c.geojson": {"kind": "arcgis", "url": "https://x.org/MapServer/0"},
@@ -112,9 +113,12 @@ def test_fetch_saves_every_kind_keeps_existing_files_and_records_failures(tmp_pa
     assert len(json.loads((root / "b" / "c.geojson").read_text())["features"]) == 5  # offsets 0, 2, 4
     assert "403" in manifest["b/d.zip"]["error"] and not (root / "b" / "d.zip").exists()
     assert json.loads((root / "manifest.json").read_text()) == manifest
+    assert "x.org/page" in manifest["hand/any"]["error"] and not any("x.org/page" in u for u, _ in session.calls)
+    (root / "hand" / "saved.geojson").write_text("{}")  # saved by hand: listed, nothing downloaded
     calls = len(session.calls)
     nd.fetch_all(cfg)  # only the failed optional file is tried again
     assert len(session.calls) == calls + 1
+    assert json.loads((root / "manifest.json").read_text())["hand/any"]["files"] == ["saved.geojson"]
     sources["b"]["required"] = True
     with pytest.raises(RuntimeError, match=r"b/d.zip"):
         nd.fetch_all(cfg)

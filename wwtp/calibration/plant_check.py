@@ -15,9 +15,10 @@ us_sewersheds       EPA sourced sewershed (one CWNS ID, no flag); our plant with
 gb_catchments       Hoffmann et al. catchment(s) of one plant (``match_gb`` of the sweep        population
                     validation)                                                                raster
 nl_cbs              CBS RWZI; our plant with uwwCode NL + RWZI code                             CBS count
-polygons            any polygon file (NL purification units, Irish agglomerations, Spanish     population
-                    agglomerations, ...): our plants of the country within                    raster
-                    ``polygon_match_distance_m`` of the polygon, each to the nearest polygon
+polygons            every polygon layer in a national_data folder (NL purification units,      population
+                    Irish and Spanish agglomerations, French agglomerations of Grand Est and  raster
+                    Puy-de-Dôme, ...): our plants of the country within
+                    ``polygon_match_distance_m`` of a polygon, each to the nearest polygon
 ==================  =========================================================================  ==========
 
 "population raster" is the WorldPop raster of ``year`` summed inside the polygon (exactextract), the
@@ -83,15 +84,27 @@ def plant_points(plants):
     )
 
 
-def read_polygons(path):
-    """Every polygon layer of a file (or of the spatial members of a zip), valid, in EPSG:4326."""
+def read_polygons(folder):
+    """Every polygon layer of the files in ``folder`` (zips included), valid, in EPSG:4326.
+
+    Files GDAL cannot open (tables, notes) and layers without polygons (plant points) are left out.
+    """
     parts = []
-    for _, file, layer in _spatial_layers(path):
-        part = gpd.read_file(file, layer=layer)
-        if part.crs is None:
-            raise ValueError(f"{file} layer {layer} has no CRS")
-        part = part[part.geometry.notna() & ~part.geometry.is_empty].to_crs(4326)
-        parts.append(part[part.geom_type.isin(["Polygon", "MultiPolygon"])])
+    for name in sorted(os.listdir(folder)):
+        try:
+            layers = _spatial_layers(os.path.join(folder, name))
+        except Exception:  # not a spatial file
+            continue
+        for _, file, layer in layers:
+            part = gpd.read_file(file, layer=layer)
+            if part.crs is None:
+                raise ValueError(f"{file} layer {layer} has no CRS")
+            part = part[part.geometry.notna() & ~part.geometry.is_empty]
+            part = part[part.geom_type.isin(["Polygon", "MultiPolygon"])]
+            if len(part):
+                parts.append(part.to_crs(4326)[["geometry"]].assign(layer=f"{name}:{layer}"))
+    if not parts:
+        raise FileNotFoundError(f"no polygon layer in {folder}")
     polygons = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), geometry="geometry", crs=4326)
     polygons["geometry"] = polygons.geometry.force_2d().buffer(0)  # valid, and still (multi)polygons
     return polygons[~polygons.geometry.is_empty].reset_index(drop=True)
@@ -150,11 +163,11 @@ def build_references(cfg, sv, plants):
             elif job == "nl_cbs":
                 u, m = match_nl(sv, plants)
             else:
-                path = source_path(cfg, job["source"], job["file"])
-                if not os.path.exists(path):
-                    raise FileNotFoundError(f"not downloaded: {path}")
+                folder = os.path.join(cfg["paths"]["validation_dir"], job["source"])
+                if not os.path.isdir(folder):
+                    raise FileNotFoundError(f"not downloaded: {folder}")
                 u, m = polygon_units(
-                    read_polygons(path),
+                    read_polygons(folder),
                     plants,
                     iso2,
                     float(cfg["polygon_match_distance_m"]),
