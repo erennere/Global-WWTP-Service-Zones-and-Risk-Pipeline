@@ -132,8 +132,9 @@ def test_a_new_plant_size_reruns_the_sized_service_areas_and_the_curves(work):
     rigid = [v for v in wf.sweep_variants() if not v.dynamic_buffering]
     assert {tuple(wf.sizing_params(v)) for v in rigid if v.weight_method == "size"} == {("sizes",)}
     assert {tuple(wf.sizing_params(v)) for v in rigid if v.weight_method != "size"} == {()}
-    before = wf.calibration_params("footprint_to_people", "year")
-    assert before == wf.calibration_params("footprint_to_people", "year") != wf.calibration_params("year")
+    before = wf.settings_params("connection_radius", "footprint_to_people", "year")
+    assert before == wf.settings_params("connection_radius", "footprint_to_people", "year")
+    assert before != wf.settings_params("connection_radius", "year")
 
 
 def test_a_run_starts_after_the_one_time_stages(work):

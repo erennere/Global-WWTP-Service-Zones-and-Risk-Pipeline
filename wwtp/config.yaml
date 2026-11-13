@@ -269,68 +269,70 @@ create_voronoi:
   # footprint_m2 = detected tank circles + rectangles; intercept and slope fitted on the 24,505
   # plants with both a footprint and a reported size (R2 0.31).
   # country_offsets (log10): median of log10(reported / fit) over a country's plants with both,
-  #   where it has at least 30 (33 countries; 0 elsewhere). Typical error of the estimate on these
-  #   plants x2.20 -> x1.93 (same on held-out halves). China +0.76 (x5.7), India +0.89 (x7.8).
+  #   where it has at least 30 (32 countries; 0 elsewhere). Typical error of the estimate on these
+  #   plants x2.19 -> x1.92 (held-out halves of each country: x2.20 -> x1.92). China +0.76 (x5.7),
+  #   India +0.89 (x7.8), Mexico +0.48 (x3.0).
   # unsized_people: lagoon plants and plants without detections (median reported size of such
   #   plants, n 13,442; 45 % of them in the US, where lagoons are common).
   # unsized_people_by_country replaces it: the median reported size of the country's such plants
-  #   where it has at least 30 (28 countries); otherwise 0.41 x the median footprint estimate of its
-  #   plants with a footprint (at least 30; the ratio is the median over the 28 countries; predicting
-  #   a left-out country's median with it: x1.44 off, against x1.70 with one value for all).
-  # Regenerate: python -m wwtp.calibration.connection_radius calibrate (plant_size_countries.csv).
+  #   where it has at least 30 (28 countries); otherwise 0.409 x the median footprint estimate of its
+  #   plants with a footprint (at least 30; 29 countries; the ratio is the median over the 28; a
+  #   left-out country's median is predicted within x1.44 by it, within x1.72 by one value for all).
+  # From python -m wwtp.calibration.connection_radius calibrate (plant_size_countries.csv, run of
+  # 13 Nov, the pipeline's own country join).
   footprint_to_people:
     intercept: 1.523
     slope: 0.7
     unsized_people: 2580
     country_offsets: {
-      'AT': -0.093, 'BE': -0.139, 'BG': 0.023, 'BR': -0.175, 'CH': 0.194, 'CN': 0.757, 'CZ': -0.100,
-      'DE': -0.075, 'DK': -0.391, 'EE': -0.381, 'ES': 0.181, 'FI': 0.156, 'FR': -0.074, 'GB': -0.242,
-      'GR': 0.238, 'HR': 0.215, 'HU': 0.120, 'IE': 0.038, 'IN': 0.891, 'IT': 0.245, 'LT': -0.220,
-      'LV': -0.392, 'MX': 0.478, 'NL': 0.090, 'NO': -0.077, 'PL': -0.064, 'PR': 0.379, 'PT': 0.249,
-      'RO': 0.199, 'SE': 0.038, 'SK': -0.249, 'US': -0.180, 'ZA': -0.256
+      'AT': -0.102, 'BE': -0.140, 'BG': 0.023, 'BR': -0.175, 'CH': 0.194, 'CN': 0.757, 'CZ': -0.098,
+      'DE': -0.075, 'DK': -0.391, 'EE': -0.360, 'ES': 0.181, 'FI': 0.156, 'FR': -0.075, 'GB': -0.242,
+      'GR': 0.238, 'HR': 0.202, 'HU': 0.124, 'IE': 0.037, 'IN': 0.891, 'IT': 0.246, 'LT': -0.220,
+      'LV': -0.392, 'MX': 0.476, 'NL': 0.088, 'NO': -0.077, 'PL': -0.064, 'PT': 0.252, 'RO': 0.195,
+      'SE': 0.038, 'SK': -0.269, 'US': -0.180, 'ZA': -0.256
     }
     unsized_people_by_country: {
-      'AR': 7542, 'AT': 3666, 'BE': 3375, 'BG': 19054, 'BR': 4954, 'BY': 12699, 'CA': 10277, 'CH': 1642,
-      'CL': 5148, 'CN': 127500, 'CO': 4427, 'CZ': 2609, 'DE': 8165, 'DK': 5863, 'DZ': 8705, 'EE': 3700,
-      'EG': 9081, 'ES': 4867, 'FI': 13350, 'FR': 4000, 'GB': 4034, 'GR': 4500, 'HR': 6450, 'HU': 1903,
-      'IE': 4053, 'IL': 11489, 'IN': 40087, 'IQ': 6588, 'IR': 9476, 'IT': 2866, 'KR': 7961, 'KZ': 12848,
-      'LT': 4702, 'LV': 2183, 'MA': 10469, 'MD': 9616, 'MX': 11181, 'MY': 8525, 'NL': 39002, 'NO': 3102,
-      'PL': 3541, 'PR': 8438, 'PT': 4200, 'RO': 14088, 'RU': 9793, 'SA': 8540, 'SE': 4623, 'SK': 1730,
-      'TH': 23813, 'TN': 10811, 'TR': 6234, 'TW': 5154, 'UA': 9546, 'US': 1180, 'UZ': 14382, 'VN': 11998,
-      'ZA': 2306
+      'AR': 7527, 'AT': 3667, 'BE': 3186, 'BG': 19054, 'BR': 4954, 'BY': 12659, 'CA': 10245, 'CH': 1632,
+      'CL': 5132, 'CN': 127500, 'CO': 4413, 'CZ': 2602, 'DE': 8374, 'DK': 5863, 'DZ': 8536, 'EE': 3811,
+      'EG': 9053, 'ES': 4902, 'FI': 13350, 'FR': 4172, 'GB': 4034, 'GR': 4500, 'HR': 8152, 'HU': 1903,
+      'IE': 4053, 'IL': 11487, 'IN': 40087, 'IQ': 6568, 'IR': 9423, 'IT': 2866, 'KR': 7936, 'KZ': 12808,
+      'LT': 4685, 'LV': 2177, 'MA': 10437, 'MD': 9174, 'MX': 11181, 'MY': 8498, 'NL': 36566, 'NO': 3102,
+      'PL': 3536, 'PT': 4200, 'RO': 13701, 'RU': 10133, 'SA': 8513, 'SE': 4623, 'SK': 1754, 'TH': 23734,
+      'TN': 10777, 'TR': 6215, 'TW': 5137, 'UA': 8922, 'US': 1182, 'UZ': 14462, 'VN': 11919, 'ZA': 2286,
+      'ZW': 5461
     }
   # Factor on every plant size of a country (reported or estimated), per size_measure:
   #   k = connected people (connected_share x people of the 2022 raster) / sum of its plant sizes,
   #   kept within 0.1 and 10; countries without an entry: 1.
   # Reported sizes are partly population equivalents (industry included) and our plant list is
   # incomplete or over-complete by country; with k the sizes of a country add up to the people JMP
-  # counts as connected. A factor k is a factor k ** radius_exponent on the radius.
-  # Chosen with the radius rule below (wwtp.calibration.connection_radius calibrate, limits
-  # calibration_size_scale_limits x caps): the smallest national error, leaving one SDG region out,
-  # among the pairs that keep the mean plant-level error on the US, GB and NL catchments at or below
-  # that of the fixed radius. reported: 10.1 -> 7.5 pp (people-weighted 6.2 -> 4.8), plants x1.441
-  # against x1.445. footprint: no pair with a scale keeps the plant-level error (x1.50-1.62 against
-  # x1.459), so none. PROVISIONAL: from the curves of 12 Nov (plant sizes before the country parts
-  # above); replaced by the values of the calibration run (target `calibration`).
+  # counts as connected (raw k: median 1.74; US 1.16, GB 0.95, NL 0.93, China 1.19, India 0.34,
+  # Thailand 0.04, Türkiye 5.2). A factor k is a factor k ** radius_exponent on the radius.
+  # Chosen with the radius rule below (wwtp.calibration.connection_radius calibrate, run of 13 Nov:
+  # limits calibration_size_scale_limits x caps): the smallest national error, leaving one SDG region
+  # out, among the pairs that keep the mean plant-level error on the US sewersheds, GB catchments and
+  # NL CBS plants at or below that of the fixed radius with the same sizes. reported: 10.1 -> 7.5 pp
+  # (people-weighted 7.5 -> 5.3), plants x1.440 against x1.445. footprint: every pair with a scale
+  # raises the plant-level error (x1.50-1.62 against x1.457), so none.
   # notes/size_calibration_2026-11-12.md.
   size_scale:
     reported: {
-      'AE': 10.00, 'AF': 2.98, 'AL': 2.00, 'AM': 0.10, 'AT': 0.59, 'AZ': 10.00, 'BA': 3.49, 'BD': 0.10,
-      'BE': 1.15, 'BF': 0.62, 'BG': 0.84, 'BH': 10.00, 'BR': 1.56, 'BT': 1.60, 'BW': 0.10, 'BY': 0.53,
-      'BZ': 0.16, 'CA': 0.46, 'CD': 8.80, 'CH': 0.81, 'CI': 10.00, 'CL': 10.00, 'CN': 1.19, 'CO': 2.37,
-      'CR': 3.94, 'CU': 7.44, 'CV': 0.10, 'CY': 0.84, 'CZ': 0.87, 'DE': 0.74, 'DK': 0.79, 'DO': 9.39,
-      'DZ': 6.63, 'EC': 10.00, 'EE': 1.05, 'EG': 3.85, 'ES': 0.67, 'ET': 2.13, 'FI': 0.81, 'FJ': 4.31,
-      'FR': 0.74, 'GB': 0.95, 'GE': 10.00, 'GH': 2.34, 'GM': 0.35, 'GR': 0.70, 'HR': 0.74, 'HU': 0.75,
-      'IE': 1.44, 'IL': 4.26, 'IN': 0.34, 'IQ': 2.86, 'IR': 3.51, 'IT': 0.67, 'JM': 4.26, 'JO': 6.13,
-      'KE': 2.00, 'KG': 5.50, 'KH': 6.09, 'KN': 0.33, 'KR': 10.00, 'KW': 10.00, 'KZ': 2.16, 'LA': 0.15,
-      'LB': 6.39, 'LS': 0.10, 'LT': 0.98, 'LU': 0.87, 'LV': 1.27, 'LY': 2.66, 'MA': 2.63, 'MD': 0.73,
-      'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 10.00, 'MM': 0.96, 'MN': 6.34, 'MT': 0.59, 'MU': 3.99,
-      'MX': 2.17, 'MY': 2.22, 'MZ': 6.33, 'NE': 1.41, 'NG': 10.00, 'NL': 0.93, 'NO': 0.62, 'NP': 0.10,
-      'OM': 2.84, 'PA': 10.00, 'PE': 1.15, 'PG': 10.00, 'PH': 6.44, 'PL': 0.72, 'PT': 0.72, 'PY': 0.87,
-      'QA': 7.67, 'RO': 1.03, 'RS': 1.65, 'RU': 1.77, 'SA': 7.04, 'SE': 0.84, 'SG': 10.00, 'SI': 10.00,
-      'SK': 0.96, 'SL': 6.35, 'SN': 4.60, 'SV': 3.32, 'SZ': 0.95, 'TD': 5.07, 'TG': 1.45, 'TH': 0.10,
-      'TN': 5.56, 'TO': 0.10, 'TR': 5.24, 'TT': 9.29, 'TZ': 4.66, 'UA': 2.38, 'UG': 0.65, 'US': 1.17,
-      'UZ': 1.93, 'VE': 10.00, 'VN': 1.69, 'YE': 10.00, 'ZA': 1.26, 'ZW': 0.50
+      'AE': 10.00, 'AF': 2.91, 'AL': 1.99, 'AM': 0.10, 'AT': 0.59, 'AZ': 10.00, 'BA': 3.88, 'BD': 0.10,
+      'BE': 1.19, 'BF': 0.53, 'BG': 0.86, 'BH': 10.00, 'BR': 1.56, 'BT': 1.60, 'BW': 0.10, 'BY': 0.53,
+      'BZ': 0.16, 'CA': 0.45, 'CD': 6.90, 'CH': 0.83, 'CI': 10.00, 'CL': 10.00, 'CN': 1.19, 'CO': 2.39,
+      'CR': 3.91, 'CU': 7.45, 'CV': 0.11, 'CY': 0.84, 'CZ': 0.85, 'DE': 0.74, 'DK': 0.79, 'DO': 9.43,
+      'DZ': 6.61, 'EC': 10.00, 'EE': 1.01, 'EG': 3.85, 'ES': 0.67, 'ET': 1.80, 'FI': 0.81, 'FJ': 4.30,
+      'FR': 0.73, 'GB': 0.95, 'GE': 10.00, 'GH': 2.19, 'GM': 0.33, 'GR': 0.70, 'HR': 0.74, 'HU': 0.75,
+      'IE': 1.44, 'IL': 4.23, 'IN': 0.34, 'IQ': 2.86, 'IR': 3.50, 'IT': 0.67, 'JM': 4.26, 'JO': 6.50,
+      'KE': 1.93, 'KG': 4.09, 'KH': 6.19, 'KN': 0.33, 'KR': 10.00, 'KW': 10.00, 'KZ': 2.23, 'LA': 0.15,
+      'LB': 6.38, 'LS': 0.10, 'LT': 0.97, 'LU': 0.89, 'LV': 1.27, 'LY': 2.81, 'MA': 2.63, 'MD': 0.73,
+      'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 10.00, 'MM': 0.62, 'MN': 6.35, 'MT': 0.59, 'MU': 4.00,
+      'MX': 2.22, 'MY': 2.22, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00, 'NL': 0.93, 'NO': 0.62, 'NP': 0.10,
+      'OM': 2.85, 'PA': 10.00, 'PE': 1.15, 'PG': 10.00, 'PH': 6.50, 'PL': 0.73, 'PT': 0.71, 'PY': 1.08,
+      'QA': 7.67, 'RO': 1.02, 'RS': 1.69, 'RU': 1.80, 'SA': 7.04, 'SE': 0.84, 'SG': 10.00, 'SI': 10.00,
+      'SK': 0.96, 'SL': 5.57, 'SN': 4.67, 'SV': 3.36, 'SZ': 0.99, 'TD': 5.24, 'TG': 1.59, 'TH': 0.10,
+      'TN': 5.56, 'TO': 0.10, 'TR': 5.24, 'TT': 9.29, 'TZ': 5.02, 'UA': 2.21, 'UG': 0.66, 'US': 1.16,
+      'UZ': 1.90, 'VE': 10.00, 'VN': 1.65, 'YE': 10.00, 'ZA': 1.25, 'ZW': 0.46
     }
     footprint: {}
   # Service radius (dynamic_buffering: true), per size_measure:
@@ -349,20 +351,20 @@ create_voronoi:
     reported:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.371, slope: 0.183, max_km: 5.5}
+      by_connection: {intercept: 1.367, slope: 0.182, max_km: 5.5}
     footprint:
       radius_exponent: 0.5
       radius_at_10k_people_km: 4.25
-      by_connection: {intercept: 1.214, slope: 0.135, max_km: 4.0}
+      by_connection: {intercept: 1.197, slope: 0.137, max_km: 4.0}
   # The radius at 10,000 people by country (by_connection; without it radius_at_10k_people_km everywhere):
   #   r10k_km = min(max_km, exp(intercept + slope * logit(C))), C = connected_share of the plant's
   #   country; countries without a value keep radius_at_10k_people_km.
-  # Calibrated on 126 countries (wwtp.calibration.connection_radius calibrate): the national share
-  # of people served, from WorldPop 2022 and our plants, against JMP "safely managed via sewer".
-  # Leaving one SDG region out, the mean error of the served share is 7.5 pp (reported, with
-  # size_scale; 10.1 pp without it, 15.0 pp with 3.75 km everywhere) and 16.0 pp (footprint;
-  # 15.8 pp with 4.25 km). max_km (and the size_scale limits) chosen as described at size_scale.
-  # PROVISIONAL until the calibration run (see size_scale). notes/size_calibration_2026-11-12.md.
+  # Calibrated on 126 countries (wwtp.calibration.connection_radius calibrate, run of 13 Nov): the
+  # national share of people served, from WorldPop 2022 and our plants, against JMP "safely managed
+  # via sewer". Leaving one SDG region out, the mean error of the served share is 7.5 pp (reported,
+  # with size_scale; 10.1 pp without it, 15.0 pp with 3.75 km everywhere) and 16.0 pp (footprint;
+  # 15.8 pp with one radius for all). max_km and the size_scale limits chosen as described at
+  # size_scale. notes/size_calibration_2026-11-12.md.
   # Share of people whose sewage reaches treatment (JMP household file, san_sew_sm_t, value of the
   # year nearest 2022; ISO 3166 alpha-2).
   connected_share: {
@@ -1066,12 +1068,13 @@ national_data:
       peek: true
       files:
         iter_00_cpv2020_csv.zip: {kind: http, url: 'https://www.inegi.org.mx/contenidos/programas/ccpv/2020/datosabiertos/iter/iter_00_cpv2020_csv.zip'}
-  # Plant registers: every point (or the representative point) of the file is a plant.
+  # Plant registers: every point (or the representative point) of the file is a plant. encoding: of a
+  # CSV register (read as text); other files carry their own.
   registers:
-    bra_ana_2019: {source: 'bra_ana_atlas_esgotos', file: 'Estacao_Tratamento_Esgoto_2019.zip', iso2: 'BR', year: 2019}
-    can_wser: {source: 'can_eccc_wser', file: 'Resaeu-Wser-identification.csv', iso2: 'CA', year: 2025}
-    aus_ga: {source: 'aus_ga_wwtf', file: 'wastewater_treatment_facilities.geojson', iso2: 'AU', year: 2012}
-    jpn_p22: {source: 'jpn_mlit_p22', file: 'P22-12_GML.zip', iso2: 'JP', year: 2012}
+    bra_ana_2019: {source: 'bra_ana_atlas_esgotos', file: 'Estacao_Tratamento_Esgoto_2019.zip', iso2: 'BR', year: 2019, encoding: 'utf-8'}
+    can_wser: {source: 'can_eccc_wser', file: 'Resaeu-Wser-identification.csv', iso2: 'CA', year: 2025, encoding: 'cp1252'}
+    aus_ga: {source: 'aus_ga_wwtf', file: 'wastewater_treatment_facilities.geojson', iso2: 'AU', year: 2012, encoding: 'utf-8'}
+    jpn_p22: {source: 'jpn_mlit_p22', file: 'P22-12_GML.zip', iso2: 'JP', year: 2012, encoding: 'utf-8'}
   paths:
     data_dir: null
     annotated_all_filepath: null

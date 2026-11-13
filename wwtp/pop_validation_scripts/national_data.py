@@ -286,7 +286,10 @@ def read_register(cfg, register):
         raise FileNotFoundError(f"not downloaded: {path}")
     lower = path.lower()
     if lower.endswith(TABLES):
-        table = pd.read_excel(path) if lower.endswith((".xlsx", ".xls")) else pd.read_csv(path, low_memory=False)
+        if lower.endswith((".xlsx", ".xls")):
+            table = pd.read_excel(path)
+        else:
+            table = pd.read_csv(path, low_memory=False, encoding=entry["encoding"])
         parts = [_points_from_table(table, cfg["coordinate_names"])]
     else:
         parts = []

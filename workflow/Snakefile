@@ -305,7 +305,7 @@ rule national_registers:
     """The downloaded files described, and the register plants our list lacks, in one file."""
     input: ANNOTATED, wf.stamp("national_data_fetch")
     output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "register_plants.csv", "registers_summary.csv", "peek.md")]
-    params: module="pop_validation_scripts.national_data", cli=["registers"]
+    params: module="pop_validation_scripts.national_data", cli=["registers"], **wf.settings_params("national_data", "registers", "coordinate_names", "match_distance_m")
     log: wf.log("national_registers")
     threads: threads("national_registers")
     resources: **res("national_registers")
@@ -546,7 +546,7 @@ rule connection_radius_references:
     shell: PY + " -m wwtp.{params.module} {params.cli:q} > {log} 2>&1"
 
 
-# Settings whose change reruns the step (rule params; see wf.calibration_params)
+# Settings whose change reruns the step (rule params; see wf.settings_params)
 CURVE_SETTINGS = ("year", "aggregate_cells", "candidate_plants", "size_measures", "radius_exponents", "radius_grid",
                   "max_buffer", "footprint_to_people", "reported_size_columns", "reported_size_skip")
 CALIBRATE_SETTINGS = ("footprint_to_people", "size_country_min_plants", "fit_reference", "reference_series",
@@ -555,7 +555,7 @@ rule connection_radius_curves:
     """Served share against the radius scale for every country with plants and a WorldPop raster."""
     input: ANNOTATED, wf.stamp("download_pop")
     output: f"{CR}/countries.csv", f"{CR}/served_share_curves.csv", f"{CR}/plants.csv"
-    params: module="calibration.connection_radius", cli=["curves"], **wf.calibration_params(*CURVE_SETTINGS)
+    params: module="calibration.connection_radius", cli=["curves"], **wf.settings_params("connection_radius", *CURVE_SETTINGS)
     log: wf.log("connection_radius_curves")
     threads: threads("connection_radius_curves")
     resources: **res("connection_radius_curves")
@@ -566,7 +566,7 @@ rule connection_radius_calibrate:
     """Country parts of the plant size, the national size scale and the radius rule (light: local)."""
     input: rules.connection_radius_references.output, rules.connection_radius_curves.output
     output: [f"{CR}/{name}" for name in ("reference_table.csv", "plant_size_countries.csv", "calibration_by_cap.csv", "calibration_countries.csv")]
-    params: module="calibration.connection_radius", cli=["calibrate"], **wf.calibration_params(*CALIBRATE_SETTINGS)
+    params: module="calibration.connection_radius", cli=["calibrate"], **wf.settings_params("connection_radius", *CALIBRATE_SETTINGS)
     log: wf.log("connection_radius_calibrate")
     localrule: True
     shell: STAGE

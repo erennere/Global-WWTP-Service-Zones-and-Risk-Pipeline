@@ -593,6 +593,7 @@ class NationalRegister(Strict):
     file: str
     iso2: str = Field(pattern=r"^[A-Z]{2}$")
     year: Year
+    encoding: str  # text encoding of a CSV register (Canada's is cp1252); not used for other files
 
 
 class CoordinateNames(Strict):

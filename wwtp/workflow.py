@@ -268,13 +268,14 @@ def sizing_params(variant):
     return params
 
 
-def calibration_params(*keys):
-    """Rule param of a calibration step: a digest of the ``connection_radius`` settings it runs with.
+def settings_params(section, *keys):
+    """Rule param of a step without variant: a digest of the settings of ``section`` it runs with.
 
-    Its outputs do not carry them, so a change (the plant-size model for the curves, the caps and
-    limits for ``calibrate``) would leave old tables in place; as a rule param it reruns the step.
+    Its outputs do not carry them, so a change (the plant-size model for the calibration curves, the
+    caps and limits for ``calibrate``, the register list for ``national_registers``) would leave old
+    tables in place; as a rule param it reruns the step.
     """
-    cfg = config("connection_radius")
+    cfg = config(section)
     payload = json.dumps({key: cfg[key] for key in keys}, sort_keys=True, default=str)
     return {"settings": hashlib.sha256(payload.encode()).hexdigest()[:12]}
 

@@ -128,8 +128,12 @@ def _world(tmp_path):
         for f in os.listdir(folder):
             z.write(folder / f, f)
     pd.DataFrame(
-        {"System Name": ["a", "b", "bad"], "Latitude (dd)": [50.0, 60.0, 999.0], "Longitude (dd)": [11.0005, 20.0, 5.0]}
-    ).to_csv(root / "csv" / "systems.csv", index=False)
+        {
+            "Nom du système": ["a", "b", "bad"],
+            "Latitude (dd)": [50.0, 60.0, 999.0],
+            "Longitude (dd)": [11.0005, 20.0, 5.0],
+        }
+    ).to_csv(root / "csv" / "systems.csv", index=False, encoding="cp1252")  # as Canada's register
     sources = {
         "shp": {"required": False, "peek": True, "files": {"plants.zip": {"kind": "http", "url": "https://x.org/p"}}},
         "csv": {"required": False, "peek": True, "files": {
@@ -138,9 +142,9 @@ def _world(tmp_path):
         }},
     }  # fmt: skip
     registers = {
-        "zz_shp": {"source": "shp", "file": "plants.zip", "iso2": "DE", "year": 2020},
-        "zz_csv": {"source": "csv", "file": "systems.csv", "iso2": "CA", "year": 2021},
-        "zz_absent": {"source": "csv", "file": "absent.csv", "iso2": "CA", "year": 2021},
+        "zz_shp": {"source": "shp", "file": "plants.zip", "iso2": "DE", "year": 2020, "encoding": "utf-8"},
+        "zz_csv": {"source": "csv", "file": "systems.csv", "iso2": "CA", "year": 2021, "encoding": "cp1252"},
+        "zz_absent": {"source": "csv", "file": "absent.csv", "iso2": "CA", "year": 2021, "encoding": "utf-8"},
     }
     return _cfg(tmp_path, sources, registers)
 
@@ -157,7 +161,7 @@ def test_registers_give_the_new_plants_in_one_file(tmp_path):
     new = gpd.read_file(out / "new_plants.gpkg")
     assert sorted(new["register"]) == ["zz_csv", "zz_shp", "zz_shp"] and str(new.crs.to_epsg()) == "4326"
     far = new[new["register"] == "zz_csv"].iloc[0]
-    assert (far["lon"], far["lat"]) == (20.0, 60.0) and json.loads(far["attrs"])["System Name"] == "b"
+    assert (far["lon"], far["lat"]) == (20.0, 60.0) and json.loads(far["attrs"])["Nom du système"] == "b"
     every = gpd.read_file(out / "register_plants.gpkg")
     near = every[~every["new"].astype(bool)]
     assert len(every) == 5 and near["distance_to_ours_m"].max() < 100  # 0.001 and 0.0005 degrees of longitude at 50 N
@@ -169,7 +173,7 @@ def test_registers_give_the_new_plants_in_one_file(tmp_path):
     same = listed[~listed["new"]]
     assert len(listed) == 5 and sorted(zip(same["ours_lon"], same["ours_lat"])) == [(10.0, 50.0), (11.0, 50.0)]
     peek = (out / "peek.md").read_text()
-    assert "plants.shp" in peek and "NAME" in peek and "System Name" in peek and "absent.csv: not downloaded" in peek
+    assert "plants.shp" in peek and "NAME" in peek and "Nom du syst" in peek and "absent.csv: not downloaded" in peek
 
 
 def test_peek_describes_workbooks_and_reports_unreadable_files(tmp_path):
