@@ -1072,9 +1072,10 @@ national_data:
     can_wser: {source: 'can_eccc_wser', file: 'Resaeu-Wser-identification.csv', iso2: 'CA', year: 2025, encoding: 'cp1252'}
     aus_ga: {source: 'aus_ga_wwtf', file: 'wastewater_treatment_facilities.geojson', iso2: 'AU', year: 2012, encoding: 'utf-8'}
     jpn_p22: {source: 'jpn_mlit_p22', file: 'P22-12_GML.zip', iso2: 'JP', year: 2012, encoding: 'utf-8'}
-  # Countries our plant list does not cover (no HeiGIT detections there): their register plants and
-  # HydroWASTE records in one file (uncovered_plants.gpkg / .csv), without size, not merged into the
-  # plant list. A HydroWASTE record within match_distance_m of a register plant is the same plant.
+  # new_plants.gpkg / .csv: every plant our list lacks, without size, not merged into the plant list
+  # (the model runs on them first): register plants farther than match_distance_m from all of ours,
+  # and in the countries our list does not cover (no HeiGIT detections) also their HydroWASTE records;
+  # a HydroWASTE record within match_distance_m of a register plant is the same plant.
   uncovered:
     countries: ['AU', 'JP', 'NZ']
     hydrowaste_columns: {id: 'WASTE_ID', name: 'WWTP_NAME', country: 'CNTRY_ISO', lon: 'LON_WWTP', lat: 'LAT_WWTP'}

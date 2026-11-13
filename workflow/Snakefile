@@ -306,7 +306,7 @@ rule national_data_fetch:
 rule national_registers:
     """The downloaded files described, and the register plants our list lacks, in one file."""
     input: ANNOTATED, wf.stamp("national_data_fetch")
-    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "register_plants.csv", "uncovered_plants.gpkg", "uncovered_plants.csv", "registers_summary.csv", "peek.md")]
+    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "register_plants.csv", "registers_summary.csv", "peek.md")]
     params: module="pop_validation_scripts.national_data", cli=["registers"], **wf.settings_params("national_data", "registers", "coordinate_names", "match_distance_m", "uncovered")
     log: wf.log("national_registers")
     threads: threads("national_registers")

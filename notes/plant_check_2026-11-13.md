@@ -81,4 +81,4 @@ only when it is worse than the fixed radius in at least 95 % of the samples. The
 Footprint sizes: chosen scale 1/3-3, no cap (a 1.321, b 0.197): plants x1.480 against x1.493 fixed,
 national 7.1 pp (JMP) / 11.5 pp (SDG 6.3.1), better nationally than any reported-size rule.
 Mexico: served share 42-52 % against drainage (sewer or septic) 96 %: the upper bound does not bind.
-Uncovered countries file: AU 1,490 plants (691 in both the register and HydroWASTE), JP 77, NZ 123.
+New plants (`new_plants.csv`, one file, no size, not merged): AU 1,490 (691 in both the register and HydroWASTE), CA 91 (Canada's register, 1-86 km from our plants, median 9 km), JP 77, NZ 123; 1,781 in all.

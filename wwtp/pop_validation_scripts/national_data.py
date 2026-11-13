@@ -12,11 +12,10 @@ Commands (``python -m wwtp.pop_validation_scripts.national_data <command>``)::
                layers, columns, first rows), so that parsers can be written without the data at hand.
                register_plants.gpkg / .csv: every plant of the ``registers`` as a point with its original
                attributes (JSON), its distance to the nearest plant of ours and that plant's coordinates.
-               new_plants.gpkg / new_plants.csv: the register plants farther than ``match_distance_m``
-               from every plant of ours - one file for all countries.
-               uncovered_plants.gpkg / .csv: the countries our list does not cover (``uncovered``):
-               their register plants and HydroWASTE records in one file, without size; not merged
-               into our plant list.
+               new_plants.gpkg / new_plants.csv: every plant our list lacks, one file for all countries,
+               without size and not merged into our plant list (the model runs on them first): the
+               register plants farther than ``match_distance_m`` from every plant of ours, and in the
+               countries our list does not cover (``uncovered``) also their HydroWASTE records.
                registers_summary.csv, and results.zip with the small files to send back.
 
 File kinds: ``manual`` (a page whose files are saved into ``<validation_dir>/<source>/`` by hand, any file
@@ -343,19 +342,39 @@ def read_register(cfg, register):
     return pd.concat(rows, ignore_index=True)
 
 
-def build_uncovered(cfg, registers):
-    """Plants of the countries our list does not cover: register plants and HydroWASTE records, one file.
+def build_new_plants(cfg, registers):
+    """Every plant our list lacks, in one file, without size: the model has to run on them first.
 
-    ``uncovered.countries`` (ISO 3166 alpha-2): every register plant of these countries, and every
-    HydroWASTE record (``paths.hydrowaste``, columns ``uncovered.hydrowaste_columns``) of them. A
-    HydroWASTE record within ``match_distance_m`` of a register plant of the same country is the same
-    plant (one row, both sources). No size: the original attributes are kept as JSON, unused.
+    - Every register plant farther than ``match_distance_m`` from all plants of ours (``new``), of any
+      country (Canada's WSER plants that our list lacks, ...).
+    - In the countries our list does not cover at all (``uncovered.countries``): also every HydroWASTE
+      record (``paths.hydrowaste``, columns ``uncovered.hydrowaste_columns``). A record within
+      ``match_distance_m`` of a register plant of the same country is the same plant (one row, both
+      sources).
+
+    The original attributes are kept as JSON; nothing is merged into our plant list.
     """
     spec, limit = cfg["uncovered"], float(cfg["match_distance_m"])
     _, alpha_2_to_3, _, _ = get_iso_codes()
     col = spec["hydrowaste_columns"]
     hw = pd.read_csv(cfg["paths"]["hydrowaste"], low_memory=False)
     rows = []
+    elsewhere = registers[registers["new"].astype(bool) & ~registers["iso2"].isin(spec["countries"])]
+    for _, plant in elsewhere.iterrows():
+        rows.append(
+            {
+                "iso2": plant["iso2"],
+                "sources": "register",
+                "register": plant["register"],
+                "lon": plant["lon"],
+                "lat": plant["lat"],
+                "distance_to_ours_m": plant["distance_to_ours_m"],
+                "register_attrs": plant["attrs"],
+                "hydrowaste_id": None,
+                "hydrowaste_name": None,
+                "hydrowaste_attrs": None,
+            }
+        )
     for iso2 in spec["countries"]:
         reg = registers[registers["iso2"] == iso2].reset_index(drop=True)
         h = hw[hw[col["country"]] == alpha_2_to_3[iso2]].reset_index(drop=True)
@@ -383,6 +402,7 @@ def build_uncovered(cfg, registers):
                     "register": plant["register"],
                     "lon": plant["lon"],
                     "lat": plant["lat"],
+                    "distance_to_ours_m": plant["distance_to_ours_m"],
                     "register_attrs": plant["attrs"],
                     "hydrowaste_id": h[col["id"]].iloc[j] if j >= 0 else None,
                     "hydrowaste_name": h[col["name"]].iloc[j] if j >= 0 else None,
@@ -397,6 +417,7 @@ def build_uncovered(cfg, registers):
                     "register": None,
                     "lon": float(h[col["lon"]].iloc[j]),
                     "lat": float(h[col["lat"]].iloc[j]),
+                    "distance_to_ours_m": np.nan,  # a country without plants of ours
                     "register_attrs": None,
                     "hydrowaste_id": h[col["id"]].iloc[j],
                     "hydrowaste_name": h[col["name"]].iloc[j],
@@ -404,19 +425,19 @@ def build_uncovered(cfg, registers):
                 }
             )
         logger.info(
-            "uncovered %s: %d register plants, %d HydroWASTE records, %d matched",
+            "new plants, %s (not covered): %d register plants, %d HydroWASTE records, %d matched",
             iso2,
             len(reg),
             len(h),
             int(taken.sum()),
         )
-    columns = ["iso2", "sources", "register", "lon", "lat", "register_attrs", "hydrowaste_id", "hydrowaste_name"]
-    out = pd.DataFrame(rows, columns=columns + ["hydrowaste_attrs"])
+    columns = ["iso2", "sources", "register", "lon", "lat", "distance_to_ours_m", "register_attrs", "hydrowaste_id"]
+    out = pd.DataFrame(rows, columns=columns + ["hydrowaste_name", "hydrowaste_attrs"])
     return gpd.GeoDataFrame(out, geometry=gpd.points_from_xy(out["lon"], out["lat"]), crs=4326)
 
 
 def build_registers(cfg):
-    """peek.md, register_plants, new_plants, uncovered_plants (.gpkg / .csv), registers_summary.csv, results.zip."""
+    """peek.md, register_plants and new_plants (.gpkg / .csv), registers_summary.csv, results.zip."""
     out = cfg["paths"]["output_dir"]
     os.makedirs(out, exist_ok=True)
     ours = read_located_plants(cfg["paths"]["annotated_all_filepath"]).to_crs(4326)
@@ -455,20 +476,14 @@ def build_registers(cfg):
         if plants
         else gpd.GeoDataFrame(columns=columns, geometry="geometry", crs=4326)
     )
-    new = table[table["new"].astype(bool)]
-    uncovered = build_uncovered(cfg, table)
+    new = build_new_plants(cfg, table)
     files = {}
-    for name, frame in (
-        ("register_plants.gpkg", table),
-        ("new_plants.gpkg", new),
-        ("uncovered_plants.gpkg", uncovered),
-    ):
+    for name, frame in (("register_plants.gpkg", table), ("new_plants.gpkg", new)):
         with atomic_output(os.path.join(out, name)) as tmp:
             frame.to_file(tmp, driver="GPKG")
     for name, text in (
         ("new_plants.csv", pd.DataFrame(new.drop(columns="geometry")).to_csv(index=False)),
         ("register_plants.csv", pd.DataFrame(table.drop(columns="geometry")).to_csv(index=False)),
-        ("uncovered_plants.csv", pd.DataFrame(uncovered.drop(columns="geometry")).to_csv(index=False)),
         ("registers_summary.csv", summary.to_csv(index=False)),
         ("peek.md", peek_all(cfg)),
     ):
@@ -481,7 +496,7 @@ def build_registers(cfg):
             z.writestr(name, text)
         if os.path.exists(manifest):
             z.write(manifest, "manifest.json")
-    logger.info("registers: %d plants, %d new (farther than %.0f m from ours)", len(table), len(new), limit)
+    logger.info("registers: %d plants; %d plants our list lacks (new_plants)", len(table), len(new))
     return summary
 
 
