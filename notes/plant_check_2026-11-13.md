@@ -63,3 +63,22 @@ into the plant list: their size will come from a model.
 1,727 GB catchments matched. Reported sizes: fixed 3.75 km x1.60 (total 1.16); every rule raises the
 GB error (cap 5.5: x1.70, total 1.27), because our list misses most small GB plants and their people
 go to ours. GB alone would keep the fixed radius; the choice weighs all reference countries.
+
+## First run on the cluster (13 Nov, evening)
+References used: US 2,355 sewersheds (95 M people), GB 1,727 catchments (50 M), NL 308 CBS plants and
+290 purification units, IE 176 agglomerations. Spain: download failed again (connection); Brazil
+still refused (403) with the header.
+
+The plant-level error hardly separates the configurations: reported sizes, every rule between x1.37
+and x1.47 (fixed radius x1.38: GB 1.33, IE 1.33, NL 1.48, US 1.39); the national error ranges from
+13.7 to 5.8 pp (JMP, region left out). The plain "not worse than the fixed radius" chose cap 5.25
+without scale (plants x1.383 = fixed), but with one reference country left out the choice jumped
+between cap 3.5 and cap 7.0 with the 0.1-10 scale: chosen by noise. So the comparison is now a
+paired bootstrap over the units (`plant_bootstrap_samples`, `plant_confidence`): a rule is excluded
+only when it is worse than the fixed radius in at least 95 % of the samples. The run needs only
+`connection_radius_plant_check` again (with the per-unit predictions, `plant_units.csv.gz`).
+
+Footprint sizes: chosen scale 1/3-3, no cap (a 1.321, b 0.197): plants x1.480 against x1.493 fixed,
+national 7.1 pp (JMP) / 11.5 pp (SDG 6.3.1), better nationally than any reported-size rule.
+Mexico: served share 42-52 % against drainage (sewer or septic) 96 %: the upper bound does not bind.
+Uncovered countries file: AU 1,490 plants (691 in both the register and HydroWASTE), JP 77, NZ 123.

@@ -714,7 +714,9 @@ RESULT_FILES = (
     "plant_check_status.csv",
     "plant_check.csv",
     "district_check.csv",
+    "plant_units.csv.gz",
     "plant_choice.csv",
+    "plant_configurations.csv",
 )
 
 

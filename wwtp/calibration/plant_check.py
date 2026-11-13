@@ -38,12 +38,16 @@ dwellings with drainage (an upper bound: drainage includes septic tanks). Report
 choice.
 
 **Choice** per size measure: among the rows whose plant error (mean over the reference countries of the
-mean over their references, log10) is not above the fixed radius's, the one with the smallest national
-error, the mean of ``choice_national`` (``jmp``: leaving one SDG region out; ``sdg631`` etc.: the same
-served shares against that reference). Also the choice with each reference country left out.
+mean over their references, log10) is not worse than the fixed radius's - paired bootstrap over the
+units, a row is excluded when it is worse in at least ``plant_confidence`` of ``plant_bootstrap_samples``
+samples - the one with the smallest national error, the mean of ``choice_national`` (``jmp``: leaving
+one SDG region out; ``sdg631`` etc.: the same served shares against that reference). Also the choice
+with each reference country left out.
 
 Command: ``python -m wwtp.calibration.plant_check run`` -> plant_references.csv, plant_check.csv,
-plant_choice.csv, district_check.csv, plant_check_status.csv in ``connection_radius.paths.output_dir``.
+plant_units.csv.gz (people per unit and configuration), plant_choice.csv, plant_configurations.csv
+(plant error, share of samples worse than the fixed radius, national error per rule),
+district_check.csv, plant_check_status.csv in ``connection_radius.paths.output_dir``.
 """
 
 from __future__ import annotations
@@ -64,7 +68,7 @@ from ..sensitivity_analysis_scripts.sweep_validation import match_gb, match_nl, 
 from ..starter import load_config
 from ..utils import atomic_output, configure_logging
 from .connection_radius import aggregate_cells, logit, raster_for_year, sphere_xyz, weighted_nearest
-from .service_radius import class_balanced_error
+from .service_radius import SIZE_CLASSES, _abs_log_error, class_balanced_error
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +239,9 @@ def configurations(calibration, exponents, fixed_r10k):
                     "fixed_r10k_km": np.nan,
                 }
             )
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out.insert(0, "conf", np.arange(len(out)))
+    return out
 
 
 def country_setting(conf, share, connected_people, sum_size):
@@ -289,7 +295,7 @@ def check(cfg, plants, countries, references, calibration, units, matches, expon
     confs = configurations(calibration, exponents, fixed_r10k)
     info = countries.set_index("iso2")
     share = references.set_index("iso3")[f"{cfg['fit_reference']}_share"]
-    rows, district_rows = [], []
+    rows, district_rows, unit_rows = [], [], []
 
     def setting(conf, iso2):
         c = info.loc[iso2]
@@ -318,6 +324,9 @@ def check(cfg, plants, countries, references, calibration, units, matches, expon
                         .to_numpy()
                     )
                     truth = u["ref"].to_numpy(dtype=float)
+                    unit_rows.append(
+                        pd.DataFrame({"conf": conf["conf"], "reference": name, "unit": u["unit"], "pred": pred})
+                    )
                     rows.append(
                         {
                             **conf,
@@ -365,7 +374,12 @@ def check(cfg, plants, countries, references, calibration, units, matches, expon
         except Exception as err:  # a district file that cannot be read must not stop the plant check
             district_rows.append({"reference": name, "iso2": iso2, "status": f"{type(err).__name__}: {err}"[:300]})
             logger.warning("%s: %s", name, district_rows[-1]["status"])
-    return pd.DataFrame(rows), pd.DataFrame(district_rows)
+    unit_preds = (
+        pd.concat(unit_rows, ignore_index=True)
+        if unit_rows
+        else pd.DataFrame(columns=["conf", "reference", "unit", "pred"])
+    )
+    return pd.DataFrame(rows), pd.DataFrame(district_rows), unit_preds
 
 
 KEY = ["size_measure", "radius_exponent", "scale_min", "scale_max", "cap_km"]
@@ -378,19 +392,69 @@ def plant_error(rows, leave_out=None):
     return per_country.groupby(level=list(range(len(KEY))), dropna=False).mean()
 
 
-def choose(rows, calibration, national):
-    """Per size measure the chosen configuration, and the same choice with each reference country left out."""
+def bootstrap_errors(units, unit_preds, n_conf, samples, seed):
+    """Class-balanced log10 error per bootstrap sample, configuration and reference (paired).
+
+    In every sample the units of each reference are drawn with replacement within their size class
+    (the same draw for every configuration), and the class medians of ``|log10 pred / ref|`` averaged.
+    Returns the array (samples, n_conf, references) and the reference names.
+    """
+    rng = np.random.default_rng(seed)
+    names = sorted(units["reference"].unique())
+    out = np.empty((samples, n_conf, len(names)))
+    for j, name in enumerate(names):
+        u = units[units["reference"] == name].reset_index(drop=True)
+        p = unit_preds[unit_preds["reference"] == name].pivot(index="conf", columns="unit", values="pred")
+        p = p.reindex(index=np.arange(n_conf), columns=u["unit"])
+        truth = u["ref"].to_numpy(dtype=float)
+        err = _abs_log_error(np.nan_to_num(p.to_numpy(dtype=float)), truth)  # (n_conf, units)
+        cls = np.digitize(truth, SIZE_CLASSES)
+        members = [np.flatnonzero(cls == c) for c in np.unique(cls)]
+        for b in range(samples):
+            medians = [np.median(err[:, rng.choice(m, size=len(m))], axis=1) for m in members]
+            out[b, :, j] = np.mean(medians, axis=0)
+    return out, names
+
+
+def choose(rows, calibration, national, boot=None, ref_country=None, confidence=None):
+    """Per size measure the chosen configuration, and the same choice with each reference country left out.
+
+    Allowed: rules whose plant error is not worse than the fixed radius's - with ``boot`` (from
+    ``bootstrap_errors``), not worse at ``confidence`` (worse in at least that share of the samples
+    excludes a rule); without, not worse at all. Chosen: the allowed rule with the smallest national
+    error. Also returns, per configuration, the plant error and the share of samples it is worse.
+    """
     nat = calibration[calibration["cap_km"] > 0].copy()
     columns = {"jmp": "mean_abs_error_pp"} | {c: f"{c}_mean_abs_error_pp" for c in national if c != "jmp"}
     nat["national_error_pp"] = nat[[columns[c] for c in national]].mean(axis=1)
-    out = []
-    for leave_out in [None, *sorted(rows["iso2"].unique())]:
-        err = plant_error(rows, leave_out).rename("plant_error").reset_index()
+    confs = rows.drop_duplicates("conf")[["conf"] + KEY].sort_values("conf").reset_index(drop=True)
+    out, table = [], []
+    left = sorted(rows["iso2"].unique())
+    for leave_out in [None, *(left if len(left) > 1 else [])]:  # leaving out the only country leaves nothing
+        err = plant_error(rows, leave_out).rename("plant_error").reset_index().merge(confs, on=KEY)
+        if boot is not None:
+            sample_err, names = boot
+            keep = [i for i, n in enumerate(names) if ref_country[n] != leave_out]
+            countries = sorted({ref_country[names[i]] for i in keep})
+            per_country = np.stack(
+                [sample_err[:, :, [i for i in keep if ref_country[names[i]] == c]].mean(axis=2) for c in countries],
+                axis=2,
+            )
+            samples = per_country.mean(axis=2)  # (samples, n_conf)
         for measure, e in err.groupby("size_measure"):
             fixed = e[e["cap_km"].isna()]
             rules = e[e["cap_km"].notna()].merge(nat, on=KEY)
-            ok = rules[rules["plant_error"] <= float(fixed["plant_error"].iloc[0])]
+            if boot is None:
+                rules["share_worse"] = (rules["plant_error"] > float(fixed["plant_error"].iloc[0])).astype(float)
+                limit = 0.5
+            else:
+                base = samples[:, int(fixed["conf"].iloc[0])]
+                rules["share_worse"] = [float(np.mean(samples[:, c] > base)) for c in rules["conf"]]
+                limit = float(confidence)
+            ok = rules[rules["share_worse"] < limit]
             pick = ok.loc[ok["national_error_pp"].idxmin()] if len(ok) else None
+            if leave_out is None:
+                table.append(rules.assign(plants_x=10 ** rules["plant_error"], allowed=rules["share_worse"] < limit))
             out.append(
                 {
                     "size_measure": measure,
@@ -407,6 +471,7 @@ def choose(rows, calibration, national):
                             "a": pick["a"],
                             "b": pick["b"],
                             "plants_x": 10 ** float(pick["plant_error"]),
+                            "share_worse": pick["share_worse"],
                             "national_error_pp": pick["national_error_pp"],
                             **{f"{c}_error_pp": pick[columns[c]] for c in national},
                         }
@@ -415,7 +480,7 @@ def choose(rows, calibration, national):
                     ),
                 }
             )
-    return pd.DataFrame(out)
+    return pd.DataFrame(out), pd.concat(table, ignore_index=True)
 
 
 def run(cfg):
@@ -441,7 +506,7 @@ def run(cfg):
     write(units, "plant_references.csv")
     write(status, "plant_check_status.csv")
     calibration = read("calibration_by_cap.csv")
-    rows, districts = check(
+    rows, districts, unit_preds = check(
         cfg,
         plants,
         read("countries.csv"),
@@ -454,8 +519,19 @@ def run(cfg):
     )
     write(rows, "plant_check.csv")
     write(districts, "district_check.csv")
-    choice = choose(rows, calibration, cfg["choice_national"])
+    with atomic_output(os.path.join(out_dir, "plant_units.csv.gz")) as tmp:
+        unit_preds.to_csv(tmp, index=False, compression="gzip")
+    boot = bootstrap_errors(
+        units,
+        unit_preds,
+        int(rows["conf"].max()) + 1,
+        int(cfg["plant_bootstrap_samples"]),
+        int(cfg["plant_bootstrap_seed"]),
+    )
+    ref_country = units.drop_duplicates("reference").set_index("reference")["iso2"].to_dict()
+    choice, table = choose(rows, calibration, cfg["choice_national"], boot, ref_country, cfg["plant_confidence"])
     write(choice, "plant_choice.csv")
+    write(table, "plant_configurations.csv")
     print(status.to_string(index=False))
     print(choice.round(3).to_string(index=False))
 

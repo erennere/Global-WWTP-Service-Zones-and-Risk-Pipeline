@@ -1182,6 +1182,13 @@ connection_radius:
   # served shares against that reference), among the configurations whose plant-level error is not
   # above the fixed radius's.
   choice_national: ['jmp', 'sdg631']
+  # "Not above the fixed radius's" is tested by a paired bootstrap over the reference units (drawn
+  # within their size class): a configuration is excluded when it is worse in at least plant_confidence
+  # of the samples. The plant-level errors of the configurations differ by less than their noise, so a
+  # plain comparison would choose by chance (run of 13 Nov).
+  plant_bootstrap_samples: 1000
+  plant_bootstrap_seed: 0
+  plant_confidence: 0.95
   paths:
     data_dir: null
     annotated_all_filepath: null

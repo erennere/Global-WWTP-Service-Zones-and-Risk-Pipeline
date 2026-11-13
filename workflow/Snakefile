@@ -556,7 +556,7 @@ CALIBRATE_SETTINGS = ("footprint_to_people", "size_country_min_plants", "fit_ref
                       "check_references", "sdg631")
 PLANT_CHECK_SETTINGS = ("year", "aggregate_cells", "candidate_plants", "plant_reference_kinds",
                         "plant_reference_polygons", "polygon_match_distance_m", "district_references",
-                        "choice_national")
+                        "choice_national", "plant_bootstrap_samples", "plant_bootstrap_seed", "plant_confidence")
 rule connection_radius_curves:
     """Served share against the radius scale for every country with plants and a WorldPop raster."""
     input: ANNOTATED, wf.stamp("download_pop")
@@ -581,7 +581,7 @@ rule connection_radius_calibrate:
 rule connection_radius_plant_check:
     """Every calibrate configuration on the real catchments (US, GB, NL, IE, ES, ...) and census districts; the choice."""
     input: rules.connection_radius_calibrate.output, wf.stamp("national_data_fetch"), wf.stamp("download_pop")
-    output: [f"{CR}/{name}" for name in ("plant_references.csv", "plant_check_status.csv", "plant_check.csv", "district_check.csv", "plant_choice.csv")]
+    output: [f"{CR}/{name}" for name in ("plant_references.csv", "plant_check_status.csv", "plant_check.csv", "district_check.csv", "plant_units.csv.gz", "plant_choice.csv", "plant_configurations.csv")]
     params: module="calibration.plant_check", cli=["run"], **wf.settings_params("connection_radius", *PLANT_CHECK_SETTINGS)
     log: wf.log("connection_radius_plant_check")
     threads: threads("connection_radius_plant_check")

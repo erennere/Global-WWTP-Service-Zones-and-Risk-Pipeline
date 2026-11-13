@@ -108,7 +108,7 @@ def _world(tmp_path, monkeypatch):
 
 def test_the_configuration_that_made_the_references_has_no_plant_error(tmp_path, monkeypatch):
     cfg, plants, countries, references, calibration, units, matches = _world(tmp_path, monkeypatch)
-    rows, districts = pc.check(
+    rows, districts, unit_preds = pc.check(
         cfg, plants, countries, references, calibration, units, matches, {"reported": 0.3}, {"reported": 3.75}
     )
     assert len(rows) == 4 and districts.empty  # fixed radius + three rows of calibrate
@@ -118,9 +118,19 @@ def test_the_configuration_that_made_the_references_has_no_plant_error(tmp_path,
     fixed = rows[rows["cap_km"].isna()].iloc[0]
     assert fixed["k"] == 1.0 and fixed["r10k_km"] == 3.75 and fixed["class_balanced_error"] > 0
     assert rows[rows["cap_km"] == 3.0]["total_ratio"].iloc[0] < 1 < rows[rows["cap_km"] == 40.0]["total_ratio"].iloc[0]
-    choice = pc.choose(rows, calibration, ["jmp", "sdg631"]).set_index("left_out")
+    choice, _ = pc.choose(rows, calibration, ["jmp", "sdg631"])
+    choice = choice.set_index("left_out")
     # national: cap 3 -> 10, cap 5 -> 8, cap 40 -> 8 (9 and 7); cap 40 serves too much, so cap 5
     assert choice.loc["", "cap_km"] == 5.0 and choice.loc["", "national_error_pp"] == pytest.approx(8.0)
+    # the same with the paired bootstrap: the configuration that made the references is never worse
+    assert len(unit_preds) == 4 * len(units) and set(unit_preds["conf"]) == {0, 1, 2, 3}
+    boot = pc.bootstrap_errors(units, unit_preds, 4, 200, 0)
+    assert boot[0].shape == (200, 4, 1) and np.all(boot[0][:, 2, 0] == 0.0)
+    choice, table = pc.choose(rows, calibration, ["jmp", "sdg631"], boot, {"nl_units": "NL"}, 0.95)
+    assert choice.set_index("left_out").loc["", "cap_km"] == 5.0
+    assert table.set_index("cap_km").loc[5.0, "share_worse"] == 0.0 and bool(
+        table.set_index("cap_km").loc[5.0, "allowed"]
+    )
 
 
 def test_the_choice_takes_the_best_national_error_the_plants_allow():
@@ -132,21 +142,21 @@ def test_the_choice_takes_the_best_national_error_the_plants_allow():
         8.0: (0.30, 0.05),  # better on average than fixed, worse in GB
     }
     rows = pd.DataFrame(
-        [{**key, "cap_km": cap, "iso2": c, "reference": c.lower(), "class_balanced_error": e[i]}
-         for cap, e in err.items() for i, c in enumerate(("GB", "NL"))]
+        [{**key, "conf": n, "cap_km": cap, "iso2": c, "reference": c.lower(), "class_balanced_error": e[i]}
+         for n, (cap, e) in enumerate(err.items()) for i, c in enumerate(("GB", "NL"))]
     )  # fmt: skip
     rows.loc[rows["cap_km"].isna(), ["scale_min", "scale_max"]] = 1.0
     calibration = pd.DataFrame(
         {**key, "cap_km": [4.0, 6.0, 8.0], "a": 1.0, "b": 0.2, "mean_abs_error_pp": [9.0, 8.0, 5.0],
          "sdg631_mean_abs_error_pp": [9.0, 8.0, 5.0]}
     )  # fmt: skip
-    choice = pc.choose(rows, calibration, ["jmp", "sdg631"]).set_index("left_out")
+    choice = pc.choose(rows, calibration, ["jmp", "sdg631"])[0].set_index("left_out")
     assert choice.loc["", "cap_km"] == 8.0  # mean plant error 0.175 <= 0.20, best national
     assert choice.loc["NL", "cap_km"] == 6.0  # judged on GB alone, cap 8 is worse than the fixed radius
     assert choice.loc["GB", "cap_km"] == 8.0
     assert choice.loc["", "baseline_plants_x"] == pytest.approx(10**0.2)
     worse = rows.assign(class_balanced_error=np.where(rows["cap_km"].isna(), 0.0, rows["class_balanced_error"]))
-    none = pc.choose(worse, calibration, ["jmp", "sdg631"]).set_index("left_out")
+    none = pc.choose(worse, calibration, ["jmp", "sdg631"])[0].set_index("left_out")
     assert none.loc["", "choice"] == "fixed radius" and np.isnan(none.loc["", "cap_km"])
 
 

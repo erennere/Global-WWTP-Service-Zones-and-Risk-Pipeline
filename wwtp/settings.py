@@ -742,6 +742,9 @@ class ConnectionRadius(Section):
     polygon_match_distance_m: PositiveFloat
     district_references: dict[str, DistrictReference]
     choice_national: list[Literal["jmp", "sdg631", "eurostat", "oecd"]] = Field(min_length=1)
+    plant_bootstrap_samples: PositiveInt
+    plant_bootstrap_seed: int
+    plant_confidence: Annotated[float, Field(gt=0.5, lt=1)]
     paths: Paths
 
 
