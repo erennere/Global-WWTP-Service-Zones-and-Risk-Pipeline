@@ -531,6 +531,40 @@ class Figure1(Section):
     paths: Paths
 
 
+class CalibrationFigureColors(Strict):
+    """Text inks, reference lines and shading, and the categorical series in their fixed order."""
+
+    ink: str
+    secondary: str
+    muted: str
+    grid_ink: str
+    band: str
+    surface: str
+    series: list[str] = Field(min_length=5)
+
+
+class CalibrationFigures(Section):
+    """Extended Data figures and the numbers of the Methods text from the calibration tables
+    (wwtp/figures_scripts/calibration_figures.py; tables from connection_radius.paths.output_dir)."""
+
+    size_measure: SizeMeasure
+    example_countries: list[str] = Field(min_length=1, max_length=5)
+    label_countries: list[str]
+    # plant reference -> panel title (country, dataset)
+    catchment_panels: dict[str, Annotated[list[str], Field(min_length=2, max_length=2)]] = Field(
+        min_length=1, max_length=4
+    )
+    label_caps_km: list[PositiveFloat]
+    width_mm: PositiveFloat
+    heights_mm: dict[Literal["plant_size", "service_radius", "catchments"], PositiveFloat]
+    font_family: list[str] = Field(min_length=1)
+    font_size_pt: PositiveFloat
+    dpi: PositiveInt
+    sequential_cmap: str
+    colors: CalibrationFigureColors
+    paths: Paths
+
+
 # --------------------------------------------------------------------------- #
 # Sensitivity sweeps                                                          #
 # --------------------------------------------------------------------------- #
@@ -818,6 +852,7 @@ SECTIONS: dict[str, type[Section]] = {
     "national_data": NationalData,
     "connection_radius": ConnectionRadius,
     "figure1": Figure1,
+    "calibration_figures": CalibrationFigures,
     "workflow": Workflow,
 }
 

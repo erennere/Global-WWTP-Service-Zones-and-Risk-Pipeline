@@ -39,6 +39,7 @@ Before running this stage, these outputs from prior stages must exist.
 | `sizes_interactive_map.py` | Python worker | Creates reduced centroid GeoJSON and versioned sizes interactive HTML | population-enriched Voronoi outputs and template HTML | map-ready GeoJSON and standalone HTML |
 | `pop_at_risk_figures.py` | Python worker | Plots population-at-risk and impact summaries | risk outputs and tile overlays | risk-analysis figures |
 | `interactive_unconnected_industrial_map.py` | Python worker | Builds a Folium map of industrial areas with no nearby WWTP | unconnected-industrial layer from `industrial_analysis/` | standalone HTML map |
+| `calibration_figures.py` | Python worker (rule `calibration_figures`) | Extended Data figures of the size and radius calibration (plant size, radius rule, check on real catchments) and the numbers of its Methods text | calibration tables in `connection_radius.paths.output_dir` | `ed_plant_size`, `ed_service_radius`, `ed_catchments` (.pdf, .png), `calibration_numbers.tex` |
 | `_shared.py` | shared helpers | Figure-layer column conventions used by both piechart scripts: `aggregate_by_country`, `calculate_size`, `ensure_population_percentage_column` | - | - |
 
 ## Execution Flow

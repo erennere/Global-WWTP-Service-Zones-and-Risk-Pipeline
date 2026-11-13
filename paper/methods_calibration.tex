@@ -1,0 +1,196 @@
+% Methods: plant size and service radius calibration.
+% Every number comes from calibration_numbers.tex (written by wwtp/figures_scripts/calibration_figures.py
+% from the calibration tables; Snakemake target calibration_figures). Do not type numbers in by hand:
+% rerun the target and recompile. Figures: ed_plant_size, ed_service_radius, ed_catchments (same folder).
+% Citation keys marked TODO in methods_calibration.bib still need their full references.
+\input{calibration_numbers}
+
+\subsection*{Plant size in people}
+
+The service area of a plant grows with the number of people it serves, its size $S_i$.
+For \calPlantsReported{} of our \calPlantsAll{} plants a size is reported. We took the first positive
+value of the HydroWASTE population served\cite{hydrowaste} (excluding records it estimated from the
+population within 11\,km of the plant, quality flag 4), the US Clean Watersheds Needs Survey population
+(2022)\cite{cwns2022} and the load entering the plant in the European Urban Waste Water Treatment
+Directive data (population equivalents)\cite{uwwtd}. All other plants get a size estimated from the tanks detected on the image.
+
+The detected tank area of plant $i$ is
+\begin{equation}
+  F_i = \sum_{j} \pi \left(\frac{d_{ij}}{2}\right)^{2} + \sum_{j} A_{ij},
+  \label{eq:tank-area}
+\end{equation}
+where $d_{ij}$ are the diameters of its circular tanks and $A_{ij}$ the areas of its rectangular tanks
+(m$^2$). A plant has a usable area when $F_i>0$ and no lagoon was detected (\calPlantsSized{} plants).
+We fitted
+\begin{equation}
+  \log_{10} \hat{P}_i = \alpha + \delta_c + \beta \log_{10} F_i
+  \label{eq:size}
+\end{equation}
+by least squares on the \calFitPlants{} plants with both a usable area and a reported size, first
+without $\delta_c$: $\alpha=\calFitIntercept$, $\beta=\calFitSlope$ ($R^2=\calFitRsq$,
+Extended Data Fig.~\ref{fig:ed-plant-size}a). Plants of the same tank area serve more people in some
+countries than in others. The country term $\delta_c$ is the median residual
+$\log_{10} R_i - (\alpha + \beta \log_{10} F_i)$ over the plants of country $c$ with a reported size
+$R_i$. It is used where it rests on at least \calOffsetMinPlants{} plants (\calOffsetCountries{}
+countries, a factor $10^{\delta_c}$ between \calOffsetMin{} and \calOffsetMax{}; Extended Data
+Fig.~\ref{fig:ed-plant-size}b) and is 0 elsewhere. On these countries the typical error of the estimate
+(median $|\log_{10} R_i/\hat P_i|$, as a factor) fell from \calEstimateErrorBefore{} to
+\calEstimateErrorAfter.
+
+Plants without a usable area (lagoons, plants without detected tanks) get a fixed size $U_c$: the
+median reported size of such plants in country $c$ where there are at least \calOffsetMinPlants{}
+(\calUnsizedOwn{} countries); otherwise \calUnsizedRatio{} times the median estimated size of the
+country's plants with tanks, the median of this ratio over those countries
+(\calUnsizedRatioCountries{} countries); and \calUnsizedDefault{} people where neither is available.
+
+The size before the national scale is $S^{0}_i = R_i$ where a size is reported, $\hat P_i$ where the
+plant has a usable area and $U_c$ otherwise. The national scale makes the sizes of a country add up
+to the number of people connected to treatment there:
+\begin{equation}
+  k_c = \operatorname{clip}\!\left(\frac{C_c N_c}{\sum_{i \in c} S^{0}_i},\ k_{\min},\ k_{\max}\right),
+  \qquad S_i = k_c S^{0}_i ,
+  \label{eq:scale}
+\end{equation}
+where $C_c$ is the share of the population whose sewage is collected by a sewer and treated (WHO/UNICEF
+JMP, safely managed sanitation via sewer connections, \texttt{san\_sew\_sm\_t}, year nearest
+\calYear)\cite{jmp2025} and $N_c$ the WorldPop \calYear{} population of the country\cite{worldpop}.
+Without limits, $k_c$ ranges from \calScaleRawMin{} to \calScaleRawMax{} (countries with $C_c>0$; Extended Data Fig.~\ref{fig:ed-plant-size}c).
+Values above 1 mean that our plant list misses plants or underestimates their sizes; values below 1
+mean that the sizes add up to more people than are counted as connected to treatment, for example where
+reported loads include industry or where few sewer connections are counted as safely managed. The limits $[k_{\min}, k_{\max}]$ were chosen with the plant-level
+check below (chosen: \calScaleChosen).
+
+\subsection*{Service radius}
+
+A plant serves the people within a circle of radius
+\begin{equation}
+  r_i = \min\!\left(r_{\max},\ r_{10k,c} \left(\frac{S_i}{10^{4}}\right)^{e}\right),
+  \label{eq:radius}
+\end{equation}
+with $e=\calRadiusExponent$ and $r_{\max}=\calMaxBufferKm$\,km. The radius of a plant of
+10{,}000 people, $r_{10k,c}$, was previously one value for all countries (\calFixedRadius\,km,
+calibrated on US sewersheds). Here it follows the national connection rate:
+\begin{equation}
+  r_{10k,c} = \min\!\left(r_{\mathrm{cap}},\ \exp\!\left(a + b \operatorname{logit} C_c\right)\right),
+  \label{eq:rule}
+\end{equation}
+with $C_c$ clipped to 1--99\,\%. Countries without a JMP value keep \calFixedRadius\,km.
+
+\paragraph{Stand-in for the service areas.} Calibrating on the full service-area pipeline would take
+days per setting, so we used a fast stand-in that keeps its two main elements. The WorldPop population
+was summed to \calCellKm\,km cells. Each cell goes to the plant of its country with the smallest
+distance divided by $\sqrt{S_i}$ among its \calCandidatePlants{} nearest plants, and it counts as
+served when it lies within that plant's radius (equation~\eqref{eq:radius}). Because $k_c$ multiplies
+all sizes of a country, it does not change which plant a cell goes to, and it multiplies every radius
+of the country by $k_c^{e}$.
+
+\paragraph{Calibration on national statistics.} For each of \calCurveCountries{} countries with plants
+and a population raster we computed the served share $s_c(r)$ for \calGridCount{} values of $r_{10k}$
+between \calGridStart{} and \calGridStop\,km (Extended Data Fig.~\ref{fig:ed-service-radius}a). The
+radius a country needs is the $r^{*}_c$ with $s_c(r^{*}_c)=C_c$; with the national scale it is
+$r^{*}_c/k_c^{e}$. We fitted $a$ and $b$ by least squares of $\ln \min(r^{*}_c/k_c^{e},\ r_{\mathrm{cap}})$
+on $\operatorname{logit} C_c$ over the \calCountries{} countries with a JMP value, leaving out the few
+whose curve does not reach $C_c$ within the tried radii (Extended Data
+Fig.~\ref{fig:ed-service-radius}b). To test the rule on countries it was not fitted to, we refitted it
+\calRegions{} times, each time without one SDG region, and predicted the served share of the left-out
+region.
+We did this for each of \calCapCount{} caps (\calCapLow--\calCapHigh\,km, the largest meaning no cap)
+and \calLimitCount{} pairs of scale limits (\calLimitList).
+
+The served share was compared with three national statistics that were not used in the fit: SDG
+indicator 6.3.1 (household wastewater in sewers divided by all household wastewater, times the share
+of the sewer flow delivered to treatment)\cite{sdg631}, Eurostat (population connected to urban and
+other wastewater treatment)\cite{eurostat_wwcon} and OECD (public wastewater treatment)\cite{oecd_treat}.
+
+\paragraph{Check on real catchments and choice.} National totals cannot tell whether the people a
+plant serves are the right ones. We therefore also ran every setting on datasets of real catchments:
+EPA sewersheds of the United States (\calUnitsUsSewersheds{} sewersheds matched to our plants by their
+CWNS identifier)\cite{epa_sewersheds}, sewage catchments of Great Britain
+(\calUnitsGbCatchments)\cite{gb_catchments}, inhabitants per plant of the Netherlands (CBS,
+\calUnitsNlCbs{} plants)\cite{cbs_rwzi} and purification units (\calUnitsNlUnits)\cite{nl_units}, and
+agglomerations of Ireland (EPA, \calUnitsIeAgglomerations)\cite{ie_agglomerations}. A polygon was
+matched to our plants within \calMatchDistance\,m. Except for the CBS counts, the reference is the
+WorldPop population inside the polygon, so the check tests the shape of the service areas, not the
+population data. The error of a reference is class-balanced: the median of
+$|\log_{10}(\text{predicted}/\text{reference})|$ within three size classes (below $10^4$, $10^4$--$10^5$
+and above $10^5$ people), averaged over the classes, so that the many small plants do not dominate.
+Its antilogarithm is the typical factor between predicted and reference people. We averaged it over the
+references of a country and then over the countries.
+
+The per-plant errors of the \calConfigurations{} settings differ little (typical factor
+\calPlantErrLow--\calPlantErrHigh; fixed radius \calPlantErrFixed), less than the noise of the
+reference data. To avoid choosing by chance, we drew \calBootstrapSamples{} bootstrap samples of the
+catchments (with replacement within each size class, the same draw for every setting) and excluded a
+setting when its per-plant error was larger than that of the fixed radius in at least \calConfidence\,\%
+of the samples (\calAllowedConfigurations{} of \calConfigurations{} settings remained). Among those we
+chose the one with the smallest national error, the mean of the JMP error (region left out) and the
+SDG 6.3.1 error (Extended Data Fig.~\ref{fig:ed-catchments}e). The chosen setting is
+$r_{\mathrm{cap}}=\calCap$\,km, $a=\calRuleA$ and $b=\calRuleB$, with national scale limits
+\calScaleChosen.
+
+\paragraph{Results.} Leaving each region out, the rule reduced the mean absolute error of the served
+share against JMP from \calErrFixedJmp{} to \calErrRuleJmp{} percentage points (population-weighted:
+from \calErrFixedJmpWeighted{} to \calErrRuleJmpWeighted), and against SDG 6.3.1, which was not fitted,
+from \calErrFixedSdg{} to \calErrRuleSdg{} points (\calSdgCountries{} countries; Extended Data
+Fig.~\ref{fig:ed-service-radius}c--e). Against Eurostat and OECD the error fell from
+\calErrFixedEurostat{} to \calErrRuleEurostat{} (\calEurostatCountries{} countries) and from
+\calErrFixedOecd{} to \calErrRuleOecd{} points (\calOecdCountries). The service areas cover fewer
+people than these statistics report (mean difference \calBiasRuleSdg, \calBiasRuleEurostat{} and
+\calBiasRuleOecd{} points), consistent with small plants missing from our list. Per plant, the chosen
+setting is not detectably worse than the fixed radius (typical factor \calPlantErrChosen{} against
+\calPlantErrFixed; Extended Data Fig.~\ref{fig:ed-catchments}a--d). In Mexico, whose census reports the
+dwellings with drainage (sewer or septic tank) for \calDistrictsMxIter{} municipalities, the service
+areas hold \calServedMxIter\,\% of the population against \calDrainageMxIter\,\% of dwellings with
+drainage, which is an upper bound for the population connected to a sewer.
+
+% --------------------------------------------------------------------------- %
+% Extended Data figures                                                       %
+% --------------------------------------------------------------------------- %
+\begin{figure}[p]
+  \centering
+  \includegraphics[width=\textwidth]{ed_plant_size}
+  \caption{\textbf{Plant size in people.}
+  \textbf{a}, Reported people served against the detected tank area $F$ for the \calFitPlants{} plants
+  with both (hexagons: number of plants), and the fit of equation~\eqref{eq:size} without country term.
+  \textbf{b}, Country correction $10^{\delta_c}$, the median ratio of reported to estimated size, for
+  the \calOffsetCountries{} countries with at least \calOffsetMinPlants{} plants with both (numbers:
+  plants).
+  \textbf{c}, National size scale before its limits: people connected to treatment (JMP) divided by the
+  sum of the plant sizes, per country, against the JMP share (logit scale). Grey: outside the chosen
+  limits.}
+  \label{fig:ed-plant-size}
+\end{figure}
+
+\begin{figure}[p]
+  \centering
+  \includegraphics[width=\textwidth]{ed_service_radius}
+  \caption{\textbf{Service radius from the national connection rate.}
+  \textbf{a}, Share of the population inside service areas against the radius of a 10{,}000-people
+  plant, $r_{10k}$, for five countries (stand-in model). Dots: the radius at which the share equals the
+  country's JMP share. Dashed: the fixed radius of \calFixedRadius\,km.
+  \textbf{b}, That radius (after the national size scale) for every country against the JMP share
+  (logit scale), the chosen rule (equation~\eqref{eq:rule}) and the fixed radius. Open circles: the share
+  is not reached within the tried radii; these countries are not fitted.
+  \textbf{c}, \textbf{d}, Share inside service areas against the JMP share (fitted) and the SDG 6.3.1
+  share (not fitted), with the fixed radius and with the rule fitted without the country's SDG region.
+  \textbf{e}, Mean absolute error against JMP per SDG region (number of countries), fixed radius and rule
+  with the region left out.}
+  \label{fig:ed-service-radius}
+\end{figure}
+
+\begin{figure}[p]
+  \centering
+  \includegraphics[width=\textwidth]{ed_catchments}
+  \caption{\textbf{Check on real catchments.}
+  \textbf{a}--\textbf{d}, People inside the service area of each plant (stand-in, chosen setting)
+  against the reference: the population inside the EPA sewershed (United States), the sewage catchment
+  (Great Britain) and the EPA agglomeration (Ireland), and the inhabitants counted by CBS (Netherlands).
+  Grey band: within a factor of 2. Typical: antilogarithm of the class-balanced error; sum ratio:
+  predicted over reference total.
+  \textbf{e}, Per-plant error (typical factor, mean over the reference countries) against national
+  error (mean of the JMP error with the region left out and the SDG 6.3.1 error) for every setting:
+  lines join the caps (\calCapLow\,km to no cap) of one pair of scale limits. Diamond: fixed radius;
+  ring: chosen setting; open markers: worse per plant than the fixed radius in at least \calConfidence\,\%
+  of \calBootstrapSamples{} bootstrap samples.}
+  \label{fig:ed-catchments}
+\end{figure}

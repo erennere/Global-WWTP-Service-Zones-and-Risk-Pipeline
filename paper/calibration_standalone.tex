@@ -1,0 +1,22 @@
+% The calibration Methods on their own, for reading and checking: latexmk -pdf calibration_standalone.tex
+% Figures and numbers: data/figures/calibration (snakemake calibration_figures).
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\graphicspath{{../data/figures/calibration/}}
+\makeatletter
+\def\input@path{{../data/figures/calibration/}}
+\makeatother
+\renewcommand{\figurename}{Extended Data Fig.}
+\begin{document}
+\section*{Methods}
+\input{methods_calibration}
+\bibliographystyle{unsrt}
+\bibliography{methods_calibration}
+\end{document}

@@ -1218,6 +1218,38 @@ figure1:
     # HydroBASINS v1c: hybas_lev03/04_v1c.gpkg, hybas_lev08/09_v1c_attributes.csv
     hydrobasins_dir: '{data_dir}/figures/fig1/hydrobasins'
 
+# Extended Data figures of the calibration and the numbers its Methods text quotes
+# (wwtp/figures_scripts/calibration_figures.py, rule calibration_figures; paper/methods_calibration.tex).
+# Reads the tables of connection_radius.paths.output_dir. Nature style: 180 mm wide, 5-7 pt text.
+calibration_figures:
+  size_measure: 'reported'          # the size measure of the paper's service areas
+  example_countries: ['IN', 'BR', 'CN', 'US', 'DE']   # served-share curves, one colour each (max 5)
+  label_countries: ['IN', 'CN', 'BR', 'MX', 'US', 'DE', 'GB', 'NG', 'ID', 'EG']
+  # per-catchment panels (max 4): plant reference of connection_radius -> [country, dataset] (title lines)
+  catchment_panels:
+    us_sewersheds: ['United States', 'EPA sewersheds']
+    gb_catchments: ['Great Britain', 'sewage catchments']
+    nl_cbs: ['Netherlands', 'CBS inhabitants per plant']
+    ie_agglomerations: ['Ireland', 'EPA agglomerations']
+  label_caps_km: [3.0, 5.0, 7.0, 40.0]   # caps written next to the chosen scale's line; the largest reads "no cap"
+  width_mm: 180
+  heights_mm: {plant_size: 64, service_radius: 122, catchments: 112}
+  font_family: ['Arial', 'Helvetica', 'Liberation Sans', 'DejaVu Sans']
+  font_size_pt: 6
+  dpi: 600
+  sequential_cmap: 'Blues'
+  colors:
+    ink: '#1a1a1a'
+    secondary: '#5a5a5a'
+    muted: '#9a9a9a'
+    grid_ink: '#c8c8c8'
+    band: '#eeeeee'
+    surface: '#ffffff'
+    series: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4']
+  paths:
+    data_dir: null
+    output_dir: '{data_dir}/figures/calibration'
+
 # Snakemake (workflow/Snakefile): where it keeps its logs and stamp files, how
 # many jobs split download_bing_annotate, and the SLURM resources of every
 # stage's jobs (threads = CPUs per task, mem_mb, runtime in minutes). Every

@@ -33,6 +33,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 (US, GB, NL, IE, ES) and census districts (MX), and the choice
                                 (data/calibration/connection_radius/calibration_results.zip)
         connection_radius             only the calibration tables (wwtp/calibration/connection_radius.py)
+    snakemake calibration_figures   Extended Data figures and LaTeX numbers of the calibration from its tables
+                                (data/figures/calibration; paper/methods_calibration.tex)
 
 One-time stages (combine_locations, the four annotation rules, download_pop) are left out
 of every run: their outputs are taken as they are. Name them to include them in one run,
@@ -90,6 +92,7 @@ TARGETS = {
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
     "calibration": "before any sweep: national_data + size and radius calibration tables, in one zip to send back",
     "connection_radius": "only the calibration tables: plant sizes by country, national size scale, radius rule",
+    "calibration_figures": "Extended Data figures and Methods numbers of the calibration, from its tables",
 }
 
 
@@ -591,6 +594,21 @@ rule connection_radius_plant_check:
 
 rule connection_radius:
     input: rules.connection_radius_plant_check.output
+
+
+CF = wf.config("calibration_figures")
+rule calibration_figures:
+    """Extended Data figures of the calibration and the numbers of its Methods text (light: local)."""
+    input: rules.connection_radius_curves.output, rules.connection_radius_calibrate.output, rules.connection_radius_plant_check.output
+    output: [f"{CF['paths']['output_dir']}/{name}.{ext}" for name in ("ed_plant_size", "ed_service_radius", "ed_catchments") for ext in ("pdf", "png")], f"{CF['paths']['output_dir']}/calibration_numbers.tex"
+    params:
+        module="figures_scripts.calibration_figures",
+        cli=[],
+        figures=wf.settings_params("calibration_figures", *CF)["settings"],
+        sizes=wf.settings_params("create_voronoi", "footprint_to_people", "radius_calibration")["settings"],
+    log: wf.log("calibration_figures")
+    localrule: True
+    shell: STAGE
 
 
 rule calibration_results:
