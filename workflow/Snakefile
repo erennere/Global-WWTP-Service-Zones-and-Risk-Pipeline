@@ -28,7 +28,9 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
     snakemake calibration       everything the calibration needs from the cluster, before any sweep:
                                 national_data + the plant sizes by country, the national size scale and
-                                the radius rule from national connection statistics
+                                the radius rule from national connection statistics (JMP; SDG 6.3.1,
+                                Eurostat, OECD as checks), every configuration on the real catchments
+                                (US, GB, NL, IE, ES) and census districts (MX), and the choice
                                 (data/calibration/connection_radius/calibration_results.zip)
         connection_radius             only the calibration tables (wwtp/calibration/connection_radius.py)
 
@@ -296,7 +298,7 @@ rule national_data_fetch:
     """
     localrule: True
     output: touch(wf.stamp("national_data_fetch"))
-    params: module="pop_validation_scripts.national_data", cli=["fetch"]
+    params: module="pop_validation_scripts.national_data", cli=["fetch"], **wf.settings_params("national_data", "sources", "request_headers")
     log: wf.log("national_data_fetch")
     shell: STAGE
 
@@ -304,8 +306,8 @@ rule national_data_fetch:
 rule national_registers:
     """The downloaded files described, and the register plants our list lacks, in one file."""
     input: ANNOTATED, wf.stamp("national_data_fetch")
-    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "register_plants.csv", "registers_summary.csv", "peek.md")]
-    params: module="pop_validation_scripts.national_data", cli=["registers"], **wf.settings_params("national_data", "registers", "coordinate_names", "match_distance_m")
+    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "register_plants.csv", "uncovered_plants.gpkg", "uncovered_plants.csv", "registers_summary.csv", "peek.md")]
+    params: module="pop_validation_scripts.national_data", cli=["registers"], **wf.settings_params("national_data", "registers", "coordinate_names", "match_distance_m", "uncovered")
     log: wf.log("national_registers")
     threads: threads("national_registers")
     resources: **res("national_registers")
@@ -550,7 +552,11 @@ rule connection_radius_references:
 CURVE_SETTINGS = ("year", "aggregate_cells", "candidate_plants", "size_measures", "radius_exponents", "radius_grid",
                   "max_buffer", "footprint_to_people", "reported_size_columns", "reported_size_skip")
 CALIBRATE_SETTINGS = ("footprint_to_people", "size_country_min_plants", "fit_reference", "reference_series",
-                      "reference_max_year_gap", "calibration_caps_km", "calibration_size_scale_limits")
+                      "reference_max_year_gap", "calibration_caps_km", "calibration_size_scale_limits",
+                      "check_references", "sdg631")
+PLANT_CHECK_SETTINGS = ("year", "aggregate_cells", "candidate_plants", "plant_reference_kinds",
+                        "plant_reference_polygons", "polygon_match_distance_m", "district_references",
+                        "choice_national")
 rule connection_radius_curves:
     """Served share against the radius scale for every country with plants and a WorldPop raster."""
     input: ANNOTATED, wf.stamp("download_pop")
@@ -564,7 +570,7 @@ rule connection_radius_curves:
 
 rule connection_radius_calibrate:
     """Country parts of the plant size, the national size scale and the radius rule (light: local)."""
-    input: rules.connection_radius_references.output, rules.connection_radius_curves.output
+    input: rules.connection_radius_references.output, rules.connection_radius_curves.output, wf.stamp("national_data_fetch")
     output: [f"{CR}/{name}" for name in ("reference_table.csv", "plant_size_countries.csv", "calibration_by_cap.csv", "calibration_countries.csv")]
     params: module="calibration.connection_radius", cli=["calibrate"], **wf.settings_params("connection_radius", *CALIBRATE_SETTINGS)
     log: wf.log("connection_radius_calibrate")
@@ -572,13 +578,24 @@ rule connection_radius_calibrate:
     shell: STAGE
 
 
+rule connection_radius_plant_check:
+    """Every calibrate configuration on the real catchments (US, GB, NL, IE, ES, ...) and census districts; the choice."""
+    input: rules.connection_radius_calibrate.output, wf.stamp("national_data_fetch"), wf.stamp("download_pop")
+    output: [f"{CR}/{name}" for name in ("plant_references.csv", "plant_check_status.csv", "plant_check.csv", "district_check.csv", "plant_choice.csv")]
+    params: module="calibration.plant_check", cli=["run"], **wf.settings_params("connection_radius", *PLANT_CHECK_SETTINGS)
+    log: wf.log("connection_radius_plant_check")
+    threads: threads("connection_radius_plant_check")
+    resources: **res("connection_radius_plant_check")
+    shell: STAGE
+
+
 rule connection_radius:
-    input: rules.connection_radius_calibrate.output
+    input: rules.connection_radius_plant_check.output
 
 
 rule calibration_results:
     """The calibration tables and the national_data results in one file to send back."""
-    input: rules.connection_radius_calibrate.output, rules.national_registers.output
+    input: rules.connection_radius_plant_check.output, rules.national_registers.output
     output: f"{CR}/calibration_results.zip"
     params: module="calibration.connection_radius", cli=["pack"]
     log: wf.log("calibration_results")

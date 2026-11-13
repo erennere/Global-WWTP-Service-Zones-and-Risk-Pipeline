@@ -82,6 +82,7 @@ CALIBRATION = {
     "connection_radius_references",
     "connection_radius_curves",
     "connection_radius_calibrate",
+    "connection_radius_plant_check",
     "calibration_results",
 }
 
@@ -112,8 +113,8 @@ def test_snakemake_alone_runs_nothing(work):
         ),
         (
             "connection_radius",
-            CALIBRATION - {"national_data_fetch", "national_registers", "calibration_results"},
-            SWEEP,
+            CALIBRATION - {"national_registers", "calibration_results"},  # the fetch: SDG 6.3.1, polygons
+            SWEEP - {"national_data_fetch"},
         ),
     ],
 )

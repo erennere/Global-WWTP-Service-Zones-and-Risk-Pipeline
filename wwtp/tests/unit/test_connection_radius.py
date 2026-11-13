@@ -241,13 +241,26 @@ def test_references_are_read_per_source_in_the_year_nearest_the_target(tmp_path)
             "OBS_VALUE": [99.6, 1.0, 32.5],
         }
     ).to_csv(folder / "oecd.csv", index=False)
+    sdg = {
+        "sheet": "Countries",
+        "iso3": "Country ID (iso3)",
+        "total_volume": "Volume, Total",
+        "sewer_volume": "Volume, Sewers",
+        "sewer_delivered_percent": "Delivered, Sewers",
+        "year": 2022,
+    }
+    pd.DataFrame(  # India: 40 % of household wastewater in sewers, a quarter of it delivered to treatment
+        {"Country ID (iso3)": ["IND", "NLD", "AND"], "Volume, Total": [100.0, 50.0, 0.0],
+         "Volume, Sewers": [40.0, 49.0, 0.0], "Delivered, Sewers": [25.0, 100.0, 100.0]}
+    ).to_excel(tmp_path / "sdg.xlsx", sheet_name="Countries", index=False)  # fmt: skip
     cfg = {
         "year": 2022,
         "reference_files": {"jmp": "jmp.xlsx", "eurostat": "eurostat.tsv", "oecd": "oecd.csv"},
         "reference_series": {"jmp": "san_sew_sm_t", "eurostat": "URB_OTH_CS", "oecd": "PUBTOTTR"},
         "eurostat_geo_aliases": {"EL": "GR", "UK": "GB"},
         "reference_max_year_gap": 5,
-        "paths": {"output_dir": str(tmp_path)},
+        "sdg631": sdg,
+        "paths": {"output_dir": str(tmp_path), "sdg631": str(tmp_path / "sdg.xlsx")},
     }
     refs = cr.read_references(cfg).set_index("iso3")
     refs = refs[refs[["jmp_share", "eurostat_share", "oecd_share"]].notna().any(axis=1)]  # ARG keeps only its region
@@ -257,6 +270,10 @@ def test_references_are_read_per_source_in_the_year_nearest_the_target(tmp_path)
     assert refs.loc["NLD", "eurostat_share"] == pytest.approx(0.995)  # flag dropped, PC and URB_OTH_CS only
     assert refs.loc["GRC", "eurostat_share"] == pytest.approx(0.94) and refs.loc["GRC", "eurostat_year"] == 2023
     assert refs.loc["NLD", "oecd_share"] == pytest.approx(0.996) and np.isnan(refs.loc["IND", "oecd_share"])
+    assert refs.loc["IND", "sdg631_share"] == pytest.approx(0.1) and refs.loc["NLD", "sdg631_share"] == pytest.approx(
+        0.98
+    )
+    assert "AND" not in refs.index or np.isnan(refs.loc["AND", "sdg631_share"])  # no volume: no share
 
 
 def _capped_world(a, b, cap, size_error, exponent=0.3, n=40, seed=5):
@@ -273,7 +290,8 @@ def _capped_world(a, b, cap, size_error, exponent=0.3, n=40, seed=5):
         countries.append(
             {"iso2": iso2, "iso3": iso3, "status": "ok", "total_people": 1e6, "sum_size_reported": share * 1e6 * error}
         )
-        refs.append({"iso3": iso3, "jmp_share": share, "region_sdg": f"region {k % 4}"})
+        # a second, not fitted reference: 5 pp above JMP in every country
+        refs.append({"iso3": iso3, "jmp_share": share, "sdg631_share": share + 0.05, "region_sdg": f"region {k % 4}"})
         for r in radii:
             curves.append(
                 {
@@ -286,6 +304,7 @@ def _capped_world(a, b, cap, size_error, exponent=0.3, n=40, seed=5):
             )
     cfg = {
         "fit_reference": "jmp",
+        "check_references": ["sdg631"],
         "calibration_caps_km": [5.0, 40.0],
         "calibration_size_scale_limits": [{"min": 1.0, "max": 1.0}, {"min": 0.1, "max": 10.0}],
         "radius_grid": {"start": 0.5, "stop": 40.0, "count": 60},
@@ -304,7 +323,11 @@ def test_the_capped_rule_is_recovered_and_tested_by_leaving_regions_out():
             t.loc[5.0, "mean_abs_error_pp"] < 0.5 * t.loc[0.0, "mean_abs_error_pp"]
         )  # one radius for all misses the spread
         assert t.loc[5.0, "mean_abs_error_pp"] < 3
+        # the same served shares against the reference 5 pp higher: about 5 pp too low
+        assert t.loc[5.0, "sdg631_bias_pp"] == pytest.approx(t.loc[5.0, "bias_pp"] - 5.0)
+        assert t.loc[5.0, "sdg631_n"] == 40
     assert len(detail) == 2 * 2 * 40 and detail["r10k"].max() <= 40.0
+    assert (detail["sdg631"] - detail["reference"]).to_numpy() == pytest.approx(0.05)
     assert detail["size_scale"].to_numpy() == pytest.approx(1.0)
 
 

@@ -14,6 +14,9 @@ Commands (``python -m wwtp.pop_validation_scripts.national_data <command>``)::
                attributes (JSON), its distance to the nearest plant of ours and that plant's coordinates.
                new_plants.gpkg / new_plants.csv: the register plants farther than ``match_distance_m``
                from every plant of ours - one file for all countries.
+               uncovered_plants.gpkg / .csv: the countries our list does not cover (``uncovered``):
+               their register plants and HydroWASTE records in one file, without size; not merged
+               into our plant list.
                registers_summary.csv, and results.zip with the small files to send back.
 
 File kinds: ``http`` (one GET), ``ogcapi`` (OGC API Features: pages of ``page_size`` followed through the
@@ -40,7 +43,7 @@ from scipy.spatial import cKDTree
 
 from ..geo_utils import read_located_plants
 from ..starter import load_config
-from ..utils import atomic_output, configure_logging, requests_session_with_retries
+from ..utils import atomic_output, configure_logging, get_iso_codes, requests_session_with_retries
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +129,7 @@ def fetch_all(cfg):
         with open(manifest_path, encoding="utf-8") as fh:
             manifest = json.load(fh)
     session = requests_session_with_retries()
+    session.headers.update(cfg["request_headers"])  # some portals refuse the default python-requests agent
     timeout, page_size = cfg["request_timeout_seconds"], int(cfg["page_size"])
     missing = []
     for source, entry in cfg["sources"].items():
@@ -322,8 +326,80 @@ def read_register(cfg, register):
     return pd.concat(rows, ignore_index=True)
 
 
+def build_uncovered(cfg, registers):
+    """Plants of the countries our list does not cover: register plants and HydroWASTE records, one file.
+
+    ``uncovered.countries`` (ISO 3166 alpha-2): every register plant of these countries, and every
+    HydroWASTE record (``paths.hydrowaste``, columns ``uncovered.hydrowaste_columns``) of them. A
+    HydroWASTE record within ``match_distance_m`` of a register plant of the same country is the same
+    plant (one row, both sources). No size: the original attributes are kept as JSON, unused.
+    """
+    spec, limit = cfg["uncovered"], float(cfg["match_distance_m"])
+    _, alpha_2_to_3, _, _ = get_iso_codes()
+    col = spec["hydrowaste_columns"]
+    hw = pd.read_csv(cfg["paths"]["hydrowaste"], low_memory=False)
+    rows = []
+    for iso2 in spec["countries"]:
+        reg = registers[registers["iso2"] == iso2].reset_index(drop=True)
+        h = hw[hw[col["country"]] == alpha_2_to_3[iso2]].reset_index(drop=True)
+        h = h[
+            pd.to_numeric(h[col["lon"]], errors="coerce").notna()
+            & pd.to_numeric(h[col["lat"]], errors="coerce").notna()
+        ]
+        h = h.reset_index(drop=True)
+        hw_of = np.full(len(reg), -1)
+        taken = np.zeros(len(h), dtype=bool)
+        if len(reg) and len(h):
+            d, i = cKDTree(sphere_xyz(h[col["lon"]].astype(float), h[col["lat"]].astype(float))).query(
+                sphere_xyz(reg["lon"], reg["lat"])
+            )
+            for r in np.argsort(d):  # nearest pairs first, one to one
+                if d[r] <= limit and not taken[i[r]]:
+                    hw_of[r], taken[i[r]] = i[r], True
+        hw_attrs = [json.dumps(rec, ensure_ascii=False, default=str) for rec in h.astype(str).to_dict("records")]
+        for r, plant in reg.iterrows():
+            j = hw_of[r]
+            rows.append(
+                {
+                    "iso2": iso2,
+                    "sources": "register+hydrowaste" if j >= 0 else "register",
+                    "register": plant["register"],
+                    "lon": plant["lon"],
+                    "lat": plant["lat"],
+                    "register_attrs": plant["attrs"],
+                    "hydrowaste_id": h[col["id"]].iloc[j] if j >= 0 else None,
+                    "hydrowaste_name": h[col["name"]].iloc[j] if j >= 0 else None,
+                    "hydrowaste_attrs": hw_attrs[j] if j >= 0 else None,
+                }
+            )
+        for j in np.flatnonzero(~taken):
+            rows.append(
+                {
+                    "iso2": iso2,
+                    "sources": "hydrowaste",
+                    "register": None,
+                    "lon": float(h[col["lon"]].iloc[j]),
+                    "lat": float(h[col["lat"]].iloc[j]),
+                    "register_attrs": None,
+                    "hydrowaste_id": h[col["id"]].iloc[j],
+                    "hydrowaste_name": h[col["name"]].iloc[j],
+                    "hydrowaste_attrs": hw_attrs[j],
+                }
+            )
+        logger.info(
+            "uncovered %s: %d register plants, %d HydroWASTE records, %d matched",
+            iso2,
+            len(reg),
+            len(h),
+            int(taken.sum()),
+        )
+    columns = ["iso2", "sources", "register", "lon", "lat", "register_attrs", "hydrowaste_id", "hydrowaste_name"]
+    out = pd.DataFrame(rows, columns=columns + ["hydrowaste_attrs"])
+    return gpd.GeoDataFrame(out, geometry=gpd.points_from_xy(out["lon"], out["lat"]), crs=4326)
+
+
 def build_registers(cfg):
-    """peek.md, register_plants.gpkg / .csv, new_plants.gpkg / .csv, registers_summary.csv, results.zip."""
+    """peek.md, register_plants, new_plants, uncovered_plants (.gpkg / .csv), registers_summary.csv, results.zip."""
     out = cfg["paths"]["output_dir"]
     os.makedirs(out, exist_ok=True)
     ours = read_located_plants(cfg["paths"]["annotated_all_filepath"]).to_crs(4326)
@@ -363,13 +439,19 @@ def build_registers(cfg):
         else gpd.GeoDataFrame(columns=columns, geometry="geometry", crs=4326)
     )
     new = table[table["new"].astype(bool)]
+    uncovered = build_uncovered(cfg, table)
     files = {}
-    for name, frame in (("register_plants.gpkg", table), ("new_plants.gpkg", new)):
+    for name, frame in (
+        ("register_plants.gpkg", table),
+        ("new_plants.gpkg", new),
+        ("uncovered_plants.gpkg", uncovered),
+    ):
         with atomic_output(os.path.join(out, name)) as tmp:
             frame.to_file(tmp, driver="GPKG")
     for name, text in (
         ("new_plants.csv", pd.DataFrame(new.drop(columns="geometry")).to_csv(index=False)),
         ("register_plants.csv", pd.DataFrame(table.drop(columns="geometry")).to_csv(index=False)),
+        ("uncovered_plants.csv", pd.DataFrame(uncovered.drop(columns="geometry")).to_csv(index=False)),
         ("registers_summary.csv", summary.to_csv(index=False)),
         ("peek.md", peek_all(cfg)),
     ):

@@ -970,6 +970,8 @@ sweep_validation:
 national_data:
   version: null
   request_timeout_seconds: 600
+  # Sent with every download: some portals (Brazil's ANA) refuse the default python-requests agent.
+  request_headers: {User-Agent: 'Mozilla/5.0 (compatible; wwtp-validation/1.0)'}
   page_size: 1000
   peek_rows: 3
   # A register plant farther than this from every plant of ours counts as new.
@@ -1004,11 +1006,6 @@ national_data:
       peek: false
       files:
         eurostat_env_ww_con.tsv: {kind: http, url: 'https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/env_ww_con?format=TSV'}
-    eu_eurostat_nuts2:   # the same by NUTS 2 region
-      required: false
-      peek: true
-      files:
-        eurostat_env_wwcon_r2.tsv: {kind: http, url: 'https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/env_wwcon_r2?format=TSV'}
     oecd_water_treat:
       required: true
       peek: false
@@ -1075,10 +1072,17 @@ national_data:
     can_wser: {source: 'can_eccc_wser', file: 'Resaeu-Wser-identification.csv', iso2: 'CA', year: 2025, encoding: 'cp1252'}
     aus_ga: {source: 'aus_ga_wwtf', file: 'wastewater_treatment_facilities.geojson', iso2: 'AU', year: 2012, encoding: 'utf-8'}
     jpn_p22: {source: 'jpn_mlit_p22', file: 'P22-12_GML.zip', iso2: 'JP', year: 2012, encoding: 'utf-8'}
+  # Countries our plant list does not cover (no HeiGIT detections there): their register plants and
+  # HydroWASTE records in one file (uncovered_plants.gpkg / .csv), without size, not merged into the
+  # plant list. A HydroWASTE record within match_distance_m of a register plant is the same plant.
+  uncovered:
+    countries: ['AU', 'JP', 'NZ']
+    hydrowaste_columns: {id: 'WASTE_ID', name: 'WWTP_NAME', country: 'CNTRY_ISO', lon: 'LON_WWTP', lat: 'LAT_WWTP'}
   paths:
     data_dir: null
     annotated_all_filepath: null
     validation_dir: '{data_dir}/validation_data'
+    hydrowaste: null
     output_dir: '{data_dir}/validation_data/national_data'
 
 # Calibration on national statistics (wwtp/calibration/connection_radius.py; Snakemake target
@@ -1139,12 +1143,52 @@ connection_radius:
   # Fewest plants a country value of the plant size rests on (footprint_to_people.country_offsets,
   # unsized_people_by_country).
   size_country_min_plants: 30
+  # calibrate: the same served shares (leaving one region out) also against these national references,
+  # which are not fitted. SDG 6.3.1 (WHO / UN-Habitat 2025 summary, downloaded by national_data):
+  # household wastewater volume in sewers / total household volume x share of the sewer flow
+  # delivered to treatment = share of people whose sewage reaches treatment through a sewer.
+  check_references: ['sdg631', 'eurostat', 'oecd']
+  sdg631:
+    sheet: 'Countries'
+    iso3: 'Country ID (iso3)'
+    total_volume: 'Volume of wastewater generated, Household, Total'
+    sewer_volume: 'Volume of wastewater generated, Household, Sewers'
+    sewer_delivered_percent: 'Proportion of wastewater flow delivered to treatment, Household, Sewers'
+    year: 2022
+  # plant_check (wwtp/calibration/plant_check.py): every calibrate configuration where the real
+  # catchments are known. Built-in references (paths of the sweep_validation section) and polygon
+  # files of real catchments downloaded by national_data (folder, file, country). A reference whose
+  # file is missing is listed in plant_check_status.csv and left out.
+  plant_reference_kinds: ['us_sewersheds', 'gb_catchments', 'nl_cbs']
+  plant_reference_polygons:
+    nl_units: {iso2: 'NL', source: 'nld_zuiveringseenheid', file: 'zuiveringseenheid.geojson'}
+    ie_agglomerations: {iso2: 'IE', source: 'irl_epa_agglomerations', file: 'uww_agglomeration_boundaries.geojson'}
+    es_agglomerations: {iso2: 'ES', source: 'esp_miteco_agglomerations', file: 'aauuq2023.zip'}
+  # Our plant to a polygon of plant_reference_polygons (outfall plants often lie just outside).
+  polygon_match_distance_m: 1000
+  # Census localities: served share by municipality against the share of dwellings with drainage
+  # (public sewer or septic tank, so an upper bound). Reported, not used in the choice.
+  district_references:
+    mx_iter_2020:
+      iso2: 'MX'
+      source: 'mex_inegi_iter_2020'
+      file: 'iter_00_cpv2020_csv.zip'
+      member: 'iter_00_cpv2020/conjunto_de_datos/conjunto_de_datos_iter_00CSV20.csv'
+      columns: {state: 'ENTIDAD', municipality: 'MUN', locality: 'LOC', lon: 'LONGITUD', lat: 'LATITUD', people: 'POBTOT', dwellings: 'VIVPAR_HAB', drainage: 'VPH_DRENAJ'}
+      aggregate_localities: ['0000', '9998', '9999']   # totals and grouped small localities
+      total_municipality: '000'
+  # The choice: national error = mean of these (jmp: leaving one SDG region out; the others: the same
+  # served shares against that reference), among the configurations whose plant-level error is not
+  # above the fixed radius's.
+  choice_national: ['jmp', 'sdg631']
   paths:
     data_dir: null
     annotated_all_filepath: null
     overture: null
     overture_s3_url: null
     pop_tif_dir: null
+    validation_dir: null
+    sdg631: '{data_dir}/validation_data/sdg_631/who_2025_sdg631_domestic_wastewater_summary.xlsx'
     output_dir: '{data_dir}/calibration/connection_radius'
 
 # Figure 1 (figures/fig1/): HeiGIT vs reference plants per country / HydroBASINS
@@ -1210,6 +1254,7 @@ workflow:
     sweep_validation_references: {threads: 16, mem_mb: 65536, runtime: 720}
     sweep_validation: {threads: 16, mem_mb: 131072, runtime: 1440}
     connection_radius_curves: {threads: 16, mem_mb: 196608, runtime: 2880}
+    connection_radius_plant_check: {threads: 16, mem_mb: 196608, runtime: 1440}
   paths:
     data_dir: null
     log_dir: '{data_dir}/workflow/logs'

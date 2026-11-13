@@ -7,8 +7,8 @@ tests one global formula ``r10k = exp(a + b * logit(x))``, with x the national c
 own reported coverage), fitted on some countries and checked on the others.
 
 Subcommands (``python -m wwtp.calibration.connection_radius <command>``; settings in config.yaml,
-section ``connection_radius``; Snakemake target ``calibration`` runs references, curves, calibrate and
-pack)::
+section ``connection_radius``; Snakemake target ``calibration`` runs references, curves, calibrate,
+plant_check and pack)::
 
     references  the national connection statistics (reference_urls), saved unparsed to
                 <output_dir>/references/ with manifest.json (URL, time, bytes, sha256)
@@ -28,8 +28,9 @@ pack)::
                   leaving one SDG region out -> calibration_by_cap.csv, calibration_countries.csv
                 A factor k on every size of a country is a factor k ** e on its radii, so the curves
                 of ``curves`` serve every k.
-    pack        the tables above and the results of ``national_data`` in one file
-                -> calibration_results.zip
+    pack        the tables above, those of ``wwtp.calibration.plant_check`` (every configuration on the
+                real catchments and census districts, and the choice) and the results of
+                ``national_data`` in one file -> calibration_results.zip
 
 Stand-in for the service areas, as in ``wwtp.calibration.service_radius`` (approach 1 without basins):
 each 1 km population cell goes to the plant of its country with the smallest distance / sqrt(people)
@@ -140,7 +141,7 @@ def aggregate_cells(path, factor):
 
 
 def load_plants(cfg):
-    """Our plants (with a location) with their country, lon/lat, footprint and sizes in people per size measure.
+    """Our plants (with a location): country, lon/lat, UWWTD code, CWNS ID, footprint and sizes per size measure.
 
     The country is joined from the same boundary layer, the footprint computed and the sizes taken the
     same way as in create_voronoi, but without the national size scale: ``size_<measure>`` are the sizes
@@ -159,6 +160,10 @@ def load_plants(cfg):
     )
     point = gdf.geometry.representative_point()
     out = pd.DataFrame({"iso2": gdf[country].to_numpy(), "lon": point.x.to_numpy(), "lat": point.y.to_numpy()})
+    # identifiers the plant references link by (wwtp.calibration.plant_check): UWWTD code, CWNS ID
+    out["uwwCode"] = gdf["uwwCode"].to_numpy()
+    cwns = gdf["CWNS_2022_ID"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(11)
+    out["cwns"] = cwns.where(gdf["CWNS_2022_ID"].notna()).to_numpy()
     out["footprint_m2"], out["sized"] = detected_footprint(gdf)
     out["reported"] = reported_size_people(gdf, cfg["reported_size_columns"], cfg["reported_size_skip"])
     for measure in cfg["size_measures"]:
@@ -398,6 +403,9 @@ def read_references(cfg):
     the one nearest ``year``, at most ``reference_max_year_gap`` years away. JMP: sheet 'san', column ``reference_series['jmp']`` (percent). Eurostat
     (SDMX TSV, 'freq,ww_tp,unit,geo'): ``ww_tp`` = the series, unit PC; flags after the value are dropped;
     ``eurostat_geo_aliases`` maps its non-ISO codes. OECD (CSV with labels): MEASURE = the series.
+    SDG 6.3.1 (WHO / UN-Habitat 2025 summary workbook, ``paths.sdg631``, columns ``sdg631``): household
+    wastewater volume in sewers / total household volume x share of the sewer flow delivered to
+    treatment, i.e. the share of people whose sewage reaches treatment through a sewer.
     """
     folder = os.path.join(cfg["paths"]["output_dir"], "references")
     files, series, year = cfg["reference_files"], cfg["reference_series"], int(cfg["year"])
@@ -425,6 +433,13 @@ def read_references(cfg):
         oecd = oecd[oecd["MEASURE"] == series["oecd"]][["REF_AREA", "TIME_PERIOD", "OBS_VALUE"]].dropna()
         oecd = oecd.rename(columns={"REF_AREA": "iso3", "TIME_PERIOD": "year", "OBS_VALUE": "share"})
         tables.append(("oecd", oecd.assign(share=oecd["share"] / 100)))
+    sdg = cfg["sdg631"]
+    book = pd.read_excel(cfg["paths"]["sdg631"], sheet_name=sdg["sheet"])
+    # people whose sewage reaches treatment through a sewer, as a share: the household volume in sewers
+    # over the total household volume, times the share of the sewer flow delivered to treatment
+    share = book[sdg["sewer_volume"]] / book[sdg["total_volume"]] * book[sdg["sewer_delivered_percent"]] / 100
+    sdg_table = pd.DataFrame({"iso3": book[sdg["iso3"]], "year": int(sdg["year"]), "share": share})
+    tables.append(("sdg631", sdg_table[np.isfinite(sdg_table["share"].astype(float))]))
     out = regions if "jmp" in files else None
     for source, table in tables:
         table = _nearest_year(table, "iso3", year, int(cfg["reference_max_year_gap"])).rename(
@@ -561,7 +576,7 @@ def calibrate_by_region(cfg, countries, curves, references):
 
     Returns one row per combination and the per-country table of the fits.
     """
-    source = cfg["fit_reference"]
+    source, checks = cfg["fit_reference"], cfg["check_references"]
     refs = references.dropna(subset=[f"{source}_share", "region_sdg"]).set_index("iso3")
     countries = countries[(countries["status"] == "ok") & countries["iso3"].isin(refs.index)]
     rows, detail = [], []
@@ -584,6 +599,7 @@ def calibrate_by_region(cfg, countries, curves, references):
                     "people": float(info["total_people"].iloc[0]),
                     "sum_size": float(info[f"sum_size_{measure}"].iloc[0]),
                     "reference": target,
+                    **{f"check_{c}": float(refs.loc[info["iso3"].iloc[0], f"{c}_share"]) for c in checks},
                     "radii": radii,
                     "shares": shares,
                     "needed": needed,
@@ -599,15 +615,23 @@ def calibrate_by_region(cfg, countries, curves, references):
         )
         raw_scale = share * people / t["sum_size"].to_numpy()
 
-        def errors(pred, share=share, people=people):
+        def errors(pred, share=share, people=people, t=t):
             err = (pred - share) * 100
-            return {
+            out = {
                 "mean_abs_error_pp": float(np.mean(np.abs(err))),
                 "median_abs_error_pp": float(np.median(np.abs(err))),
                 "people_weighted_abs_error_pp": float(np.sum(np.abs(err) * people) / people.sum()),
                 "bias_pp": float(np.mean(err)),
                 "within_10pp": float(np.mean(np.abs(err) <= 10)),
             }
+            for c in checks:  # the same served shares against references that were not fitted
+                value = t[f"check_{c}"].to_numpy()
+                known = np.isfinite(value)
+                check = (pred[known] - value[known]) * 100
+                out[f"{c}_n"] = int(known.sum())
+                out[f"{c}_mean_abs_error_pp"] = float(np.mean(np.abs(check))) if known.any() else np.nan
+                out[f"{c}_bias_pp"] = float(np.mean(check)) if known.any() else np.nan
+            return out
 
         grid = radius_grid(cfg["radius_grid"])
         for limits in cfg["calibration_size_scale_limits"]:
@@ -654,6 +678,7 @@ def calibrate_by_region(cfg, countries, curves, references):
                             "iso3": t["iso3"],
                             "region": t["region"],
                             "reference": share,
+                            **{c: t[f"check_{c}"] for c in checks},
                             "size_scale_unlimited": raw_scale,
                             "size_scale": scale,
                             "needed_r10k": needed,
@@ -685,6 +710,11 @@ RESULT_FILES = (
     "plant_size_countries.csv",
     "calibration_by_cap.csv",
     "calibration_countries.csv",
+    "plant_references.csv",
+    "plant_check_status.csv",
+    "plant_check.csv",
+    "district_check.csv",
+    "plant_choice.csv",
 )
 
 

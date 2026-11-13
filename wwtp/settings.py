@@ -601,15 +601,32 @@ class CoordinateNames(Strict):
     lat: list[str] = Field(min_length=1)
 
 
+class HydrowasteColumns(Strict):
+    id: str
+    name: str
+    country: str  # ISO 3166 alpha-3
+    lon: str
+    lat: str
+
+
+class Uncovered(Strict):
+    """Countries our plant list does not cover: their register plants and HydroWASTE records in one file."""
+
+    countries: list[Annotated[str, Field(pattern=r"^[A-Z]{2}$")]] = Field(min_length=1)
+    hydrowaste_columns: HydrowasteColumns
+
+
 class NationalData(Section):
     version: Version
     request_timeout_seconds: PositiveInt
+    request_headers: dict[str, str]
     page_size: PositiveInt
     peek_rows: PositiveInt
     match_distance_m: PositiveFloat
     coordinate_names: CoordinateNames
     sources: dict[str, NationalSource] = Field(min_length=1)
     registers: dict[str, NationalRegister]
+    uncovered: Uncovered
     paths: Paths
 
     @model_validator(mode="after")
@@ -635,6 +652,51 @@ class RadiusGrid(Strict):
 
 
 ReferenceSource = Literal["jmp", "eurostat", "oecd"]
+
+
+CheckReference = Literal["sdg631", "eurostat", "oecd"]
+
+
+class Sdg631Columns(Strict):
+    """Columns of the SDG 6.3.1 summary workbook (sheet per country) and the year its values stand for."""
+
+    sheet: str
+    iso3: str
+    total_volume: str
+    sewer_volume: str
+    sewer_delivered_percent: str
+    year: Year
+
+
+class PolygonReference(Strict):
+    """A polygon file of real catchments (downloaded by national_data): source folder, file, country."""
+
+    iso2: str = Field(pattern=r"^[A-Z]{2}$")
+    source: str
+    file: str
+
+
+class LocalityColumns(Strict):
+    state: str
+    municipality: str
+    locality: str
+    lon: str
+    lat: str
+    people: str
+    dwellings: str
+    drainage: str
+
+
+class DistrictReference(Strict):
+    """Census localities with coordinates in a zipped CSV (Mexico's ITER): drainage share by municipality."""
+
+    iso2: str = Field(pattern=r"^[A-Z]{2}$")
+    source: str
+    file: str
+    member: str
+    columns: LocalityColumns
+    aggregate_localities: list[str]
+    total_municipality: str
 
 
 class SizeScaleLimits(Strict):
@@ -672,6 +734,13 @@ class ConnectionRadius(Section):
     calibration_caps_km: list[PositiveFloat] = Field(min_length=1)
     calibration_size_scale_limits: list[SizeScaleLimits] = Field(min_length=1)
     size_country_min_plants: PositiveInt
+    check_references: list[CheckReference]
+    sdg631: Sdg631Columns
+    plant_reference_kinds: list[Literal["us_sewersheds", "gb_catchments", "nl_cbs"]]
+    plant_reference_polygons: dict[str, PolygonReference]
+    polygon_match_distance_m: PositiveFloat
+    district_references: dict[str, DistrictReference]
+    choice_national: list[Literal["jmp", "sdg631", "eurostat", "oecd"]] = Field(min_length=1)
     paths: Paths
 
 
