@@ -1,5 +1,6 @@
 """wwtp.workflow: the variants and file lists the Snakemake workflow is built from."""
 
+import os
 import re
 from pathlib import Path
 
@@ -105,3 +106,32 @@ def test_the_shell_command_snakemake_writes_gives_back_the_variant(variant):
     overrides = starter.parse_config_overrides(argv=["prog", *shlex.split(command)[2:]])
     cfg = starter.load_config(script_name="create_voronoi", **overrides)
     assert wf.Variant.from_section(cfg) == variant
+
+
+def test_durable_tmpdir_replaces_the_login_sessions(monkeypatch, tmp_path):
+    """A nohup run must not keep the session's $TMPDIR, which the cluster removes at logout."""
+    import tempfile
+
+    from wwtp import workflow as wf
+
+    folder = tmp_path / "workflow" / "tmp"
+    monkeypatch.setattr(wf, "config", lambda stage, variant=None: {"paths": {"tmp_dir": str(folder)}})
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(name, "/scratch/session_removed_at_logout")
+    monkeypatch.setattr(tempfile, "tempdir", "/scratch/session_removed_at_logout")  # cached at start
+    assert wf.use_durable_tmpdir() == str(folder)
+    assert folder.is_dir() and tempfile.gettempdir() == str(folder)
+    assert os.environ["TMPDIR"] == os.environ["TMP"] == os.environ["TEMP"] == str(folder)
+
+
+def test_durable_tmpdir_leaves_slurm_jobs_their_own(monkeypatch, tmp_path):
+    import tempfile
+
+    from wwtp import workflow as wf
+
+    monkeypatch.setattr(wf, "config", lambda stage, variant=None: {"paths": {"tmp_dir": str(tmp_path / "t")}})
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "node_local"))
+    assert wf.use_durable_tmpdir() == str(tmp_path / "node_local")
+    assert not (tmp_path / "t").exists()

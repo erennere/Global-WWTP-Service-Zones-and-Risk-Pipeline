@@ -90,6 +90,30 @@ def config(stage, variant=None):
     return starter.load_config(script_name=stage, **(variant.overrides() if variant else {}))
 
 
+def use_durable_tmpdir():
+    """Point the temp folder of this Snakemake process at ``workflow.paths.tmp_dir``; returns the folder used.
+
+    A run started on a login node with ``nohup`` keeps the session's ``$TMPDIR`` (e.g.
+    ``/scratch/<user>_<session>``), which the cluster removes at logout. Every later job of that run
+    then fails: Snakemake creates each job's ``tmpdir`` resource from it (``PermissionError:
+    '/scratch/...'``), and the ILP scheduler writes its problem there (``...-pulp.mps``). Python caches
+    the temp folder at the first call, so the variable alone is not enough: ``tempfile.tempdir`` is set
+    too. Jobs that run inside SLURM (``SLURM_JOB_ID`` set: the remote Snakemake of every cluster job,
+    or a run started in an interactive job) keep the node-local ``$TMPDIR`` SLURM gives them, which
+    lives as long as the job.
+    """
+    import tempfile
+
+    if "SLURM_JOB_ID" in os.environ:
+        return tempfile.gettempdir()
+    folder = os.path.abspath(config("workflow")["paths"]["tmp_dir"])
+    os.makedirs(folder, exist_ok=True)
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        os.environ[name] = folder
+    tempfile.tempdir = folder
+    return folder
+
+
 def default_variant():
     return Variant.from_section(config("create_voronoi"))
 

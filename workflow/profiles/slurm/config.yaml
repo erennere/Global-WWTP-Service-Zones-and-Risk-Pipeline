@@ -3,9 +3,9 @@
 # wwtp/config.yaml, section `workflow.resources`. Add `slurm_account=<account>` to
 # default-resources if the cluster needs one.
 executor: slurm
-# Greedy job selection: the default ILP scheduler writes its problem to $TMPDIR, and the login
-# session's temp folder is removed when the session ends, which stops a nohup run (FileNotFoundError
-# ...-pulp.mps). With a few parallel jobs greedy picks the same jobs.
+# Greedy job selection: with a few parallel jobs it picks the same jobs as the ILP scheduler, without
+# solver files. (The login session's $TMPDIR, removed at logout, is replaced for the whole run by
+# workflow.paths.tmp_dir in the Snakefile, wf.use_durable_tmpdir.)
 scheduler: greedy
 jobs: 100
 latency-wait: 60

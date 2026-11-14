@@ -1317,3 +1317,7 @@ workflow:
     data_dir: null
     log_dir: '{data_dir}/workflow/logs'
     stamp_dir: '{data_dir}/workflow/stamps'
+    # Temp folder of the Snakemake process that drives a run (job tmpdirs, the scheduler): on the
+    # project disk, because a login session's $TMPDIR is removed at logout and breaks nohup runs.
+    # Cluster jobs keep their own node-local $TMPDIR (wf.use_durable_tmpdir).
+    tmp_dir: '{data_dir}/workflow/tmp'

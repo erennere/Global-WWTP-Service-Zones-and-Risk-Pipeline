@@ -49,6 +49,9 @@ import sys
 
 from wwtp import workflow as wf
 
+# Before anything else: a temp folder that outlives the login session (nohup runs; see the function).
+TMP = wf.use_durable_tmpdir()
+
 PY = sys.executable
 DEFAULT = wf.default_variant()
 SWEEP = wf.sweep_variants()

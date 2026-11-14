@@ -146,7 +146,7 @@ Each major processing directory has its own README that explains the role of the
 
 Snakemake runs every stage through its own command line (`python -m wwtp.<stage>`) and knows each stage's input and output files, so it runs only what is missing or out of date, in order, in parallel where it can. From the repository root, in the pipeline's environment (`pip install -e ".[workflow]"`):
 
-A run does only the part it names; `snakemake` alone lists the targets and runs nothing. `--profile workflow/profiles/local` runs on this machine, `--profile workflow/profiles/slurm` as SLURM jobs (one job per stage and shard); `-n` only shows the plan.
+A run does only the part it names; `snakemake` alone lists the targets and runs nothing. A run started with `nohup` on a login node survives logging out: the Snakefile replaces the session's `$TMPDIR` (removed at logout, which used to stop the run with `PermissionError: '/scratch/...'` or a missing `...-pulp.mps`) with `workflow.paths.tmp_dir` on the project disk; cluster jobs keep their own node-local `$TMPDIR`. `--profile workflow/profiles/local` runs on this machine, `--profile workflow/profiles/slurm` as SLURM jobs (one job per stage and shard); `-n` only shows the plan.
 
 ```bash
 snakemake --profile workflow/profiles/slurm service_areas  # configured variant: service areas, population layers, HydroWASTE/UWWTD comparisons
