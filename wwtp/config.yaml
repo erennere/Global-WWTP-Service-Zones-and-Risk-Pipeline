@@ -1286,7 +1286,7 @@ validation_figures:
   # values of other columns a plant must have, the population year.
   register_references:
     hw_reported: {column: 'POP_SERVED', only: {QUAL_POP: [1]}, year: 2024}
-    cwns_2022: {column: 'EPA POP 2022', only: {}, year: 2022}
+    cwns_2022: {column: 'EPA POP 2022', only: {ISO_2: ['US']}, year: 2022}   # 33 plants elsewhere carry US values (merge error)
     uwwtd_load: {column: 'uwwLoadEnteringUWWTP', only: {}, year: 2024}
   reference_labels:
     gb: 'GB catchments'

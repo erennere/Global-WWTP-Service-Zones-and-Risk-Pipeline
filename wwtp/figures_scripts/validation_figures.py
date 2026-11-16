@@ -301,7 +301,7 @@ def map_plants(plants_by_country, world, family, cfg):
         handlelength=1.0,
         columnspacing=0.9,
         title=f"Typical error per plant against {cfg['plant_map_titles'][family]}: half of the plants are closer "
-        "than this factor (labels: factor, number of plants)",
+        "than this factor",
         title_fontsize=cfg["font_size_pt"] - 0.5,
     )
     save(fig, f"map_plants_{family}", cfg)
