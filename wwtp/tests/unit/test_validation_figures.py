@@ -91,7 +91,7 @@ def _layer(path, rng):
                     "POP_SERVED": value if iso2 in ("CN", "BR") else np.nan,
                     "QUAL_POP": (1 if k % 3 else 2) if iso2 in ("CN", "BR") else np.nan,
                     "EPA POP 2022": value if iso2 == "US" else np.nan,
-                    "uwwLoadEnteringUWWTP": value if iso2 in ("GB", "NL") else np.nan,
+                    "uwwLoadEnteringUWWTP": value * 200 if iso2 in ("GB", "NL") else np.nan,  # p.e. > connected
                     "geometry": box(lon, lat, lon + 0.1, lat + 0.1),
                 }
             )
@@ -103,12 +103,58 @@ def test_register_units_take_reported_numbers_from_the_layer(tmp_path):
     rng = np.random.default_rng(2)
     _layer(tmp_path / "layer.gpkg", rng)
     cfg = load_config(script_name="validation_figures")
-    national = pd.DataFrame({"iso2": list(COUNTRIES), "region_sdg": [v[1] for v in COUNTRIES.values()]})
-    units = vf.register_units(cfg["register_references"], str(tmp_path / "layer.gpkg"), "ISO_2", national)
+    national = pd.DataFrame({"reference": "eurostat", "iso2": list(COUNTRIES), "people": 1e7, "ref_share": 0.1,
+                             "region_sdg": [v[1] for v in COUNTRIES.values()]})  # fmt: skip
+    units = vf.register_units(cfg["register_references"], cfg["pe_conversion"], str(tmp_path / "layer.gpkg"),
+                              "ISO_2", national)  # fmt: skip
     counts = units.groupby(["reference", "iso2"]).size().to_dict()
     assert counts[("hw_reported", "CN")] == 20  # QUAL_POP 2 left out (every third plant)
     assert counts[("cwns_2022", "US")] == 30 and counts[("uwwtd_load", "NL")] == 30
     assert units["region_sdg"].notna().all() and (units["pred"] > 0).all()
+    loads = units[units["reference"] == "uwwtd_load"]  # p.e. (UWWTD) in residents, people registers as reported
+    assert np.allclose(loads["ref"] * loads["pe_per_resident"], loads["ref_reported"])
+    people = units[units["reference"] != "uwwtd_load"]
+    assert people["pe_per_resident"].isna().all() and (people["ref"] == people["ref_reported"]).all()
+
+
+def test_loads_in_pe_become_residents():
+    registers = {
+        "load": {"column": "x", "only": {}, "year": 2024, "unit": "pe"},
+        "count": {"column": "y", "only": {}, "year": 2024, "unit": "people"},
+    }
+    units = pd.DataFrame(
+        {
+            "reference": ["load", "load", "load", "load", "load", "count"],
+            "unit": ["a1", "a2", "i1", "p1", "x1", "a3"],
+            "ref": [100.0, 200.0, 50.0, 60.0, 10.0, 100.0],
+            "pred": 1.0,
+            "iso2": ["AT", "AT", "IE", "PT", "XX", "AT"],
+        }
+    )
+    national = pd.DataFrame(
+        {
+            "reference": ["eurostat", "jmp", "eurostat", "jmp", "jmp"],
+            "iso2": ["AT", "AT", "IE", "PT", "XX"],
+            "people": [1000.0, 1000.0, 1000.0, 100.0, 100.0],
+            "ref_share": [0.2, 0.5, 0.1, 0.5, np.nan],
+        }
+    )
+    conversion = {"national_references": ["eurostat", "oecd", "jmp"], "min_pe_per_resident": 0.74}
+    out = vf.pe_to_residents(units, registers, conversion, national).set_index("unit")
+    # AT: 300 p.e. / 200 connected (Eurostat before JMP) = 1.5; PT: 60 / 50 (JMP) = 1.2
+    assert (
+        out.loc["a1", "pe_per_resident"] == pytest.approx(1.5) and out.loc["a1", "pe_per_resident_from"] == "eurostat"
+    )
+    assert out.loc["p1", "pe_per_resident"] == pytest.approx(1.2) and out.loc["p1", "pe_per_resident_from"] == "jmp"
+    # IE (50 / 100 = 0.5: loads missing) and XX (no national number) take AT and PT together: 360 / 250
+    for unit in ("i1", "x1"):
+        assert out.loc[unit, "pe_per_resident"] == pytest.approx(1.44)
+        assert out.loc[unit, "pe_per_resident_from"] == "other countries"
+    assert out.loc["i1", "pe_per_resident_national"] == pytest.approx(0.5)
+    assert out.loc["a2", "ref"] == pytest.approx(200 / 1.5) and out.loc["a2", "ref_reported"] == 200
+    assert out.loc["a3", "ref"] == 100 and np.isnan(out.loc["a3", "pe_per_resident"])
+    with pytest.raises(ValueError, match="no country"):
+        vf.pe_to_residents(units, registers, {**conversion, "min_pe_per_resident": 5.0}, national)
 
 
 def test_tables_maps_and_zip(tmp_path):
@@ -121,7 +167,8 @@ def test_tables_maps_and_zip(tmp_path):
 
     cfg = load_config(script_name="validation_figures")
     _layer(tmp_path / "layer.gpkg", np.random.default_rng(3))
-    registers = vf.register_units(cfg["register_references"], str(tmp_path / "layer.gpkg"), "ISO_2", national)
+    registers = vf.register_units(cfg["register_references"], cfg["pe_conversion"], str(tmp_path / "layer.gpkg"),
+                                  "ISO_2", national)  # fmt: skip
     cfg["paths"]["output_dir"] = str(tmp_path / "out")
     cfg["paths"]["boundaries"] = str(tmp_path / "countries.shp")
     vf.render(cfg, cand, pd.concat([units, registers], ignore_index=True), national, regions)
@@ -147,7 +194,9 @@ def test_tables_maps_and_zip(tmp_path):
     )
     with zipfile.ZipFile(out / "validation_results.zip") as z:
         names = set(z.namelist())
-    assert {"map_plants_reported.pdf", "countries_plants.csv", "summary_national.csv"} <= names
+    assert {"map_plants_reported.pdf", "countries_plants.csv", "summary_national.csv", "pe_per_resident.csv"} <= names
+    pe = pd.read_csv(out / "pe_per_resident.csv", keep_default_na=False, na_values=[""]).set_index("iso2")
+    assert set(pe.index) == {"GB", "NL"} and (pe["pe_per_resident_from"] == "eurostat").all()
 
 
 def test_typical_error_counts_empty_service_areas_as_wrong():

@@ -11,7 +11,9 @@ recommended candidate), ``units.parquet`` (people per reference unit), ``referen
   sweep_validation); ``reported``: plant numbers from national statistics in our plant layer
   (``register_references``: HydroWASTE POP_SERVED reported (QUAL_POP 1), US CWNS 2022, UWWTD load
   entering), one plant per unit. Reported numbers are also inputs of the plant sizes, so that family
-  shows agreement, not an independent test.
+  shows agreement, not an independent test. Numbers in population equivalents (UWWTD loads: 60 g
+  BOD5 a day, residents plus industry, commerce, commuters and tourists) are divided by the country's
+  p.e. per connected resident (``pe_conversion``; ``pe_per_resident.csv``).
 - ``plants_countries.pdf/.png``: the same per country and size class as dots, one panel per family.
 - ``map_national_<reference>.pdf/.png`` for every ``national_references``: our share of people inside
   service areas, the reference's share connected to treatment, their difference, and both per
@@ -19,6 +21,7 @@ recommended candidate), ``units.parquet`` (people per reference unit), ``referen
 - ``regions_countries.pdf/.png``: per SDG region, ours minus each national reference; per SDG region
   and family, the typical error per plant by size class; per country, ours against each reference.
 - CSV tables: ``countries_plants.csv``, ``regions_plants.csv`` (per-plant measures by size class),
+  ``pe_per_resident.csv`` (p.e. per connected resident per country),
   ``countries_national.csv``, ``regions_national.csv``, ``summary_national.csv``, and
   ``plant_units.csv`` (people per reference unit: the input of the plant-level tables, to redraw
   without the parquet file).
@@ -86,8 +89,9 @@ def read_inputs(folder):
     return cand, plant_units(units, refs, matches, plants, national), national, regions
 
 
-def register_units(registers, path, country_col, national):
-    """One unit per plant of the candidate's population layer with a reported number (``registers``)."""
+def register_units(registers, conversion, path, country_col, national):
+    """One unit per plant of the candidate's population layer with a reported number (``registers``),
+    in residents (``pe_to_residents``)."""
     zonal = zonal_columns(path)
     years = {int(r["year"]) for r in registers.values()}
     missing = sorted(years - set(zonal))
@@ -118,7 +122,68 @@ def register_units(registers, path, country_col, national):
         logger.info("%s: %d plants with a reported number", name, int(keep.sum()))
     out = pd.concat(parts, ignore_index=True)
     out["region_sdg"] = out["iso2"].map(region)
+    return pe_to_residents(out, registers, conversion, national)
+
+
+def pe_to_residents(units, registers, conversion, national):
+    """Reported numbers in population equivalents (``unit: pe``) to residents.
+
+    A country's p.e. per connected resident f_c = (sum of its plants' loads) / (its residents connected
+    to treatment: people x share of the first ``conversion.national_references`` with a number). Each
+    load is divided by f_c. A country below ``min_pe_per_resident`` (residents alone make that many
+    p.e.; lower means loads are missing, e.g. a large plant without one) or without a national number
+    takes the ratio of all other countries together. Adds ``ref_reported`` (the number as reported),
+    ``pe_per_resident`` (f used; empty for numbers in people), ``pe_per_resident_national`` (f_c) and
+    ``pe_per_resident_from`` (the national reference or 'other countries')."""
+    out = units.assign(ref_reported=units["ref"], pe_per_resident=np.nan, pe_per_resident_national=np.nan,
+                       pe_per_resident_from=None)  # fmt: skip
+    connected = pd.Series(np.nan, index=pd.Index(national["iso2"].unique(), name="iso2"))
+    source = pd.Series(None, index=connected.index, dtype=object)
+    for ref in reversed(conversion["national_references"]):  # the first reference with a number wins
+        p = national[(national["reference"] == ref) & national["ref_share"].notna()].set_index("iso2")
+        residents = p["people"] * p["ref_share"]
+        connected.loc[residents.index] = residents
+        source.loc[residents.index] = ref
+    for name, r in registers.items():
+        if r["unit"] != "pe":
+            continue
+        rows = out["reference"] == name
+        load = out[rows].groupby("iso2")["ref"].sum()
+        f = load / connected.reindex(load.index)
+        valid = f >= float(conversion["min_pe_per_resident"])
+        if not valid.any():
+            raise ValueError(f"{name}: no country has a national number and at least "
+                             f"{conversion['min_pe_per_resident']} p.e. per connected resident")  # fmt: skip
+        pooled = load[valid].sum() / connected.reindex(load.index)[valid].sum()
+        used = f.where(valid, pooled)
+        origin = source.reindex(load.index).where(valid, "other countries")
+        iso = out.loc[rows, "iso2"]
+        out.loc[rows, "pe_per_resident"] = iso.map(used).to_numpy()
+        out.loc[rows, "pe_per_resident_national"] = iso.map(f).to_numpy()
+        out.loc[rows, "pe_per_resident_from"] = iso.map(origin).to_numpy()
+        out.loc[rows, "ref"] = out.loc[rows, "ref_reported"] / out.loc[rows, "pe_per_resident"]
+        logger.info("%s: p.e. per connected resident %.2f (other countries); %s", name, pooled,
+                    ", ".join(f"{i} {v:.2f}" for i, v in used.sort_values().items()))  # fmt: skip
     return out
+
+
+def pe_table(units, names):
+    """Per register in p.e. and country: plants, load, p.e. per connected resident and where it is from."""
+    pe = units[units["pe_per_resident"].notna()]
+    t = (
+        pe.groupby(["reference", "iso2"])
+        .agg(
+            plants=("unit", "size"),
+            load_pe=("ref_reported", "sum"),
+            residents=("ref", "sum"),
+            pe_per_resident=("pe_per_resident", "first"),
+            pe_per_resident_national=("pe_per_resident_national", "first"),
+            pe_per_resident_from=("pe_per_resident_from", "first"),
+        )  # fmt: skip
+        .reset_index()
+    )
+    t.insert(2, "country", [names.get(i, i) for i in t["iso2"]])
+    return t
 
 
 def plant_units(units, refs, matches, plants, national):
@@ -128,7 +193,8 @@ def plant_units(units, refs, matches, plants, national):
     out = out.fillna({"pred": 0.0}).merge(country[["reference", "unit", "iso2"]], on=["reference", "unit"], how="left")
     region = national.drop_duplicates("iso2").set_index("iso2")["region_sdg"]
     out["region_sdg"] = out["iso2"].map(region)
-    return out
+    return out.assign(ref_reported=out["ref"], pe_per_resident=np.nan, pe_per_resident_national=np.nan,
+                      pe_per_resident_from=None)  # fmt: skip
 
 
 # --------------------------------------------------------------------------- #
@@ -540,6 +606,7 @@ def render(cfg, cand, units, national, regions):
     write_csv(units[units["reference"].isin(used)], "plant_units.csv", cfg)
     write_csv(by_country, "countries_plants.csv", cfg)
     write_csv(by_region, "regions_plants.csv", cfg)
+    write_csv(pe_table(units[units["reference"].isin(used)], names), "pe_per_resident.csv", cfg)
     write_csv(national_wide(national, names), "countries_national.csv", cfg)
     write_csv(regions, "regions_national.csv", cfg)
     write_csv(national_summary(national), "summary_national.csv", cfg)
@@ -566,7 +633,8 @@ def run(cfg):
     sv = load_config(script_name="sweep_validation")
     cand, units, national, regions = read_inputs(sv["paths"]["output_dir"])
     path = candidates().set_index("candidate").loc[cand, "path"]
-    registers = register_units(cfg["register_references"], path, sv["country_output_column"], national)
+    registers = register_units(cfg["register_references"], cfg["pe_conversion"], path, sv["country_output_column"],
+                               national)  # fmt: skip
     render(cfg, cand, pd.concat([units, registers], ignore_index=True), national, regions)
 
 

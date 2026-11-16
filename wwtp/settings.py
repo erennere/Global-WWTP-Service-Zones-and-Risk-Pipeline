@@ -805,11 +805,21 @@ OneTimeStage = Literal[
 
 
 class RegisterReference(Strict):
-    """A plant number from national statistics in the population layer: column, required values, year."""
+    """A plant number from national statistics in the population layer: column, required values, year,
+    unit (people, or population equivalents converted with ``PeConversion``)."""
 
     column: str
     only: dict[str, list[int | float | str]]
     year: Annotated[int, Field(ge=2000, le=2100)]
+    unit: Literal["people", "pe"]
+
+
+class PeConversion(Strict):
+    """Population equivalents to residents: national references giving residents connected to
+    treatment (first with a number), and the fewest p.e. a resident alone makes."""
+
+    national_references: list[Literal["jmp", "jmp_sewer", "eurostat", "oecd"]] = Field(min_length=1)
+    min_pe_per_resident: PositiveFloat
 
 
 class ValidationFigureHeights(Strict):
@@ -829,6 +839,7 @@ class ValidationFigures(Section):
     plant_map_titles: dict[str, str]
     plant_map_short: dict[str, str]
     register_references: dict[str, RegisterReference]
+    pe_conversion: PeConversion
     reference_labels: dict[str, str]
     error_axis_max: Annotated[float, Field(gt=1)]
     max_map_labels: NonNegativeInt

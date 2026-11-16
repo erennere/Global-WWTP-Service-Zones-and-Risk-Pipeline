@@ -1279,15 +1279,25 @@ validation_figures:
     reported: ['hw_reported', 'cwns_2022', 'uwwtd_load']
   plant_map_titles:
     catchments: 'real catchments (independent)'
-    reported: 'reported plant numbers (national statistics; also inputs of the sizes)'
+    reported: 'reported plant numbers (national statistics, UWWTD loads in residents; also inputs of the sizes)'
   plant_map_short: {catchments: 'real catchments', reported: 'reported plant numbers'}
   # Plant numbers from national statistics in the recommended candidate's population layer, each
   # against our people in that plant's service area in `year` (<year>_zonal_sum): the column, the
-  # values of other columns a plant must have, the population year.
+  # values of other columns a plant must have, the population year, the unit ('people', or 'pe':
+  # population equivalents, converted to residents with pe_conversion).
   register_references:
-    hw_reported: {column: 'POP_SERVED', only: {QUAL_POP: [1]}, year: 2024}
-    cwns_2022: {column: 'EPA POP 2022', only: {ISO_2: ['US']}, year: 2022}   # 33 plants elsewhere carry US values (merge error)
-    uwwtd_load: {column: 'uwwLoadEnteringUWWTP', only: {}, year: 2024}
+    hw_reported: {column: 'POP_SERVED', only: {QUAL_POP: [1]}, year: 2024, unit: 'people'}
+    cwns_2022: {column: 'EPA POP 2022', only: {ISO_2: ['US']}, year: 2022, unit: 'people'}   # 33 plants elsewhere carry US values (merge error)
+    uwwtd_load: {column: 'uwwLoadEnteringUWWTP', only: {}, year: 2024, unit: 'pe'}
+  # Population equivalents (1 p.e. = 60 g BOD5 a day) count residents plus industry, commerce,
+  # commuters and tourists, and a resident makes less than 1 p.e. (about 45 g BOD5 a day). A country's
+  # p.e. per connected resident = its plants' total load / its residents connected to treatment (people
+  # x share of the first of national_references with a number); each load is divided by it. A country
+  # below min_pe_per_resident (what residents alone make: 44.6 / 60 g) misses loads (e.g. a large plant
+  # without one) and, like a country without a national number, takes the ratio of all others together.
+  pe_conversion:
+    national_references: ['eurostat', 'oecd', 'jmp']
+    min_pe_per_resident: 0.74
   reference_labels:
     gb: 'GB catchments'
     nl: 'NL CBS'
@@ -1296,7 +1306,7 @@ validation_figures:
     uwwtd: 'UWWTD capacity'
     hw_reported: 'HydroWASTE reported'
     cwns_2022: 'US CWNS 2022'
-    uwwtd_load: 'UWWTD load (p.e.)'
+    uwwtd_load: 'UWWTD load'
     jmp: 'JMP'
     jmp_sewer: 'JMP (any sewer)'
     eurostat: 'Eurostat'
