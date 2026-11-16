@@ -804,6 +804,73 @@ OneTimeStage = Literal[
 ]
 
 
+class RegisterReference(Strict):
+    """A plant number from national statistics in the population layer: column, required values, year."""
+
+    column: str
+    only: dict[str, list[int | float | str]]
+    year: Annotated[int, Field(ge=2000, le=2100)]
+
+
+class ValidationFigureHeights(Strict):
+    plants_map: PositiveFloat
+    plants_countries_row: PositiveFloat  # per country row
+    plants_countries_panel: PositiveFloat  # per panel (axis, legend)
+    national_map_world: PositiveFloat
+    national_map_europe: PositiveFloat
+    regions_countries: PositiveFloat
+
+
+class ValidationFigures(Section):
+    """Maps, plots and tables of the recommended sweep candidate's validation
+    (wwtp/figures_scripts/validation_figures.py; inputs from sweep_validation.paths.output_dir)."""
+
+    plant_maps: dict[str, list[str]] = Field(min_length=1, max_length=2)
+    plant_map_titles: dict[str, str]
+    plant_map_short: dict[str, str]
+    register_references: dict[str, RegisterReference]
+    reference_labels: dict[str, str]
+    error_axis_max: Annotated[float, Field(gt=1)]
+    max_map_labels: NonNegativeInt
+    national_references: dict[Literal["jmp", "jmp_sewer", "eurostat", "oecd"], Literal["world", "europe"]] = Field(
+        min_length=1
+    )
+    min_units: PositiveInt
+    error_bins: list[Annotated[float, Field(gt=1)]] = Field(min_length=1)
+    error_colors: list[str]
+    difference_bins_pp: list[float] = Field(min_length=2)
+    diverging_colors: list[str]
+    share_colors: list[str] = Field(min_length=2)
+    nodata_color: str
+    map_crs: str
+    south_limit_deg: Annotated[float, Field(ge=-90, le=0)]
+    europe_extent: Annotated[list[float], Field(min_length=4, max_length=4)]
+    europe_panel_ratio: Annotated[list[PositiveFloat], Field(min_length=2, max_length=2)]
+    width_mm: PositiveFloat
+    font_family: list[str] = Field(min_length=1)
+    font_size_pt: PositiveFloat
+    dpi: PositiveInt
+    colors: CalibrationFigureColors
+    heights_mm: ValidationFigureHeights
+    paths: Paths
+
+    @model_validator(mode="after")
+    def _colour_counts(self):
+        if len(self.error_colors) != len(self.error_bins) + 1:
+            raise ValueError("error_colors needs one colour more than error_bins")
+        if len(self.diverging_colors) != len(self.difference_bins_pp) + 1:
+            raise ValueError("diverging_colors needs one colour more than difference_bins_pp")
+        known = {"gb", "nl", "us", "hw", "uwwtd", *self.register_references}
+        for family, refs in self.plant_maps.items():
+            if family not in self.plant_map_titles or family not in self.plant_map_short:
+                raise ValueError(f"plant_map_titles and plant_map_short need {family!r}")
+            if unknown := sorted(set(refs) - known):
+                raise ValueError(f"plant_maps.{family}: unknown references {unknown}")
+        if missing := sorted((known | set(self.national_references)) - set(self.reference_labels)):
+            raise ValueError(f"reference_labels lacks {missing}")
+        return self
+
+
 class Workflow(Section):
     bing_annotate_shards: PositiveInt
     run_once: list[OneTimeStage]
@@ -853,6 +920,7 @@ SECTIONS: dict[str, type[Section]] = {
     "connection_radius": ConnectionRadius,
     "figure1": Figure1,
     "calibration_figures": CalibrationFigures,
+    "validation_figures": ValidationFigures,
     "workflow": Workflow,
 }
 

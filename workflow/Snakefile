@@ -33,6 +33,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 (US, GB, NL, IE, ES) and census districts (MX), and the choice
                                 (data/calibration/connection_radius/calibration_results.zip)
         connection_radius             only the calibration tables (wwtp/calibration/connection_radius.py)
+    snakemake validation_figures    maps, plots and tables of the recommended sweep candidate's validation
+                                (data/figures/validation/validation_results.zip; after the sweep)
     snakemake calibration_figures   Extended Data figures and LaTeX numbers of the calibration from its tables
                                 (data/figures/calibration; paper/methods_calibration.tex)
 
@@ -96,6 +98,7 @@ TARGETS = {
     "calibration": "before any sweep: national_data + size and radius calibration tables, in one zip to send back",
     "connection_radius": "only the calibration tables: plant sizes by country, national size scale, radius rule",
     "calibration_figures": "Extended Data figures and Methods numbers of the calibration, from its tables",
+    "validation_figures": "maps, plots and tables of the chosen sweep candidate's validation (after the sweep)",
 }
 
 
@@ -354,6 +357,23 @@ rule sweep_validation:
 rule sweep:
     """The sweep grid: service areas + population of every variant, validated, and the choice."""
     input: rules.sweep_layers.input, rules.sweep_validation.output
+
+
+VF = wf.config("validation_figures")
+VF_FIGURES = ["plants_countries", "regions_countries", *(f"map_plants_{f}" for f in VF["plant_maps"]),
+              *(f"map_national_{ref}" for ref in VF["national_references"])]
+VF_TABLES = ["plant_units", "countries_plants", "regions_plants", "countries_national", "regions_national", "summary_national"]
+rule validation_figures:
+    """Maps, plots and tables of the recommended candidate's validation (light: local)."""
+    input: rules.sweep_validation.output, rules.sweep_validation_references.output
+    output:
+        [f"{VF['paths']['output_dir']}/{name}.{ext}" for name in VF_FIGURES for ext in ("pdf", "png")],
+        [f"{VF['paths']['output_dir']}/{name}.csv" for name in VF_TABLES],
+        f"{VF['paths']['output_dir']}/validation_results.zip",
+    params: module="figures_scripts.validation_figures", cli=[], **wf.settings_params("validation_figures", *VF)
+    log: wf.log("validation_figures")
+    localrule: True
+    shell: STAGE
 
 
 # --------------------------------------------------------------------------- #

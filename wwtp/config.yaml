@@ -1267,6 +1267,69 @@ calibration_figures:
     data_dir: null
     output_dir: '{data_dir}/figures/calibration'
 
+# Validation of the recommended sweep candidate as maps, plots and tables
+# (wwtp/figures_scripts/validation_figures.py, rule validation_figures). Reads the sweep_validation
+# outputs. Style (fonts, widths, colours) as calibration_figures.
+validation_figures:
+  # Per-plant maps, each a family of references: sweep_validation references (gb catchments, nl CBS,
+  # us sewersheds, hw, uwwtd) or register_references below. A country with several references of one
+  # family pools them.
+  plant_maps:
+    catchments: ['gb', 'nl', 'us']
+    reported: ['hw_reported', 'cwns_2022', 'uwwtd_load']
+  plant_map_titles:
+    catchments: 'real catchments (independent)'
+    reported: 'reported plant numbers (national statistics; also inputs of the sizes)'
+  plant_map_short: {catchments: 'real catchments', reported: 'reported plant numbers'}
+  # Plant numbers from national statistics in the recommended candidate's population layer, each
+  # against our people in that plant's service area in `year` (<year>_zonal_sum): the column, the
+  # values of other columns a plant must have, the population year.
+  register_references:
+    hw_reported: {column: 'POP_SERVED', only: {QUAL_POP: [1]}, year: 2024}
+    cwns_2022: {column: 'EPA POP 2022', only: {}, year: 2022}
+    uwwtd_load: {column: 'uwwLoadEnteringUWWTP', only: {}, year: 2024}
+  reference_labels:
+    gb: 'GB catchments'
+    nl: 'NL CBS'
+    us: 'US sewersheds'
+    hw: 'HydroWASTE reported'
+    uwwtd: 'UWWTD capacity'
+    hw_reported: 'HydroWASTE reported'
+    cwns_2022: 'US CWNS 2022'
+    uwwtd_load: 'UWWTD load (p.e.)'
+    jmp: 'JMP'
+    jmp_sewer: 'JMP (any sewer)'
+    eurostat: 'Eurostat'
+    oecd: 'OECD'
+  error_axis_max: 6             # largest x-axis end of the typical-error dot plots (larger errors drawn at it)
+  max_map_labels: 8             # label countries on a plant map only when it has at most this many
+  # National references and the extent of their map
+  national_references: {jmp: 'world', oecd: 'world', eurostat: 'europe'}
+  min_units: 10                 # a country / size class with fewer reference plants stays grey
+  # Typical error classes (factor) and colours (blue ramp, light to dark; one more than bins)
+  error_bins: [1.25, 1.5, 2, 3]
+  error_colors: ['#9ec5f4', '#5598e7', '#256abf', '#184f95', '#0d366b']
+  # Ours minus the reference (percentage points): class edges and colours, red (ours lower) to
+  # blue (ours higher) around a grey midpoint
+  difference_bins_pp: [-20, -10, -5, 5, 10, 20]
+  diverging_colors: ['#a32c2b', '#e34948', '#f2a19a', '#f0efec', '#9ec5f4', '#3987e5', '#184f95']
+  share_colors: ['#e9f1fc', '#9ec5f4', '#3987e5', '#184f95', '#0d366b']
+  nodata_color: '#dedede'
+  map_crs: 'EPSG:8857'          # Equal Earth
+  south_limit_deg: -58          # Antarctica left out
+  europe_extent: [-11, 32, 35, 62]          # lon min, lon max, lat min, lat max
+  europe_panel_ratio: [2.2, 1]  # widths of the world map and of Europe enlarged beside it
+  width_mm: null
+  font_family: null
+  font_size_pt: null
+  dpi: null
+  colors: null
+  heights_mm: {plants_map: 72, national_map_world: 100, national_map_europe: 150, regions_countries: 150, plants_countries_row: 3.2, plants_countries_panel: 18}
+  paths:
+    data_dir: null
+    boundaries: '{data_dir}/boundaries/ne_110m_admin_0_countries.shp'
+    output_dir: '{data_dir}/figures/validation'
+
 # Snakemake (workflow/Snakefile): where it keeps its logs and stamp files, how
 # many jobs split download_bing_annotate, and the SLURM resources of every
 # stage's jobs (threads = CPUs per task, mem_mb, runtime in minutes). Every

@@ -40,6 +40,7 @@ Before running this stage, these outputs from prior stages must exist.
 | `pop_at_risk_figures.py` | Python worker | Plots population-at-risk and impact summaries | risk outputs and tile overlays | risk-analysis figures |
 | `interactive_unconnected_industrial_map.py` | Python worker | Builds a Folium map of industrial areas with no nearby WWTP | unconnected-industrial layer from `industrial_analysis/` | standalone HTML map |
 | `calibration_figures.py` | Python worker (rule `calibration_figures`) | Extended Data figures of the size and radius calibration (plant size, radius rule, check on real catchments) and the numbers of its Methods text | calibration tables in `connection_radius.paths.output_dir` | `ed_plant_size`, `ed_service_radius`, `ed_catchments` (.pdf, .png), `calibration_numbers.tex` |
+| `validation_figures.py` | Python worker (rule `validation_figures`) | Maps, plots and tables of the recommended sweep candidate's validation: per-plant typical error by country and plant size, national shares against JMP/OECD/Eurostat, SDG regions | `sweep_validation` outputs (`units.parquet`, references, national tables) | `map_plants`, `map_national_<ref>`, `regions_countries` (.pdf, .png), CSV tables, `validation_results.zip` |
 | `_shared.py` | shared helpers | Figure-layer column conventions used by both piechart scripts: `aggregate_by_country`, `calculate_size`, `ensure_population_percentage_column` | - | - |
 
 ## Execution Flow
