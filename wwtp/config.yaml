@@ -1306,9 +1306,10 @@ validation_figures:
   # National references and the extent of their map
   national_references: {jmp: 'world', oecd: 'world', eurostat: 'europe'}
   min_units: 10                 # a country / size class with fewer reference plants stays grey
-  # Typical error classes (factor) and colours (blue ramp, light to dark; one more than bins)
-  error_bins: [1.25, 1.5, 2, 3]
-  error_colors: ['#9ec5f4', '#5598e7', '#256abf', '#184f95', '#0d366b']
+  # Typical error classes (factor) and colours (yellow to dark red, light to dark; one more than bins):
+  # fine steps where most countries lie (x1.2-x2)
+  error_bins: [1.2, 1.3, 1.4, 1.5, 1.75, 2, 3]
+  error_colors: ['#fff4b0', '#fede80', '#feb651', '#fd8c3c', '#f94828', '#da141e', '#b00026', '#800026']
   # Ours minus the reference (percentage points): class edges and colours, red (ours lower) to
   # blue (ours higher) around a grey midpoint
   difference_bins_pp: [-20, -10, -5, 5, 10, 20]
