@@ -1293,11 +1293,12 @@ validation_figures:
   # commuters and tourists, and a resident makes less than 1 p.e. (about 45 g BOD5 a day). A country's
   # p.e. per connected resident = its plants' total load / its residents connected to treatment (people
   # x share of the first of national_references with a number); each load is divided by it. A country
-  # below min_pe_per_resident (what residents alone make: 44.6 / 60 g) misses loads (e.g. a large plant
-  # without one) and, like a country without a national number, takes the ratio of all others together.
+  # below min_pe_per_resident (what residents alone make: 44.6 / 60 g, about 0.75) misses loads (e.g. a
+  # large plant without one) and, like a country without a national number, takes the ratio of all
+  # others together.
   pe_conversion:
     national_references: ['eurostat', 'oecd', 'jmp']
-    min_pe_per_resident: 0.74
+    min_pe_per_resident: 0.75
   reference_labels:
     gb: 'GB catchments'
     nl: 'NL CBS'

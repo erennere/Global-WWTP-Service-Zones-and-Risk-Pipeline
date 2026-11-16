@@ -139,7 +139,7 @@ def test_loads_in_pe_become_residents():
             "ref_share": [0.2, 0.5, 0.1, 0.5, np.nan],
         }
     )
-    conversion = {"national_references": ["eurostat", "oecd", "jmp"], "min_pe_per_resident": 0.74}
+    conversion = {"national_references": ["eurostat", "oecd", "jmp"], "min_pe_per_resident": 0.75}
     out = vf.pe_to_residents(units, registers, conversion, national).set_index("unit")
     # AT: 300 p.e. / 200 connected (Eurostat before JMP) = 1.5; PT: 60 / 50 (JMP) = 1.2
     assert (

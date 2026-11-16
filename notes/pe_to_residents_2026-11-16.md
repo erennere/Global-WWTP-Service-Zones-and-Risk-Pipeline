@@ -8,7 +8,7 @@ p.e. surplus, not our error.
 ## What the literature says
 
 - A resident alone makes less than 1 p.e.: 44.6 +- 5.9 g BOD5 per person a day in 168 Italian
-  agglomerations (Sci. Total Environ. 2022, S0048969722003266), i.e. about 0.74 p.e.; 60 g is a
+  agglomerations (Sci. Total Environ. 2022, S0048969722003266), i.e. about 0.75 p.e.; 60 g is a
   70th-90th percentile design value (safety factor about 1.3).
 - Loads also count industry, commerce, commuters and tourists (HydroWASTE, Ehalt Macedo et al. 2022,
   ESSD 14, 559: European p.e. "not only residents but also workers, tourists, and service providers";
@@ -23,7 +23,7 @@ p.e. surplus, not our error.
 ## Method (validation_figures.pe_conversion)
 
 f_c = (sum of the UWWTD loads of a country's plants) / (residents connected to treatment: people x
-share of Eurostat, else OECD, else JMP). Each load is divided by f_c. A country below 0.74 (what
+share of Eurostat, else OECD, else JMP). Each load is divided by f_c. A country below 0.75 (what
 residents alone make) misses loads (Ireland: Dublin's Ringsend has no load in the layer; Cyprus) and,
 like a country without a national number (Iceland, Malta), takes the ratio of all others (1.27).
 
