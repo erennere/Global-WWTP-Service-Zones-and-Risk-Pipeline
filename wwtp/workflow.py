@@ -36,6 +36,10 @@ ONE_TIME_STAGES = {
     "download_bing_annotate": ("download_bing_annotate",),
     "merge_annotations": ("merge_annotations",),
     "download_pop": ("download_pop",),
+    # the plant list v3: national plants and the work list now, v3 once the new images' results are there
+    "national_plants": ("national_plants",),
+    "work_list": ("national_plants", "make_work_list"),
+    "plants_v3": ("make_plants_v3",),
 }
 
 

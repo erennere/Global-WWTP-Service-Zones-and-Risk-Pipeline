@@ -65,18 +65,10 @@ class Session:
         return Response(url + "#final", content=b"col\n1\n")
 
 
-HW_COLUMNS = {"id": "WASTE_ID", "name": "WWTP_NAME", "country": "CNTRY_ISO", "lon": "LON_WWTP", "lat": "LAT_WWTP"}
-
-
 def _cfg(tmp_path, sources, registers=None):
-    pd.DataFrame(  # HydroWASTE: one Australian record 300 m from the register plant, one Japanese, one German
-        {"WASTE_ID": [1, 2, 3], "WWTP_NAME": ["Mer", "Tokyo", "Köln"], "CNTRY_ISO": ["AUS", "JPN", "DEU"],
-         "LAT_WWTP": [-9.9124, 35.6, 50.9], "LON_WWTP": [144.0526, 139.8, 6.9], "POP_SERVED": [500, 1e6, 1e6]}
-    ).to_csv(tmp_path / "hydrowaste.csv", index=False)  # fmt: skip
     return {
         "request_timeout_seconds": 5,
         "request_headers": {"User-Agent": "test"},
-        "uncovered": {"countries": ["AU", "JP", "NZ"], "hydrowaste_columns": HW_COLUMNS},
         "page_size": 2,
         "peek_rows": 2,
         "match_distance_m": 1000.0,
@@ -87,7 +79,6 @@ def _cfg(tmp_path, sources, registers=None):
             "validation_dir": str(tmp_path / "validation_data"),
             "output_dir": str(tmp_path / "validation_data" / "national_data"),
             "annotated_all_filepath": str(tmp_path / "ours.gpkg"),
-            "hydrowaste": str(tmp_path / "hydrowaste.csv"),
         },
     }
 
@@ -165,7 +156,7 @@ def _world(tmp_path):
     return _cfg(tmp_path, sources, registers)
 
 
-def test_registers_give_the_new_plants_in_one_file(tmp_path):
+def test_registers_list_every_register_plant_with_its_distance_to_ours(tmp_path):
     cfg = _world(tmp_path)
     summary = nd.build_registers(cfg).set_index("register")
     assert summary.loc["zz_shp", "plants"] == 3 and summary.loc["zz_shp", "new"] == 2
@@ -174,20 +165,16 @@ def test_registers_give_the_new_plants_in_one_file(tmp_path):
     )  # the row with latitude 999 is dropped
     assert summary.loc["zz_absent", "status"].startswith("FileNotFoundError")
     out = tmp_path / "validation_data" / "national_data"
-    new = gpd.read_file(out / "new_plants.gpkg")
-    # the register plants our list lacks, and the HydroWASTE records of the countries it does not cover
-    assert sorted(new["register"].dropna()) == ["zz_csv", "zz_shp", "zz_shp"] and str(new.crs.to_epsg()) == "4326"
-    assert sorted(new.loc[new["register"].isna(), "iso2"]) == ["AU", "JP"]
-    far = new[new["register"] == "zz_csv"].iloc[0]
-    assert (far["lon"], far["lat"]) == (20.0, 60.0) and json.loads(far["register_attrs"])["Nom du système"] == "b"
     every = gpd.read_file(out / "register_plants.gpkg")
+    assert str(every.crs.to_epsg()) == "4326"
+    far = every[(every["register"] == "zz_csv") & every["new"].astype(bool)].iloc[0]  # the plants our list lacks
+    assert (far["lon"], far["lat"]) == (20.0, 60.0) and json.loads(far["attrs"])["Nom du système"] == "b"
     near = every[~every["new"].astype(bool)]
     assert len(every) == 5 and near["distance_to_ours_m"].max() < 100  # 0.001 and 0.0005 degrees of longitude at 50 N
     assert {"areas.shp:areas", "plants.shp:plants"} == set(every.loc[every["register"] == "zz_shp", "layer"])
-    assert pd.read_csv(out / "new_plants.csv")["distance_to_ours_m"].min() > 1000
+    assert every.loc[every["new"].astype(bool), "distance_to_ours_m"].min() > 1000
     with zipfile.ZipFile(out / "results.zip") as z:
         assert set(z.namelist()) == {
-            "new_plants.csv",
             "register_plants.csv",
             "registers_summary.csv",
             "peek.md",
@@ -216,26 +203,5 @@ def test_registers_still_write_every_file_when_no_register_can_be_read(tmp_path)
     cfg["registers"] = {"zz_absent": cfg["registers"]["zz_absent"]}
     summary = nd.build_registers(cfg)
     out = tmp_path / "validation_data" / "national_data"
-    assert len(summary) == 1 and set(gpd.read_file(out / "new_plants.gpkg")["sources"]) == {"hydrowaste"}
-    assert (out / "results.zip").exists() and (out / "new_plants.csv").exists()
-
-
-def test_every_plant_our_list_lacks_is_in_one_file_without_size(tmp_path):
-    cfg = _cfg(tmp_path, {})
-    registers = gpd.GeoDataFrame(
-        {"register": ["aus_ga", "aus_ga", "can_wser", "can_wser"], "iso2": ["AU", "AU", "CA", "CA"],
-         "lon": [144.05258, 142.61, -113.6, -114.0], "lat": [-9.90973, -9.38, 52.7, 53.0],
-         "attrs": ['{"feature_name": "Mer"}', '{"feature_name": "Saibai"}', '{"name": "far"}', '{"name": "ours"}'],
-         "distance_to_ours_m": [2.3e6, 2.3e6, 5000.0, 10.0], "new": [True, True, True, False]},
-        geometry=gpd.points_from_xy([144.05258, 142.61, -113.6, -114.0], [-9.90973, -9.38, 52.7, 53.0]), crs=4326,
-    )  # fmt: skip
-    out = nd.build_new_plants(cfg, registers)
-    # Canada's plant 5 km from ours is new, the one 10 m away is ours; Australia and Japan are not covered
-    assert sorted(out["iso2"]) == ["AU", "AU", "CA", "JP"]
-    assert out.loc[out["iso2"] == "CA", "register_attrs"].iloc[0] == '{"name": "far"}'
-    mer = out[out["register_attrs"].str.contains("Mer", na=False)].iloc[0]
-    assert mer["sources"] == "register+hydrowaste" and mer["hydrowaste_name"] == "Mer"  # 300 m apart: one plant
-    tokyo = out[out["iso2"] == "JP"].iloc[0]
-    assert tokyo["sources"] == "hydrowaste" and json.loads(tokyo["hydrowaste_attrs"])["POP_SERVED"] == "1000000.0"
-    assert out.loc[out["register_attrs"].str.contains("Saibai", na=False), "sources"].iloc[0] == "register"
-    assert "size" not in " ".join(out.columns)  # no size column: the size comes from the model
+    assert len(summary) == 1 and len(gpd.read_file(out / "register_plants.gpkg")) == 0
+    assert (out / "results.zip").exists() and (out / "register_plants.csv").exists()

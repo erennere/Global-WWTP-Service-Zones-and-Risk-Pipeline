@@ -78,7 +78,7 @@ def assign_to_nearest(gdf_source, gdf_target, threshold=None, one_to_one=False):
 
 
 def merge_old(cfg):
-    """Merge zipped segmentation outputs into the legacy corrected dataset.
+    """Merge the first segmentation results (zipped tile CSVs + mapping) into the corrected locations.
 
     Parameters
     ----------
@@ -182,15 +182,14 @@ def main():
     Returns
     -------
     None
-        This function dispatches to either the legacy or current merge path.
+        ``old``: the first segmentation results, before final_data_merge; ``new``: the second, after it.
     """
     args = parse_args()
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="merge_seg_results", **overrides)
 
     if args.variant == "old":
-        if cfg["legacy_merge"]:
-            merge_old(cfg)
+        merge_old(cfg)
         return
     merge_new(cfg)
 

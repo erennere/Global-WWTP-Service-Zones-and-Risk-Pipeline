@@ -446,7 +446,7 @@ def test_merge_new_rejects_non_numeric_img_name_prefix(monkeypatch, tmp_path):
         merge_seg_results.merge_new(cfg)
 
 
-def test_merge_seg_main_dispatches_variants_and_legacy_flag(monkeypatch):
+def test_merge_seg_main_dispatches_variants(monkeypatch):
     captured = {"old": 0, "new": 0}
 
     monkeypatch.setattr(merge_seg_results.os, "chdir", lambda path: None)
@@ -454,22 +454,17 @@ def test_merge_seg_main_dispatches_variants_and_legacy_flag(monkeypatch):
     monkeypatch.setattr(merge_seg_results, "merge_old", lambda cfg: captured.__setitem__("old", captured["old"] + 1))
     monkeypatch.setattr(merge_seg_results, "merge_new", lambda cfg: captured.__setitem__("new", captured["new"] + 1))
 
+    monkeypatch.setattr(merge_seg_results, "load_config", lambda **overrides: {})
     monkeypatch.setattr(merge_seg_results, "parse_args", lambda: SimpleNamespace(variant="old"))
-    monkeypatch.setattr(merge_seg_results, "load_config", lambda **overrides: {"legacy_merge": True})
-    merge_seg_results.main()
-
-    monkeypatch.setattr(merge_seg_results, "parse_args", lambda: SimpleNamespace(variant="old"))
-    monkeypatch.setattr(merge_seg_results, "load_config", lambda **overrides: {"legacy_merge": False})
     merge_seg_results.main()
 
     monkeypatch.setattr(merge_seg_results, "parse_args", lambda: SimpleNamespace(variant="new"))
-    monkeypatch.setattr(merge_seg_results, "load_config", lambda **overrides: {"legacy_merge": True})
     merge_seg_results.main()
 
     assert captured == {"old": 1, "new": 1}
 
 
-def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp_path):
+def test_final_data_merge_main_writes_the_merged_plants(monkeypatch, tmp_path):
     corrected_south = str(tmp_path / "corrected_south.gpkg")
     seg_corrected_south = str(tmp_path / "seg_corrected_south.gpkg")
     thailand_path = str(tmp_path / "thailand.gpkg")
@@ -477,12 +472,10 @@ def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp
     eu_path = str(tmp_path / "eu.gpkg")
     germany_path = str(tmp_path / "germany.gpkg")
     osm_path = str(tmp_path / "osm.gpkg")
-    new_points_path = str(tmp_path / "new_points.gpkg")
     corrected_all_path = str(tmp_path / "corrected_all.gpkg")
     canada_path = str(tmp_path / "canada.csv")
 
     cfg = {
-        "legacy_merge": False,
         "osm_threshold": 100,
         "threshold": 50,
         "paths": {
@@ -493,7 +486,6 @@ def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp
             "eu_new_filepath": eu_path,
             "germany_filepath": germany_path,
             "osmgeo_filepath": osm_path,
-            "new_points_filepath": new_points_path,
             "corrected_all_filepath": corrected_all_path,
             "canada_filepath": canada_path,
             "data_dir": str(tmp_path),
@@ -518,7 +510,7 @@ def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp
     old_reference = gpd.GeoDataFrame({"geometry": [Point(0, 0)]}, geometry="geometry", crs="EPSG:4326")
 
     def fake_read_file(path):
-        if path == corrected_south:
+        if path == seg_corrected_south:
             return base_old.copy()
         if path == thailand_path:
             return thailand.copy()
@@ -598,8 +590,7 @@ def test_final_data_merge_main_writes_new_and_corrected_outputs(monkeypatch, tmp
         monkeypatch.setattr(gpd.GeoDataFrame, "to_file", original_to_file)
 
     write_paths = [w["path"] for w in captured["writes"]]
-    assert new_points_path in write_paths
-    assert corrected_all_path in write_paths
+    assert write_paths == [corrected_all_path]
     corrected_write = next(w for w in captured["writes"] if w["path"] == corrected_all_path)
     assert corrected_write["driver"] == "GPKG"
     assert corrected_write["index"] is False

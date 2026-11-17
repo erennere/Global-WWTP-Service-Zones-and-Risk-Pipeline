@@ -49,7 +49,7 @@ These are the input data artifacts resolved from `config.yaml` that the reposito
 | --- | --- | --- |
 | `../data/Enhanced_HW_WWTP__jun20_2025.geojson` | seed corrected WWTP source for merge chain | present |
 | `../data/wastewater_plant.geojson` | OSM correction reference layer | present |
-| `../data/DL_results/csvv2-2.zip` and `../data/DL_results/aftersort.geojson` | legacy segmentation merge inputs | present |
+| `../data/DL_results/csvv2-2.zip` and `../data/DL_results/aftersort.geojson` | first segmentation results (merge chain) | present |
 | `../data/extra_points/Canada_14_03_2025.csv` | final merge enrichment | present |
 | `../data/extra_points/Germany_Hydra_waste_geospatial_corrected.geojson` | final merge enrichment | present |
 | `../data/final_data_source/final_W_europe_WWT_dec3.geojson` | final merge enrichment | present |
@@ -74,7 +74,6 @@ The full parameter tables now live in the relevant module READMEs. This file kee
 | Setting | Default | Where it matters |
 | --- | --- | --- |
 | `correct_locations_w_OSM.rad` | `5000` | OSM fallback correction radius for the first merge stage |
-| `merge_seg_results.legacy_merge` | `true` | Whether the legacy segmentation branch runs during merge |
 | `create_voronoi.weight_method` | `size` | Global weighting transform for Voronoi stages (`size`: sqrt of plant size in people) |
 | `create_voronoi.weight_func` | `mult` | Global weighted-distance mode for Voronoi stages |
 | `create_voronoi.dynamic_buffering` | `true` | Enables per-site dynamic buffers |
@@ -228,7 +227,7 @@ The stage-specific READMEs carry the detailed script descriptions, execution dia
 
 | Stage | What it covers | Snakemake rules / targets | README |
 | --- | --- | --- | --- |
-| Data merge | Builds the canonical WWTP dataset | `combine_locations` | `wwtp/data_merge/README.md` |
+| Data merge | Builds the plant list (v2; v3 from v2, the work list and the new images) | `combine_locations`, `work_list`, `plants_v3` | `wwtp/data_merge/README.md` |
 | Annotation | Builds grid, OSM, image, and label context | `annotation_grids`, `wastewater_join`, `download_bing_annotate`, `merge_annotations`; target `annotations` | `wwtp/annotation_scripts/README.md` |
 | Population and risk | Creates risk intermediates and population-at-risk outputs | `create_rasters__<tag>` (+ shards), `find_unserved_pop__<tag>`, `assign_rivers_to_basin__<tag>`, `find_intersection_river__<tag>`, `impact_polygons_pop__<tag>`, `find_pop_in_danger_pop__<tag>`, `find_diff_pop__<tag>` | `wwtp/pop_at_risk_river_calculations/README.md` |
 | Figures and exports | Produces GeoJSON, plots, and report assets | `<figure>__<tag>`, `figures__<tag>` | `wwtp/figures_scripts/README.md` |

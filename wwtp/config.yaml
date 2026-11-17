@@ -31,7 +31,6 @@ run_manifest:
 
 merge_seg_results:
   version: null
-  legacy_merge: true
   paths:
     data_dir: null
     corrected_south: null
@@ -44,7 +43,6 @@ merge_seg_results:
 
 final_data_merge:
   version: null
-  legacy_merge: null
   threshold: 500
   osm_threshold: 1000
   paths:
@@ -58,7 +56,6 @@ final_data_merge:
     us_new_filepath: '{data_dir}/final_data_source/final_USA_WWT_dec3.geojson'
     eu_new_filepath: '{data_dir}/final_data_source/final_W_europe_WWT_dec3.geojson'
     thailand_filepath: '{data_dir}/final_data_source/Thailand_500m_merged.geojson'
-    new_points_filepath: '{data_dir}/new_locations_v{version}.gpkg'
 
 combine_watersheds:
   # HydroBASINS level of the basins that bound the service areas (approach 1):
@@ -990,7 +987,7 @@ sweep_validation:
 # Reference data for the validation and national plant registers
 # (wwtp/pop_validation_scripts/national_data.py): `fetch` downloads every file below into
 # <validation_dir>/<source>/ (needs internet; kept if already there), `registers` describes the files
-# (peek.md) and lists the register plants our list lacks (new_plants.gpkg, one file for all countries).
+# (peek.md) and lists every register plant with its distance to ours (register_plants.gpkg).
 # kind: http (one GET), ogcapi (OGC API Features collection .../items), arcgis (ArcGIS REST layer).
 # required: the sweep validation reads these; a failed download stops the run. The others are only
 # recorded in manifest.json. Addresses marked 'not checked' were not opened when they were added.
@@ -1082,11 +1079,11 @@ national_data:
       peek: true
       files:
         wastewater_treatment_facilities.geojson: {kind: arcgis, url: 'https://services.ga.gov.au/gis/rest/services/Wastewater_Treatment_Facilities/MapServer/0'}
-    jpn_mlit_p22:   # MLIT 国土数値情報 下水道関連施設 (non-commercial terms; address not checked)
+    jpn_mlit_p22:   # MLIT 国土数値情報 下水道関連施設 FY2012, one P22-12_<prefecture>_GML.zip per prefecture (non-commercial terms)
       required: false
-      peek: true
+      peek: false
       files:
-        P22-12_GML.zip: {kind: http, url: 'https://nlftp.mlit.go.jp/ksj/gml/data/P22/P22-12/P22-12_GML.zip'}
+        P22-12_GML: {kind: manual, url: 'https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P22.html'}
     mex_inegi_iter_2020:   # Censo 2020, results by locality (address not checked)
       required: false
       peek: true
@@ -1098,20 +1095,100 @@ national_data:
     bra_ana_2019: {source: 'bra_ana_atlas_esgotos', file: 'Estacao_Tratamento_Esgoto_2019.zip', iso2: 'BR', year: 2019, encoding: 'utf-8'}
     can_wser: {source: 'can_eccc_wser', file: 'Resaeu-Wser-identification.csv', iso2: 'CA', year: 2025, encoding: 'cp1252'}
     aus_ga: {source: 'aus_ga_wwtf', file: 'wastewater_treatment_facilities.geojson', iso2: 'AU', year: 2012, encoding: 'utf-8'}
-    jpn_p22: {source: 'jpn_mlit_p22', file: 'P22-12_GML.zip', iso2: 'JP', year: 2012, encoding: 'utf-8'}
-  # new_plants.gpkg / .csv: every plant our list lacks, without size, not merged into the plant list
-  # (the model runs on them first): register plants farther than match_distance_m from all of ours,
-  # and in the countries our list does not cover (no HeiGIT detections) also their HydroWASTE records;
-  # a HydroWASTE record within match_distance_m of a register plant is the same plant.
-  uncovered:
-    countries: ['AU', 'JP', 'NZ']
-    hydrowaste_columns: {id: 'WASTE_ID', name: 'WWTP_NAME', country: 'CNTRY_ISO', lon: 'LON_WWTP', lat: 'LAT_WWTP'}
   paths:
     data_dir: null
     annotated_all_filepath: null
     validation_dir: '{data_dir}/validation_data'
-    hydrowaste: null
     output_dir: '{data_dir}/validation_data/national_data'
+
+# National plant lists for the countries our plant list lacks, in its columns
+# (wwtp/data_merge/national_plants.py, rule national_plants; see the module for the rules):
+# Australia (Geoscience Australia), Canada (WSER plants farther than national_data.match_distance_m
+# from ours), Japan (MLIT P22 FY2012 treatment plants, one zip per prefecture in p22_dir), New Zealand
+# (OpenStreetMap: no national point layer), with the HydroWASTE records of the countries our list does
+# not cover. Output: national_plants.gpkg / .csv, national_plants_left_out.csv.
+national_plants:
+  countries: ['AU', 'CA', 'JP', 'NZ']
+  registers: {AU: 'aus_ga', CA: 'can_wser'}        # in national_data's register_plants
+  hydrowaste_countries: ['AU', 'JP', 'NZ']         # not covered by our list: their HydroWASTE records too
+  osm_bbox: {NZ: [165, -48, 179.99, -33]}          # lon min, lat min, lon max, lat max
+  osm_group_distance_m: 500                        # OSM parts closer than this: one plant
+  osm_skip_names: '(?i)pump(?:ing)? station|lift station|oil separator|^old |^(?!.*waste).*water treatment plan'
+  metric_crs: {AU: 3577, CA: 3978, JP: 6691, NZ: 2193}
+  not_operational: ['Decommissioned', 'Non-Operational', 'Under Construction', 'Closed', 'Proposed']
+  left_out_subtypes: ['Storm Sewage Treatment Plant', 'Septage Facility']   # Geoscience Australia
+  match_distance_m: 1000                           # national plant and HydroWASTE record: one plant
+  name_match_distance_m: 25000                     # ... with the same name
+  approximate_match_distance_m: 5000               # ... with an approximate HydroWASTE location (QUAL_LOC 2)
+  approximate_match_countries: ['NZ']
+  complete_register_countries: ['JP']              # an unmatched HydroWASTE record near a register plant: a shifted duplicate
+  complete_register_distance_m: 15000
+  name_stopwords: ['wwtp', 'stp', 'wwtf', 'wtp', 'sewage', 'sewerage', 'treatment', 'plant', 'wastewater', 'waste',
+                   'water', 'works', 'ponds', 'pond', 'oxidation', 'the', 'scheme', 'and', 'facility', 'of', 'lagoon', 'lagoons']
+  register_years: {aus_ga: 2026, can_wser: 2025, jpn_p22: 2012, osm: 2023}
+  paths:
+    data_dir: null
+    corrected_all_filepath: '{data_dir}/all_merged_v2.gpkg'   # the plant list whose columns the output gets
+    register_plants: '{data_dir}/validation_data/national_data/register_plants.gpkg'
+    p22_dir: '{data_dir}/validation_data/jpn_mlit_p22'
+    osmgeo_filepath: null
+    hydrowaste: null
+    output_dir: '{data_dir}/national_plants'
+
+# The plants that need a new image to get a size, and the new plants (wwtp/data_merge/work_list.py):
+# the annotation set of NEW_01_GENERATEGRIDS. The corrected EU file is the truth in its countries.
+work_list:
+  same_site_distance_m: 500          # closer than this: the same plant (final_data_merge.threshold)
+  code_countries: {EL: GR}           # uwwCode prefixes that are not ISO 3166 country codes
+  # Overseas parts of file countries with an ISO 3166 code of their own: lon min, lat min, lon max, lat max
+  territories:
+    GP: [-61.9, 15.8, -61.0, 16.6]     # Guadeloupe
+    MQ: [-61.3, 14.3, -60.8, 14.9]     # Martinique
+    GF: [-54.7, 2.1, -51.5, 5.9]       # French Guiana
+    RE: [55.2, -21.4, 55.9, -20.8]     # Réunion
+    YT: [44.9, -13.1, 45.4, -12.6]     # Mayotte
+    MF: [-63.2, 18.04, -62.95, 18.13]  # Saint-Martin
+  size_groups:
+    lagoon: '4 no tanks, lagoon detected'
+    nothing: '5 no tanks, nothing detected'
+    new: '6 new plant, not processed yet'
+  paths:
+    data_dir: null
+    # The population layer the list was made from: the configured variant of version 2
+    population_layer: '{data_dir}/pop_voronoi_layers/v2/lvl6/bfrep/sz/pop_added_appr_1_v2_lvl6_bfrep_sz_mult.gpkg'
+    corrected_all_filepath: '{data_dir}/all_merged_v2.gpkg'
+    # The corrected EU file (UWWTD plants with checked locations), not final_data_merge's eu_new_filepath
+    eu_file: '{data_dir}/extra_points/final_W_europe_WWT_dec3.geojson'
+    national_plants_dir: '{data_dir}/national_plants'
+    work_list: '{data_dir}/heigit_sizes/plants_without_size_and_new_plants.gpkg'
+    removed_plants: '{data_dir}/heigit_sizes/plants_removed_not_in_eu_file.csv'
+    eu_file_not_added: '{data_dir}/heigit_sizes/eu_file_plants_not_added.csv'
+
+# Plant list v3 (wwtp/data_merge/plants_v3.py): all_annotated_v2 with the work list applied (removed,
+# moved and new plants) and the results of the new images (tank detections, site category); same sites
+# merged, every plant renumbered. Set create_voronoi's version to '3' to run the analysis on it.
+plants_v3:
+  same_site_distance_m: null         # work_list's
+  code_countries: null
+  territories: null
+  wrong_code_shift_m: 50000          # a longer move to the EU file's location: the plant had another plant's code
+  max_image_offset_m: 1              # an image farther from its work-list plant: the list changed since
+  detection_columns: ['num_detection_circle', 'diameters', 'num_detection_rect', 'wwtp_area_rect']
+  category_columns: ['category_number', 'category_name', 'justification']
+  # Location of the merged plant when plants share a site: the first source in this order
+  location_priority: ['corrected_eu_file', 'national_plants', 'v2']
+  paths:
+    data_dir: null
+    base_filepath: '{data_dir}/all_annotated_v2.gpkg'
+    work_list: null
+    removed_plants: null
+    eu_file: null
+    # The new images: ref.geojson (idx of the plant of image <row>.png), and the model results
+    images_ref: '{data_dir}/annotations/new_plants/images/ref.geojson'
+    segmentation_results: '{data_dir}/annotations/new_plants/results/segoutput.csv'
+    image_text_results: '{data_dir}/annotations/new_plants/results/i2t_res.csv'
+    output: '{data_dir}/all_annotated_v3.gpkg'
+    summary: '{data_dir}/heigit_sizes/plants_v3_summary.csv'
 
 # Calibration on national statistics (wwtp/calibration/connection_radius.py; Snakemake target
 # `calibration`). For every country with plants and a WorldPop raster: the share of its people inside
@@ -1362,7 +1439,8 @@ workflow:
   # wastewater_join, download_bing_annotate, merge_annotations; all four:
   # 'annotations'; without the images: 'annotation_context' = annotation_grids +
   # wastewater_join; the text overlay: 'annotation_overlay' = download_bing_annotate)
-  # and download_pop. A run takes their outputs as they are and
+  # download_pop, and the plant list v3 ('work_list' = national_plants + make_work_list;
+  # 'plants_v3' = make_plants_v3). A run takes their outputs as they are and
   # never schedules them, unless they are listed here or named for one run:
   #   snakemake analysis --config run_once=annotations,download_pop   (targets before --config)
   # Their outputs must then exist (all_annotated_v2.gpkg, the download_pop stamp).
@@ -1396,6 +1474,9 @@ workflow:
     pop_at_risk_figures: {threads: 8, mem_mb: 8192, runtime: 1440}
     interactive_unconnected_industrial_map: {threads: 2, mem_mb: 4096, runtime: 120}
     national_registers: {threads: 2, mem_mb: 16384, runtime: 240}
+    national_plants: {threads: 1, mem_mb: 16384, runtime: 120}
+    work_list: {threads: 1, mem_mb: 32768, runtime: 120}
+    plants_v3: {threads: 1, mem_mb: 32768, runtime: 120}
     sweep_validation_references: {threads: 16, mem_mb: 65536, runtime: 720}
     sweep_validation: {threads: 16, mem_mb: 131072, runtime: 1440}
     connection_radius_curves: {threads: 16, mem_mb: 196608, runtime: 2880}

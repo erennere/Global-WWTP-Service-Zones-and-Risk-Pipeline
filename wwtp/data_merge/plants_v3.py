@@ -1,0 +1,255 @@
+"""Plant list v3: v2 updated with the work list and the results of its new images.
+
+Settings: config.yaml, section ``plants_v3``. Command: ``python -m wwtp.data_merge.plants_v3``.
+
+Steps, from ``base_filepath`` (all_annotated_v2):
+1. Plants without a valid location are left out.
+2. The plants the work list removed (``removed_plants``: not in the corrected EU file) are left out.
+3. Plants of the work list that the corrected EU file moved go to the file's location (the v2 location
+   stays in ``geometry_v2``). A move longer than ``wrong_code_shift_m`` means the plant carried another
+   plant's EU code (a v2 merge error, e.g. a Hungarian plant with a French code): the v2 plant stays
+   where it is, without the EU file's columns, and the file plant becomes a plant of its own.
+4. The new plants of the work list (national, corrected EU file) are added.
+5. The results of the new images replace the tank detections (``detection_columns``, from the
+   segmentation CSV) and the site category (``category_columns``, from the image-to-text CSV) of the
+   work-list plants that have them. Segmentation names an image ``<row>.png``, a row of the images'
+   ``ref.geojson`` (whose ``idx`` is the work-list idx); image-to-text names it ``bbox_<idx>.png``.
+   A work-list plant without a result keeps its v2 values (``size_source`` v2_image, or none).
+6. Plants closer than ``same_site_distance_m`` are one plant: the location of the member whose
+   ``location_source`` comes first in ``location_priority``, and per column the first value in that order;
+   the largest POP_SERVED; ``idx_v2`` and ``origin`` of the member with the lowest idx_v2 (a v2 plant).
+7. Every plant gets a new ``idx`` (0..n-1); ``idx_v2`` keeps its v2 number (for new plants their
+   work-list number, which follows v2's).
+
+Added columns: ``origin`` (v2, new_plant_national, new_plant_eu_file), ``location_source`` (v2,
+corrected_eu_file, national_plants), ``size_source`` (v2_image, new_image, none), ``new_image`` (the
+image of the new results), ``location_shift_m``, ``geometry_v2`` (WKT), ``idx_v2``, ``same_site_plants``
+(how many plants step 6 merged into this one).
+Writes ``paths.output`` and ``paths.summary`` (counts per step).
+"""
+
+from __future__ import annotations
+
+import logging
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import pyogrio
+from pyproj import Geod
+from scipy.spatial import cKDTree
+
+from ..annotation_scripts.merge_annotations import decode_gen_text, parse_idx_from_image_name
+from ..geo_utils import UnionFind, parse_diameters_to_round_area
+from ..starter import load_config
+from ..utils import atomic_output, configure_logging
+from .work_list import file_countries
+
+logger = logging.getLogger(__name__)
+GEOD = Geod(ellps="WGS84")
+# Candidate pairs come from chords on a sphere of this radius, padded by 1 %; every pair is then checked
+# on the WGS84 ellipsoid, which differs from the sphere by less than 0.6 %.
+EARTH_RADIUS_M = 6_371_008.8
+ADDED = ["origin", "location_source", "size_source", "new_image", "location_shift_m", "geometry_v2", "idx_v2",
+         "same_site_plants"]  # fmt: skip
+
+
+def valid(gdf):
+    return gdf.geometry.notna() & ~gdf.geometry.is_empty & gdf.geometry.is_valid
+
+
+def metres(a, b):
+    """Geodesic metres between two point series, row by row."""
+    return GEOD.inv(a.x.to_numpy(), a.y.to_numpy(), b.x.to_numpy(), b.y.to_numpy())[2]
+
+
+def image_results(cfg, work):
+    """Detections and categories of the new images, by work-list idx."""
+    paths = cfg["paths"]
+    ref = gpd.read_file(paths["images_ref"]).to_crs(4326)
+    ref["idx"] = ref["idx"].astype(int)
+    unknown = ~ref["idx"].isin(work["idx"])
+    if unknown.any():
+        raise ValueError(f"{paths['images_ref']}: {int(unknown.sum())} images of plants not in the work list")
+    at = gpd.GeoSeries(work.set_index("idx").geometry.reindex(ref["idx"]).to_numpy(), crs=4326)
+    off = metres(at, ref.geometry) > float(cfg["max_image_offset_m"])
+    if off.any():
+        raise ValueError(f"{paths['images_ref']}: {int(off.sum())} images are not at their work-list plant; "
+                         "the work list changed after the images were taken")  # fmt: skip
+
+    seg = pd.read_csv(paths["segmentation_results"])
+    row = pd.to_numeric(seg["img_name"].astype(str).str.split(".").str[0], errors="coerce")
+    if row.isna().any() or not row.isin(ref.index).all():
+        raise ValueError(f"{paths['segmentation_results']}: img_name must be <row>.png of a row of ref.geojson")
+    seg["idx"] = ref["idx"].to_numpy()[row.astype(int).to_numpy()]
+    seg["new_image"] = seg["img_name"].astype(str)
+    seg = seg[["idx", "new_image", *cfg["detection_columns"]]].drop_duplicates("idx")
+
+    cats = list(cfg["category_columns"])
+    text = pd.read_csv(paths["image_text_results"])
+    text["idx"] = text["image"].apply(parse_idx_from_image_name)
+    text = text[text["idx"].notna() & text["idx"].isin(ref["idx"])].astype({"idx": int})
+    text[cats] = pd.DataFrame([decode_gen_text(t) for t in text["gen_text"]], index=text.index, columns=cats)
+    text = text[["idx", *cats]].drop_duplicates("idx")
+    results = seg.merge(text, on="idx", how="outer")
+    logger.info("new images: %d with tank detections, %d with a category", len(seg), len(text))
+    return results
+
+
+def update_sizes(df, results, cfg):
+    """Detections and categories of the new images for the rows (by ``wl_idx``) that have them."""
+    res = results.set_index("idx")
+    cats = list(cfg["category_columns"])
+    for cols, done in (
+        ([*cfg["detection_columns"], "new_image"], res.index[res["new_image"].notna()]),
+        (cats, res.index[res[cats].notna().any(axis=1)]),
+    ):
+        rows = df["wl_idx"].isin(done)
+        for c in cols:
+            df.loc[rows, c] = res[c].reindex(df.loc[rows, "wl_idx"]).to_numpy()
+    seg_done = df["wl_idx"].isin(res.index[res["new_image"].notna()])
+    df.loc[seg_done, "size_source"] = "new_image"
+    if "round_area" in df.columns:
+        df.loc[seg_done, "round_area"] = df.loc[seg_done, "diameters"].apply(parse_diameters_to_round_area)
+    return df
+
+
+def same_sites(gdf, limit):
+    """Groups of rows closer than ``limit`` metres (geodesic), as lists of positions."""
+    lon, lat = np.radians(gdf.geometry.x.to_numpy()), np.radians(gdf.geometry.y.to_numpy())
+    xyz = np.column_stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
+    chord = 2 * np.sin(limit * 1.01 / EARTH_RADIUS_M / 2)
+    pairs = np.array(sorted(cKDTree(xyz).query_pairs(chord)), dtype=int).reshape(-1, 2)
+    if len(pairs):
+        p = gdf.geometry.iloc
+        d = GEOD.inv(p[pairs[:, 0]].x.to_numpy(), p[pairs[:, 0]].y.to_numpy(),
+                     p[pairs[:, 1]].x.to_numpy(), p[pairs[:, 1]].y.to_numpy())[2]  # fmt: skip
+        pairs = pairs[d <= limit]
+    uf = UnionFind(len(gdf))
+    for i, j in pairs:
+        uf.union(int(i), int(j))
+    groups = {}
+    for i in range(len(gdf)):
+        groups.setdefault(uf.find(i), []).append(i)
+    return [g for g in groups.values() if len(g) > 1]
+
+
+def merge_same_sites(gdf, cfg):
+    """One row per same-site group: location and first values by location_priority."""
+    rank = {s: i for i, s in enumerate(cfg["location_priority"])}
+    groups = same_sites(gdf, float(cfg["same_site_distance_m"]))
+    gdf["same_site_plants"] = 1
+    drop, rows = [], []
+    for g in groups:
+        sub = gdf.iloc[g]
+        sub = sub.iloc[np.argsort([rank[s] for s in sub["location_source"]], kind="stable")]
+        merged = sub.bfill().iloc[0].copy()
+        merged["geometry"] = sub.geometry.iloc[0]
+        merged["same_site_plants"] = len(sub)
+        oldest = sub.iloc[np.argmin(sub["idx_v2"].fillna(np.inf).to_numpy())]  # a v2 plant before a new one
+        merged["idx_v2"], merged["origin"] = oldest["idx_v2"], oldest["origin"]
+        if "POP_SERVED" in sub:
+            merged["POP_SERVED"] = pd.to_numeric(sub["POP_SERVED"], errors="coerce").max()
+        rows.append(merged)
+        drop.extend(sub.index)
+    kept = gdf.drop(index=drop)
+    out = pd.concat([kept, pd.DataFrame(rows)]) if rows else kept
+    logger.info("same sites: %d groups of %d plants merged", len(groups), len(drop))
+    return gpd.GeoDataFrame(out, geometry="geometry", crs=4326), len(groups), len(drop)
+
+
+def build(cfg):
+    paths = cfg["paths"]
+    counts = {}
+    base = gpd.read_file(paths["base_filepath"]).to_crs(4326)
+    counts["v2 plants"] = len(base)
+    base = base[valid(base)].copy()
+    counts["v2 plants with a location"] = len(base)
+    columns = list(base.columns.drop("geometry"))
+    base["idx"] = base["idx"].astype(int)
+    if base["idx"].duplicated().any():
+        raise ValueError(f"{paths['base_filepath']}: idx must be unique")
+    base["wl_idx"], base["idx_v2"] = pd.NA, base["idx"]
+    base["origin"], base["location_source"], base["size_source"] = "v2", "v2", "v2_image"
+
+    removed = pd.read_csv(paths["removed_plants"])["idx"].astype(int)
+    if not removed.isin(base["idx"]).all():
+        raise ValueError(f"{paths['removed_plants']}: plants not in {paths['base_filepath']}")
+    base = base[~base["idx"].isin(removed)]
+    counts["removed (not in the corrected EU file)"] = len(removed)
+
+    work = gpd.read_file(paths["work_list"]).to_crs(4326)
+    work["idx"] = work["idx"].astype(int)
+    old = work[work["origin"] == "without_heigit_size"]
+    missing = ~old["idx"].isin(base["idx"])
+    if missing.any():
+        raise ValueError(f"{paths['work_list']}: {int(missing.sum())} plants without size are not in the v2 list")
+    base = base.set_index("idx", drop=False)
+    base.loc[old["idx"], "wl_idx"] = old["idx"].to_numpy()
+
+    moved = old[old["location_source"] == "corrected_eu_file"].set_index("idx")
+    wrong = moved.index[moved["location_shift_m"] > float(cfg["wrong_code_shift_m"])]
+    moved = moved.drop(index=wrong)
+    base["geometry_v2"] = None
+    base.loc[moved.index, "geometry_v2"] = base.loc[moved.index].geometry.to_wkt(rounding_precision=-1)
+    base.loc[moved.index, "geometry"] = moved.geometry
+    base.loc[moved.index, "location_shift_m"] = moved["location_shift_m"]
+    base.loc[moved.index, "location_source"] = "corrected_eu_file"
+    counts["moved to the corrected EU file's location"] = len(moved)
+
+    # a plant with another plant's EU code: it stays, the file plant becomes a plant of its own
+    eu_columns = [c for c in pyogrio.read_info(paths["eu_file"])["fields"] if c in columns and c not in ("lat", "lon")]
+    split = work[work["idx"].isin(wrong)].copy()
+    split = split[[c for c in columns if c in eu_columns or c == "ISO_2"] + ["idx", "geometry"]]
+    split["ISO_2"] = file_countries(split, cfg)
+    split["origin"], split["location_source"] = "new_plant_eu_file", "corrected_eu_file"
+    base.loc[wrong, eu_columns] = None
+    base.loc[wrong, "wl_idx"] = pd.NA
+    counts["plants with another plant's EU code (file plant added)"] = len(wrong)
+
+    new = work[work["origin"] != "without_heigit_size"].copy()
+    national = new["origin"] == "new_plant_national"
+    new["WASTE_ID"] = new["WASTE_ID"].astype(object).where(~national, new["OLD_WASTE_ID"])  # back from the work list
+    new["idx_v2"] = new["idx"]
+    split["idx_v2"] = pd.NA  # its work-list number is the v2 plant's, which stays too
+    new = pd.concat([new, split], ignore_index=True)
+    new["wl_idx"], new["size_source"] = new["idx"], "none"
+    new = new[[c for c in columns if c in new.columns] + ["wl_idx", "idx_v2", "origin", "location_source",
+                                                         "size_source", "geometry"]]  # fmt: skip
+    counts.update({f"added: {k}": v for k, v in new["origin"].value_counts().items()})
+
+    plants = pd.concat([base.reset_index(drop=True), new], ignore_index=True)
+    plants = gpd.GeoDataFrame(plants, geometry="geometry", crs=4326)
+    plants = update_sizes(plants, image_results(cfg, work), cfg)
+    counts["sizes from the new images"] = int((plants["size_source"] == "new_image").sum())
+
+    plants, n_groups, n_rows = merge_same_sites(plants.reset_index(drop=True), cfg)
+    counts[f"same-site groups merged (closer than {cfg['same_site_distance_m']:g} m)"] = n_groups
+    counts["plants in them"] = n_rows
+
+    plants = plants.sort_values("idx_v2", kind="stable").reset_index(drop=True)
+    plants["idx"], plants["idx_v2"] = np.arange(len(plants)), plants["idx_v2"].astype("Int64")
+    plants = plants[[*columns, *[c for c in ADDED if c not in columns], "geometry"]]
+    counts["v3 plants"] = len(plants)
+    return gpd.GeoDataFrame(plants, geometry="geometry", crs=4326), counts
+
+
+def write(cfg, plants, counts):
+    with atomic_output(cfg["paths"]["output"]) as tmp:
+        plants.to_file(tmp, driver="GPKG", engine="pyogrio")
+    table = pd.DataFrame({"step": list(counts), "plants": list(counts.values())})
+    with atomic_output(cfg["paths"]["summary"]) as tmp:
+        table.to_csv(tmp, index=False)
+
+
+def main():
+    cfg = load_config(script_name="plants_v3")
+    plants, counts = build(cfg)
+    write(cfg, plants, counts)
+    for step, n in counts.items():
+        logger.info("%s: %s", step, n)
+
+
+if __name__ == "__main__":
+    configure_logging()
+    main()

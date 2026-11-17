@@ -62,7 +62,7 @@ The existing suite already covers a meaningful amount of real repository behavio
   - `merge_seg_results.assign_to_nearest`
   - `merge_seg_results.merge_new`
   - `merge_seg_results.merge_old`
-  - `merge_seg_results.main` variant dispatch (`old`/`new`) with legacy guard behavior
+  - `merge_seg_results.main` variant dispatch (`old`/`new`)
   - `correct_locations_w_OSM.coordinate_corr_locations_wOSM`
   - `correct_locations_w_OSM.main` output-writing and country-enrichment wiring branches
 - `industrial_analysis.download_and_vectorize`

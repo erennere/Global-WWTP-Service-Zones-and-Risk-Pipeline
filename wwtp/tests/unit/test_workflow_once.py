@@ -25,6 +25,8 @@ def test_a_run_includes_none_by_default():
         (["combine_locations", "wastewater_join"], {"combine_locations", "wastewater_join"}),
         ("annotation_context", {"annotation_grids", "wastewater_join"}),  # the annotation without images
         ("annotation_overlay", {"download_bing_annotate"}),  # the text overlay, once the images are there
+        ("work_list", {"national_plants", "make_work_list"}),  # plant list v3: the work list now
+        ("plants_v3", {"make_plants_v3"}),  # ... and v3 once the new images' results are there
         ("", set()),
     ],
 )

@@ -21,8 +21,15 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 (data/sensitivity/sweep_validation/summary.md)
         sweep_layers                  only the service areas + population of the grid
     snakemake national_data     downloads the validation references and national plant registers (on
-                                the login node), lists the register plants our list lacks
-                                (data/validation_data/national_data/new_plants.gpkg, results.zip)
+                                the login node) and describes them, with every register plant's distance
+                                to ours (data/validation_data/national_data/register_plants.gpkg, results.zip)
+    snakemake work_list --config run_once=work_list
+                                the national plants (AU, CA, JP, NZ; data/national_plants) and the work list
+                                of plants that need a new image (data/heigit_sizes): plants without a size,
+                                the national plants, the corrected EU file's plants that v2 lacks
+    snakemake plants_v3 --config run_once=plants_v3
+                                the plant list v3 (data/all_annotated_v3.gpkg): v2 with the work list and
+                                the results of the new images; then set create_voronoi.version to '3'
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
@@ -44,7 +51,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake calibration_figures   Extended Data figures and LaTeX numbers of the calibration from its tables
                                 (data/figures/calibration; paper/methods_calibration.tex)
 
-One-time stages (combine_locations, the four annotation rules, download_pop) are left out
+One-time stages (combine_locations, the four annotation rules, download_pop, national_plants,
+make_work_list, make_plants_v3) are left out
 of every run: their outputs are taken as they are. Name them to include them in one run,
 e.g. `snakemake analysis --config run_once=download_pop` (or list them in workflow.run_once).
 Targets go before --config: it takes every word that follows it.
@@ -97,7 +105,9 @@ TARGETS = {
     "figures": "configured variant's figures (and whatever of the analysis they need)",
     "sweep": "whole sweep grid: service areas + population, validation and the recommended candidate",
     "sweep_layers": "only the service areas + population of the sweep grid",
-    "national_data": "reference data downloaded (login node), national registers: plants our list lacks",
+    "national_data": "reference data downloaded (login node), national registers described",
+    "work_list": "national plants + plants that need a new image: `snakemake work_list --config run_once=work_list`",
+    "plants_v3": "plant list v3 from v2, the work list and the new images: `... plants_v3 --config run_once=plants_v3`",
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
@@ -129,9 +139,7 @@ MERGE = wf.config("final_data_merge")["paths"]
 if "combine_locations" in ONCE:
     rule combine_locations:
         """Corrected plant locations: OSM-snapped, segmentation results, national datasets (one job, in order)."""
-        output:
-            MERGE["corrected_all_filepath"],
-            MERGE["new_points_filepath"],
+        output: MERGE["corrected_all_filepath"]
         params: module="data_merge.correct_locations_w_OSM", cli=[]
         log: wf.log("combine_locations")
         threads: threads("combine_locations")
@@ -339,10 +347,10 @@ rule national_data_fetch:
 
 
 rule national_registers:
-    """The downloaded files described, and the register plants our list lacks, in one file."""
+    """The downloaded files described, every register plant with its distance to ours, in one file."""
     input: ANNOTATED, wf.stamp("national_data_fetch")
-    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "new_plants.gpkg", "new_plants.csv", "register_plants.gpkg", "register_plants.csv", "registers_summary.csv", "peek.md")]
-    params: module="pop_validation_scripts.national_data", cli=["registers"], **wf.settings_params("national_data", "registers", "coordinate_names", "match_distance_m", "uncovered")
+    output: [f"{ND['output_dir']}/{name}" for name in ("results.zip", "register_plants.gpkg", "register_plants.csv", "registers_summary.csv", "peek.md")]
+    params: module="pop_validation_scripts.national_data", cli=["registers"], **wf.settings_params("national_data", "registers", "coordinate_names", "match_distance_m")
     log: wf.log("national_registers")
     threads: threads("national_registers")
     resources: **res("national_registers")
@@ -350,8 +358,64 @@ rule national_registers:
 
 
 rule national_data:
-    """Reference data downloaded and the new plants of the national registers listed."""
+    """Reference data downloaded and the national registers described."""
     input: rules.national_registers.output
+
+
+# The plant list v3 (one-time stages): national plants -> work list -> (new images, outside this
+# workflow) -> plant list v3. Their outputs are the inputs of the next step and of the annotation.
+NP = wf.config("national_plants")["paths"]
+WL = wf.config("work_list")["paths"]
+V3 = wf.config("plants_v3")["paths"]
+NATIONAL_PLANTS = [f"{NP['output_dir']}/{name}" for name in ("national_plants.gpkg", "national_plants.csv", "national_plants_left_out.csv")]
+WORK_LIST = [WL["work_list"], WL["removed_plants"], WL["eu_file_not_added"]]
+if "national_plants" in ONCE:
+    rule national_plants:
+        """AU, CA, JP, NZ plants from their registers, OpenStreetMap and HydroWASTE, in the columns of v2."""
+        input:
+            rules.national_registers.output,
+            NP["p22_dir"], NP["osmgeo_filepath"], NP["hydrowaste"], NP["corrected_all_filepath"],
+        output: NATIONAL_PLANTS
+        params: module="data_merge.national_plants", cli=[]
+        log: wf.log("national_plants")
+        threads: threads("national_plants")
+        resources: **res("national_plants")
+        shell: STAGE
+
+
+if "make_work_list" in ONCE:
+    rule make_work_list:
+        """Plants without a size, the national plants and the corrected EU file's plants that v2 lacks."""
+        input: NATIONAL_PLANTS, WL["population_layer"], WL["corrected_all_filepath"], WL["eu_file"]
+        output: WORK_LIST
+        params: module="data_merge.work_list", cli=[]
+        log: wf.log("work_list")
+        threads: threads("work_list")
+        resources: **res("work_list")
+        shell: STAGE
+
+
+if "make_plants_v3" in ONCE:
+    rule make_plants_v3:
+        """v2 with the work list applied and the results of the new images; same sites merged, renumbered."""
+        input:
+            WORK_LIST, V3["base_filepath"], V3["images_ref"], V3["segmentation_results"], V3["image_text_results"],
+        output: V3["output"], V3["summary"]
+        params: module="data_merge.plants_v3", cli=[]
+        log: wf.log("plants_v3")
+        threads: threads("plants_v3")
+        resources: **res("plants_v3")
+        shell: STAGE
+
+
+rule work_list:
+    """The national plants and the work list (`--config run_once=work_list`)."""
+    input: WORK_LIST
+
+
+rule plants_v3:
+    """The plant list v3 (`--config run_once=plants_v3`)."""
+    input: V3["output"]
 
 
 SV = wf.config("sweep_validation")["paths"]

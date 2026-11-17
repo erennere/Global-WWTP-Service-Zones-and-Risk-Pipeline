@@ -147,10 +147,8 @@ def main():
     osm_threshold = cfg["osm_threshold"]
     threshold = cfg["threshold"]
 
-    # Start from the configured merged baseline; legacy_merge controls whether
-    # segmentation-adjusted outputs are preferred over the directly corrected set.
-    old_filepath = paths["seg_corrected_south"] if cfg["legacy_merge"] else paths["corrected_south"]
-    old_df = gpd.read_file(old_filepath)
+    # Start from the corrected locations with the first segmentation results (merge_seg_results old).
+    old_df = gpd.read_file(paths["seg_corrected_south"])
 
     # Add external country datasets that are maintained outside the core merge.
     canada_df = pd.read_csv(paths["canada_filepath"], encoding="latin1")
@@ -234,9 +232,6 @@ def main():
     if "fid" in merged_df:
         merged_df = merged_df.drop(columns=["fid"], errors="ignore")
 
-    rest = merged_df[~merged_df["geometry"].isin(set(old_df["geometry"].tolist()))].reset_index(drop=True)
-    with atomic_output(paths["new_points_filepath"]) as tmp_path:
-        rest.to_file(tmp_path, driver="GPKG", index=False)
     with atomic_output(paths["corrected_all_filepath"]) as tmp_path:
         merged_df.to_file(tmp_path, driver="GPKG", index=False)
 

@@ -381,8 +381,8 @@ def test_country_sizes_and_the_packed_results(tmp_path):
     for name in cr.RESULT_FILES:
         (out / name).write_text(name)
     with zipfile.ZipFile(tmp_path / "national.zip", "w") as z:
-        z.writestr("new_plants.csv", "register\n")
+        z.writestr("register_plants.csv", "register\n")
     cr.pack_results(str(out), str(tmp_path / "national.zip"))
     with zipfile.ZipFile(out / "calibration_results.zip") as z:
-        assert set(z.namelist()) == {*cr.RESULT_FILES, "national_data/new_plants.csv"}
-        assert z.read("national_data/new_plants.csv") == b"register\n"
+        assert set(z.namelist()) == {*cr.RESULT_FILES, "national_data/register_plants.csv"}
+        assert z.read("national_data/register_plants.csv") == b"register\n"

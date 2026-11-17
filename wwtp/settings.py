@@ -193,13 +193,11 @@ class RunManifest(Section):
 
 class MergeSegResults(Section):
     version: Version
-    legacy_merge: bool
     paths: Paths
 
 
 class FinalDataMerge(Section):
     version: Version
-    legacy_merge: bool
     threshold: NonNegativeInt
     osm_threshold: NonNegativeInt
     paths: Paths
@@ -637,19 +635,66 @@ class CoordinateNames(Strict):
     lat: list[str] = Field(min_length=1)
 
 
-class HydrowasteColumns(Strict):
-    id: str
-    name: str
-    country: str  # ISO 3166 alpha-3
-    lon: str
-    lat: str
+Iso2 = Annotated[str, Field(pattern=r"^[A-Z]{2}$")]
 
 
-class Uncovered(Strict):
-    """Countries our plant list does not cover: their register plants and HydroWASTE records in one file."""
+class NationalPlants(Section):
+    """National plant lists for the countries our list lacks (wwtp/data_merge/national_plants.py)."""
 
-    countries: list[Annotated[str, Field(pattern=r"^[A-Z]{2}$")]] = Field(min_length=1)
-    hydrowaste_columns: HydrowasteColumns
+    countries: list[Iso2] = Field(min_length=1)
+    registers: dict[Literal["AU", "CA"], str]
+    hydrowaste_countries: list[Iso2]
+    osm_bbox: dict[Iso2, Annotated[list[float], Field(min_length=4, max_length=4)]]
+    osm_group_distance_m: PositiveFloat
+    osm_skip_names: str
+    metric_crs: dict[Iso2, PositiveInt]
+    not_operational: list[str]
+    left_out_subtypes: list[str]
+    match_distance_m: PositiveFloat
+    name_match_distance_m: PositiveFloat
+    approximate_match_distance_m: PositiveFloat
+    approximate_match_countries: list[Iso2]
+    complete_register_countries: list[Iso2]
+    complete_register_distance_m: PositiveFloat
+    name_stopwords: list[str]
+    register_years: dict[str, Year]
+    paths: Paths
+
+    @model_validator(mode="after")
+    def _every_country_has_a_crs(self):
+        if missing := sorted(set(self.countries) - set(self.metric_crs)):
+            raise ValueError(f"metric_crs lacks {missing}")
+        return self
+
+
+class WorkList(Section):
+    """Plants that need a new image, and the new plants (wwtp/data_merge/work_list.py)."""
+
+    same_site_distance_m: PositiveFloat
+    code_countries: dict[str, Iso2]
+    territories: dict[Iso2, Annotated[list[float], Field(min_length=4, max_length=4)]]
+    size_groups: dict[Literal["lagoon", "nothing", "new"], str]
+    paths: Paths
+
+    @model_validator(mode="after")
+    def _every_size_group(self):
+        if missing := sorted({"lagoon", "nothing", "new"} - set(self.size_groups)):
+            raise ValueError(f"size_groups lacks {missing}")
+        return self
+
+
+class PlantsV3(Section):
+    """Plant list v3: v2 with the work list and the new images' results (wwtp/data_merge/plants_v3.py)."""
+
+    same_site_distance_m: PositiveFloat
+    code_countries: dict[str, Iso2]
+    territories: dict[Iso2, Annotated[list[float], Field(min_length=4, max_length=4)]]
+    wrong_code_shift_m: PositiveFloat
+    max_image_offset_m: PositiveFloat
+    detection_columns: list[str] = Field(min_length=1)
+    category_columns: list[str] = Field(min_length=3, max_length=3)
+    location_priority: list[Literal["corrected_eu_file", "national_plants", "v2"]] = Field(min_length=3, max_length=3)
+    paths: Paths
 
 
 class NationalData(Section):
@@ -662,7 +707,6 @@ class NationalData(Section):
     coordinate_names: CoordinateNames
     sources: dict[str, NationalSource] = Field(min_length=1)
     registers: dict[str, NationalRegister]
-    uncovered: Uncovered
     paths: Paths
 
     @model_validator(mode="after")
@@ -803,6 +847,9 @@ OneTimeStage = Literal[
     "download_bing_annotate",
     "merge_annotations",
     "download_pop",
+    "national_plants",
+    "work_list",
+    "plants_v3",
 ]
 
 
@@ -930,6 +977,9 @@ SECTIONS: dict[str, type[Section]] = {
     "sweep": Sweep,
     "sweep_validation": SweepValidation,
     "national_data": NationalData,
+    "national_plants": NationalPlants,
+    "work_list": WorkList,
+    "plants_v3": PlantsV3,
     "connection_radius": ConnectionRadius,
     "figure1": Figure1,
     "calibration_figures": CalibrationFigures,
