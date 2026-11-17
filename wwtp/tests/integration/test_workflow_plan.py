@@ -168,3 +168,26 @@ def test_the_sweep_makes_approach0_once_per_weighting_and_extent(work):
     # The scoring reads the population layers; a shared service-area file is linked only when asked for.
     shared = {job for job in jobs if job.startswith("share_approach0_pop__")}
     assert shared and all("_lvl6_" not in job for job in shared)
+
+
+def test_annotation_context_then_overlay(work):
+    """Without images: tiles + OSM (login node) and the merged layers; the overlay waits for ref.geojson."""
+    points = wf.annotation_points()
+    os.makedirs(os.path.dirname(points), exist_ok=True)
+    open(points, "a").close()
+    result, jobs = _plan(work, "annotation_context", "--config", "run_once=annotation_context")
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert jobs == {"annotation_grids", "wastewater_join", "annotation_context"}
+
+    for path in (wf.annotation_grid(), wf.annotation_stamp("osm_extract"), *wf.osm_layers()):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "a").close()
+    result, _ = _plan(work, "annotation_overlay", "--config", "run_once=annotation_overlay")
+    assert result.returncode != 0 and "ref.geojson" in result.stdout + result.stderr  # no images yet
+
+    ref = wf.annotation_images_ref()
+    os.makedirs(os.path.dirname(ref), exist_ok=True)
+    open(ref, "a").close()
+    result, jobs = _plan(work, "annotation_overlay", "--config", "run_once=annotation_overlay")
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert jobs == {"download_bing_annotate", "annotation_overlay"}

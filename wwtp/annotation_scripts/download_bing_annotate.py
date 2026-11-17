@@ -513,7 +513,7 @@ if __name__ == "__main__":
     line_filepath = os.path.join(file_location_dir, "merged_lines.parquet")
 
     points_path = f"{images_dir}/ref.geojson"
-    grids_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(cfg['paths']['corrected_all_filepath'])}")
+    grids_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(cfg['paths']['annotation_points_filepath'])}")
 
     bbox_gdf = gpd.read_file(grids_filepath).to_crs(3857)
     bbox_gdf["idx"] = bbox_gdf["idx"].astype(int)

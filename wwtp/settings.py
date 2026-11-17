@@ -796,6 +796,8 @@ class JobResources(Strict):
 OneTimeStage = Literal[
     "combine_locations",
     "annotations",
+    "annotation_context",
+    "annotation_overlay",
     "annotation_grids",
     "wastewater_join",
     "download_bing_annotate",

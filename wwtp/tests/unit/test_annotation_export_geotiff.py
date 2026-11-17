@@ -23,7 +23,7 @@ def test_new04_exports_one_georeferenced_patch_per_cell(tmp_path, monkeypatch):
     cfg = {
         "export": {"id_field": "idx", "output_width_px": 64, "output_height_px": 32, "dpi": 16, "image_format": "png"},
         "paths": {
-            "corrected_all_filepath": str(data / "points.gpkg"),
+            "annotation_points_filepath": str(data / "points.gpkg"),
             "annotations_grid_dir": str(grid_dir),
             "export_layer_filepath": str(layer),
             "export_patch_dir": str(data / "PATCH"),

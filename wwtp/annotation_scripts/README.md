@@ -24,7 +24,7 @@ Before running this stage, these inputs must be available.
 
 | Data file | Why needed | Default path status |
 | --- | --- | --- |
-| Corrected and merged WWTP layer | points for grid generation | produced by the `combine_locations` rule (`wwtp/data_merge/`) |
+| Plants to annotate | points for grid generation, each with a unique integer `idx` | `NEW_01_GENERATEGRIDS.paths.annotation_points_filepath` (now the plants without a HeiGIT size + new plants, `data/heigit_sizes/plants_without_size_and_new_plants.gpkg`) |
 | Satellite imagery directory | source for annotation download | `download_bing_annotate.paths.annotations_images_dir` (cluster-specific path by default) |
 | Annotation inference results | CSV with AI labels for merge-back | `merge_annotations.paths.annotations_results_filepath` (cluster-specific path by default) |
 
@@ -54,17 +54,21 @@ graph TD
   F -. external inference .-> G[merge_annotations]
   G --> H[(annotation-enriched WWTP layer)]
 ```
-Snakemake rules: `annotation_grids` (NEW_01 + NEW_02), `wastewater_join` (NEW_03), `download_bing_annotate` (one job per shard), `merge_annotations`; target `annotations`.
+Snakemake rules: `annotation_grids` (NEW_01 + NEW_02; a local job, Overpass needs internet), `wastewater_join` (NEW_03), `download_bing_annotate` (the text overlay, one job per shard), `merge_annotations`; targets `annotations` (all), `annotation_context` (the first two: everything without the images) and `annotation_overlay` (the text overlay, once the images and their `ref.geojson` are in `annotations_images_dir`).
 
 ## Run Instructions
 ```bash
-snakemake --profile workflow/profiles/slurm annotations     # the whole chain, shards as separate jobs
+snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations                 # the whole chain
+snakemake --profile workflow/profiles/slurm annotation_context --config run_once=annotation_context   # without images
+snakemake --profile workflow/profiles/slurm annotation_overlay --config run_once=annotation_overlay   # text overlay, once the images are there
 python -m wwtp.annotation_scripts.merge_annotations           # one stage on its own
 python -m wwtp.annotation_scripts.annotations_inspection      # QA sampling (not part of the workflow)
 python -m wwtp.annotation_scripts.copy_falsy_images
 ```
 
 Job logs are in `{data_dir}/workflow/logs/`.
+
+Each set of plants (`annotation_points_filepath`) has its own folders (now `data/annotations/new_plants/`: `GRID`, `osm_by_idx`, `data`, `temp_parquets`, `images`, `annotated`) and stamps (`<step>__<points file name>`). The first global run (`all_merged_v2.gpkg`) is in `data/annotations/GRID` and `osm_by_idx`; `merge_annotations` and the QA scripts keep reading its inference results and images.
 
 ## Smart Behaviors
 - `annotations_inspection.py` uses `annotations.n_sample_size` with a default fallback of `1000` and saves figures in headless runs instead of relying on an interactive display.
@@ -97,8 +101,9 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | `download_bing_annotate.annotations.earth_radius_m` | `6378137` | Earth radius used for Mercator math |
 | `download_bing_annotate.annotations.mercator_tile_size_px` | `256` | Web-Mercator base tile size |
 | `download_bing_annotate.annotations.imagery_reference_tile_size_px` | `512` | Imagery provider native tile size used in pixel scaling |
-| `download_bing_annotate.paths.annotations_images_dir` | ⚠️ path | Source imagery directory |
-| `download_bing_annotate.paths.annotated_images_output_dir` | ⚠️ path | Annotated image output directory |
+| `NEW_01_GENERATEGRIDS.paths.annotation_points_filepath` | work list | The plants to annotate (unique integer `idx`) |
+| `download_bing_annotate.paths.annotations_images_dir` | `{data_dir}/annotations/new_plants/images` | Source imagery: `<row>.png` and `ref.geojson` (each plant's `idx`) |
+| `download_bing_annotate.paths.annotated_images_output_dir` | `{data_dir}/annotations/new_plants/annotated` | Annotated image output directory |
 | `merge_annotations.paths.annotations_results_filepath` | ⚠️ path | Annotation results CSV |
 | `annotations_inspection.paths.annotations_verf_image_outpath_dir` | ⚠️ path | QA image output directory |
 

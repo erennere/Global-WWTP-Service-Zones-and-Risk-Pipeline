@@ -192,7 +192,7 @@ def test_new02_main_smoke_paths(monkeypatch, tmp_path):
             "overpass_pause_seconds": 0.1,
         },
         "paths": {
-            "corrected_all_filepath": str(tmp_path / "all.gpkg"),
+            "annotation_points_filepath": str(tmp_path / "all.gpkg"),
             "annotations_grid_dir": str(tmp_path / "grid"),
             "annotations_by_osm_dir": str(tmp_path / "osm"),
         },

@@ -528,7 +528,7 @@ if __name__ == "__main__":
     cfg = load_config(script_name="NEW_03_WASTEWATERJOIN_GEOJSON", **overrides)
     overwrite = cfg["overwrite_existing"]
 
-    points_path = cfg["paths"]["corrected_all_filepath"]
+    points_path = cfg["paths"]["annotation_points_filepath"]
     grid_filedir = cfg["paths"]["annotations_grid_dir"]
     grid_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(points_path)}")
     polygons_dir = cfg["paths"]["annotations_by_osm_dir"]

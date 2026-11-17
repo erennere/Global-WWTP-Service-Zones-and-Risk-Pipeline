@@ -273,7 +273,7 @@ def main():
     urls = list(cfg["annotations"]["overpass_urls"])
     pause_seconds = float(cfg["annotations"]["overpass_pause_seconds"])
 
-    points_path = cfg["paths"]["corrected_all_filepath"]
+    points_path = cfg["paths"]["annotation_points_filepath"]
 
     grid_filedir = cfg["paths"]["annotations_grid_dir"]
     grid_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(points_path)}")

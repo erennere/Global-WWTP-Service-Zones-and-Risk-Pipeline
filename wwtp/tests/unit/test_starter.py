@@ -552,7 +552,7 @@ def test_new03_script_entrypoint_runs_merge_tasks_and_calls_main(monkeypatch, tm
     cfg = {
         "overwrite_existing": False,
         "paths": {
-            "corrected_all_filepath": str(tmp_path / "points.gpkg"),
+            "annotation_points_filepath": str(tmp_path / "points.gpkg"),
             "annotations_grid_dir": str(tmp_path / "grids"),
             "annotations_by_osm_dir": str(tmp_path / "osm"),
             "annotations_temp_parquet_dir": str(tmp_path / "tmp_parquets"),
@@ -615,7 +615,7 @@ def test_new03_script_skips_main_when_output_file_missing(monkeypatch, tmp_path)
     cfg = {
         "overwrite_existing": False,
         "paths": {
-            "corrected_all_filepath": str(tmp_path / "points.gpkg"),
+            "annotation_points_filepath": str(tmp_path / "points.gpkg"),
             "annotations_grid_dir": str(tmp_path / "grids"),
             "annotations_by_osm_dir": str(tmp_path / "osm"),
             "annotations_temp_parquet_dir": str(tmp_path / "tmp_parquets"),

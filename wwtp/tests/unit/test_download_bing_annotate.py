@@ -174,7 +174,7 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
             "annotations_grid_dir": str(grid_dir),
             "annotations_temp_parquet_dir": str(tmp_path / "tmp_parquet"),
             "annotations_by_osm_dir": str(osm_dir),
-            "corrected_all_filepath": str(tmp_path / "all.csv"),
+            "annotation_points_filepath": str(tmp_path / "all.csv"),
             "annotated_images_output_dir": str(out_dir),
         },
     }

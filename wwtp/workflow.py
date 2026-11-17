@@ -27,6 +27,10 @@ RUN_KEYS = ("level", "version", "buffer", "weight_method", "weight_func", "dynam
 ONE_TIME_STAGES = {
     "combine_locations": ("combine_locations",),
     "annotations": ("annotation_grids", "wastewater_join", "download_bing_annotate", "merge_annotations"),
+    # the annotation without the images: tiles, OSM features per tile, merged OSM layers
+    "annotation_context": ("annotation_grids", "wastewater_join"),
+    # the text overlay on the images, once they are in download_bing_annotate.paths.annotations_images_dir
+    "annotation_overlay": ("download_bing_annotate",),
     "annotation_grids": ("annotation_grids",),
     "wastewater_join": ("wastewater_join",),
     "download_bing_annotate": ("download_bing_annotate",),
@@ -246,10 +250,27 @@ def diff_layer(variant):
     )
 
 
+def annotation_points():
+    """The plants being annotated (NEW_01_GENERATEGRIDS ``annotation_points_filepath``)."""
+    return config("NEW_01_GENERATEGRIDS")["paths"]["annotation_points_filepath"]
+
+
 def annotation_grid():
-    """NEW_01's tiles: ``grids_<corrected plants file name>`` in annotations_grid_dir."""
+    """NEW_01's tiles: ``grids_<annotation points file name>`` in annotations_grid_dir."""
     paths = config("NEW_01_GENERATEGRIDS")["paths"]
-    return os.path.join(paths["annotations_grid_dir"], f"grids_{os.path.basename(paths['corrected_all_filepath'])}")
+    return os.path.join(paths["annotations_grid_dir"], f"grids_{os.path.basename(annotation_points())}")
+
+
+def annotation_stamp(name):
+    """Stamp of an annotation step for the plants being annotated: one set per points file, so the
+    stamps of an earlier set (another points file) never count as done."""
+    return stamp(f"{name}__{os.path.splitext(os.path.basename(annotation_points()))[0]}")
+
+
+def annotation_images_ref():
+    """``ref.geojson`` of the incoming images (idx of each plant, image ``<row>.png``): the text overlay
+    starts only when it is there."""
+    return os.path.join(config("download_bing_annotate")["paths"]["annotations_images_dir"], "ref.geojson")
 
 
 def osm_layers():

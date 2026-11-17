@@ -22,6 +22,7 @@ def test_generategrids_main_filters_points_and_writes(monkeypatch, tmp_path):
         {
             "geometry": [Point(0, 0), Point(1, 1), LineString([(0, 0), (1, 1)])],
             "id": [1, 2, 3],
+            "idx": [10, 11, 12],
         },
         geometry="geometry",
         crs="EPSG:4326",
@@ -63,7 +64,7 @@ def test_new01_main_script_smoke(monkeypatch, tmp_path):
     cfg = {
         "annotations": {"cell_size": 10, "factor": 2},
         "paths": {
-            "corrected_all_filepath": str(tmp_path / "all_points.gpkg"),
+            "annotation_points_filepath": str(tmp_path / "all_points.gpkg"),
             "annotations_grid_dir": str(grid_dir),
         },
     }
@@ -73,7 +74,7 @@ def test_new01_main_script_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(n1.os, "chdir", lambda path: None)
 
     src = gpd.GeoDataFrame(
-        {"geometry": [Point(0, 0), Point(1, 1)]},
+        {"idx": [3, 59714], "geometry": [Point(0, 0), Point(1, 1)]},
         geometry="geometry",
         crs="EPSG:4326",
     )
@@ -93,3 +94,21 @@ def test_new01_main_script_smoke(monkeypatch, tmp_path):
     assert captured["driver"] == "GPKG"
     assert captured["rows"] == 2
     assert captured["path"].endswith("grids_all_points.gpkg")
+
+
+@pytest.mark.parametrize(
+    "idx, message",
+    [
+        (None, "no 'idx' column"),
+        ([1.0, float("nan")], "1 plants without an integer idx"),
+        ([1.5, 2.0], "1 plants without an integer idx"),
+        ([7, 7], "idx is not unique"),
+    ],
+)
+def test_new01_every_plant_needs_a_unique_integer_idx(tmp_path, idx, message):
+    """The idx names a plant's tile, OSM files and image: a missing or repeated one stops the run."""
+    columns = {} if idx is None else {"idx": idx}
+    gdf = gpd.GeoDataFrame({**columns, "geometry": [Point(0, 0), Point(1, 1)]}, geometry="geometry", crs=4326)
+    with pytest.raises(ValueError, match=message):
+        n1.check_idx(gdf, "points.gpkg")
+    n1.check_idx(gdf.assign(idx=[0, 59714]), "points.gpkg")  # integers, unique: fine

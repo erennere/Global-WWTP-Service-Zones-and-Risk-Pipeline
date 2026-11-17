@@ -26,6 +26,12 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
+    snakemake annotation_context --config run_once=annotation_context
+                                the annotation of the plants in NEW_01_GENERATEGRIDS.paths.annotation_points_filepath
+                                without the images: tiles, OSM features per tile (login node: Overpass), merged layers
+    snakemake annotation_overlay --config run_once=annotation_overlay
+                                the text overlay, once their images and ref.geojson are in
+                                download_bing_annotate.paths.annotations_images_dir
     snakemake calibration       everything the calibration needs from the cluster, before any sweep:
                                 national_data + the plant sizes by country, the national size scale and
                                 the radius rule from national connection statistics (JMP; SDG 6.3.1,
@@ -95,6 +101,8 @@ TARGETS = {
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
+    "annotation_context": "annotation without images: `snakemake annotation_context --config run_once=annotation_context`",
+    "annotation_overlay": "text overlay once the images are there: `... annotation_overlay --config run_once=annotation_overlay`",
     "calibration": "before any sweep: national_data + size and radius calibration tables, in one zip to send back",
     "connection_radius": "only the calibration tables: plant sizes by country, national size scale, radius rule",
     "calibration_figures": "Extended Data figures and Methods numbers of the calibration, from its tables",
@@ -134,13 +142,19 @@ if "combine_locations" in ONCE:
 
 
 GRIDS = wf.annotation_grid()
+OSM_EXTRACT = wf.annotation_stamp("osm_extract")
 if "annotation_grids" in ONCE:
     rule annotation_grids:
-        """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02)."""
-        input: MERGE["corrected_all_filepath"]
+        """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02).
+
+        A local job: the OSM features come from Overpass, and compute nodes may have no internet.
+        Tiles already downloaded are kept (NEW_02_EXTRACTOSMDATAFULL_GEOJSON.overwrite_existing).
+        """
+        localrule: True
+        input: wf.annotation_points()
         output:
             GRIDS,
-            touch(wf.stamp("osm_extract")),
+            touch(OSM_EXTRACT),
         params: module="annotation_scripts.NEW_01_GENERATEGRIDS", cli=[]
         log: wf.log("annotation_grids")
         threads: threads("annotation_grids")
@@ -151,7 +165,7 @@ if "annotation_grids" in ONCE:
 if "wastewater_join" in ONCE:
     rule wastewater_join:
         """The OSM tiles merged into polygon and line layers (NEW_03), read by the image annotation."""
-        input: GRIDS, wf.stamp("osm_extract")
+        input: GRIDS, OSM_EXTRACT
         output: wf.osm_layers()
         params: module="annotation_scripts.NEW_03_WASTEWATERJOIN_GEOJSON", cli=[]
         log: wf.log("wastewater_join")
@@ -161,11 +175,16 @@ if "wastewater_join" in ONCE:
 
 
 BING_SHARDS = wf.config("workflow")["bing_annotate_shards"]
+OVERLAY = expand(wf.annotation_stamp("bing_annotate_{shard}"), shard=range(BING_SHARDS))
 if "download_bing_annotate" in ONCE:
     rule download_bing_annotate:
-        """Annotated imagery, one job per share of the tiles."""
-        input: GRIDS, wf.osm_layers()
-        output: touch(wf.stamp("bing_annotate_{shard}"))
+        """Text overlay: the tile's OSM labels drawn on its image, one job per share of the tiles.
+
+        Needs the images: <row>.png and ref.geojson (each plant's idx) in
+        download_bing_annotate.paths.annotations_images_dir; only plants listed there are drawn.
+        """
+        input: GRIDS, OSM_EXTRACT, wf.osm_layers(), wf.annotation_images_ref()
+        output: touch(wf.annotation_stamp("bing_annotate_{shard}"))
         params:
             module="annotation_scripts.download_bing_annotate",
             cli=lambda w: [w.shard, "--num-instances", str(BING_SHARDS)],
@@ -185,8 +204,7 @@ if "merge_annotations" in ONCE:
         input:
             MERGE["corrected_all_filepath"],
             wf.config("merge_annotations")["paths"]["annotations_results_filepath"],
-            expand(wf.stamp("bing_annotate_{shard}"), shard=range(BING_SHARDS))
-            if "download_bing_annotate" in ONCE else [],
+            OVERLAY if "download_bing_annotate" in ONCE else [],
         output: MERGED_LABELS
         params: module="annotation_scripts.merge_annotations", cli=[]
         log: wf.log("merge_annotations")
@@ -197,6 +215,16 @@ if "merge_annotations" in ONCE:
 
 rule annotations:
     input: MERGED_LABELS
+
+
+rule annotation_context:
+    """The annotation without the images: tiles, OSM features per tile, merged OSM layers."""
+    input: GRIDS, OSM_EXTRACT, wf.osm_layers()
+
+
+rule annotation_overlay:
+    """The text overlay on the images of the annotated plants (after annotation_context)."""
+    input: OVERLAY
 
 
 if "download_pop" in ONCE:

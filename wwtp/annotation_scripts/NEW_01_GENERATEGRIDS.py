@@ -1,7 +1,8 @@
 """Build square annotation tiles around WWTP point features.
 
-The output grid is derived from the current `corrected_all_filepath` point layer
-and uses the configured annotation cell size and scale factor.
+The output grid is derived from the `annotation_points_filepath` point layer (the plants being
+annotated; each needs a unique integer ``idx``, which keys its tile, OSM files and image) and uses
+the configured annotation cell size and scale factor.
 """
 
 import argparse
@@ -32,6 +33,18 @@ def parse_args():
     return parser.parse_args()
 
 
+def check_idx(gdf, points_path):
+    """Every plant needs a unique integer ``idx``: it names the tile's OSM files and its image."""
+    if "idx" not in gdf.columns:
+        raise ValueError(f"{points_path} has no 'idx' column")
+    idx = pd.to_numeric(gdf["idx"], errors="coerce")
+    bad = idx.isna() | (idx != idx.round())
+    if bad.any():
+        raise ValueError(f"{points_path}: {int(bad.sum())} plants without an integer idx")
+    if idx.duplicated().any():
+        raise ValueError(f"{points_path}: idx is not unique ({int(idx.duplicated().sum())} repeats)")
+
+
 def main(cell_size, half, points_path, output_path):
     """Read points, expand them to square tiles, and write a GeoPackage grid.
 
@@ -50,6 +63,7 @@ def main(cell_size, half, points_path, output_path):
     gdf = gdf[gdf["geometry"].map(lambda geom: pd.notna(geom) and isinstance(geom, Point))].reset_index(drop=True)
     if not all(gdf.geometry.geom_type == "Point"):
         raise ValueError("Input layer must contain only Point geometries")
+    check_idx(gdf, points_path)
 
     # Create the square tiles in Web Mercator so the cell size is interpreted in meters.
     gdf_3857 = gdf.to_crs(epsg=3857)
@@ -73,7 +87,7 @@ if __name__ == "__main__":
     cell_size = cell_size * factor  # meters (~3667.97 m)
     half = cell_size / 2
 
-    points_path = cfg["paths"]["corrected_all_filepath"]
+    points_path = cfg["paths"]["annotation_points_filepath"]
     output_dir = cfg["paths"]["annotations_grid_dir"]
 
     if not os.path.exists(output_dir):

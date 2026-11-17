@@ -1,6 +1,6 @@
 """Render a vector layer into one georeferenced image per annotation grid cell.
 
-Reads the grid written by NEW_01_GENERATEGRIDS (``grids_<corrected_all name>``
+Reads the grid written by NEW_01_GENERATEGRIDS (``grids_<annotation_points name>``
 in ``annotations_grid_dir``) and the layer at ``export_layer_filepath``, and
 writes ``<id_field>.<image_format>`` plus a ``.wld`` world file per cell into
 ``export_patch_dir``.
@@ -60,7 +60,7 @@ def main():
     cfg = load_config(script_name="NEW_04_EXPORTGEOTIFF", **overrides)
     paths, export = cfg["paths"], cfg["export"]
     grid_path = os.path.join(
-        paths["annotations_grid_dir"], f"grids_{os.path.basename(paths['corrected_all_filepath'])}"
+        paths["annotations_grid_dir"], f"grids_{os.path.basename(paths['annotation_points_filepath'])}"
     )
     grid = gpd.read_file(grid_path)
     layer = gpd.read_file(paths["export_layer_filepath"]).to_crs(grid.crs)
