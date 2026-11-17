@@ -219,11 +219,40 @@ class Generategrids(Section):
     paths: Paths
 
 
+class OverpassEndpoint(Strict):
+    url: str
+    workers: PositiveInt
+
+
 class OverpassAnnotations(Strict):
-    max_workers: PositiveInt
-    retries: NonNegativeInt
-    overpass_urls: list[str] = Field(min_length=1)
-    overpass_pause_seconds: NonNegativeFloat
+    overpass_endpoints: list[OverpassEndpoint] = Field(min_length=1)
+    user_agent: str = Field(min_length=1)
+    output_mode: Literal["geom", "body"]
+    query_timeout_seconds: PositiveInt
+    request_timeout_seconds: PositiveFloat
+    refused_pause_seconds: NonNegativeFloat
+    max_attempts: PositiveInt
+    progress_every: PositiveInt
+
+
+class OverpassBenchmarkSettings(Strict):
+    candidates: list[OverpassEndpoint] = Field(min_length=1)
+    sample_tiles: PositiveInt
+    compare_tiles: NonNegativeInt
+    min_answered_share: Annotated[float, Field(ge=0, le=1)]
+    min_agreement: Annotated[float, Field(ge=0, le=1)]
+    random_seed: int
+    user_agent: str = Field(min_length=1)
+    output_mode: Literal["geom", "body"]
+    query_timeout_seconds: PositiveInt
+    request_timeout_seconds: PositiveFloat
+    refused_pause_seconds: NonNegativeFloat
+
+
+class OverpassBenchmark(Section):
+    version: Version
+    annotations: OverpassBenchmarkSettings
+    paths: Paths
 
 
 class ExtractOsm(Section):
@@ -252,6 +281,7 @@ class BingAnnotations(Strict):
 
 class DownloadBingAnnotate(Section):
     version: Version
+    max_image_offset_m: PositiveFloat
     annotations: BingAnnotations
     paths: Paths
 
@@ -946,6 +976,7 @@ SECTIONS: dict[str, type[Section]] = {
     "combine_watersheds": CombineWatersheds,
     "NEW_01_GENERATEGRIDS": Generategrids,
     "NEW_02_EXTRACTOSMDATAFULL_GEOJSON": ExtractOsm,
+    "overpass_benchmark": OverpassBenchmark,
     "download_bing_annotate": DownloadBingAnnotate,
     "merge_annotations": MergeAnnotations,
     "annotations_inspection": AnnotationsInspection,

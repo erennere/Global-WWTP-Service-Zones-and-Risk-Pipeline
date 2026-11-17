@@ -530,28 +530,13 @@ def test_R5_area_and_points_describe_the_clipped_regions():
 # --------------------------------------------------------------------------- #
 # R13  the Overpass query asks for both waterway values                       #
 # --------------------------------------------------------------------------- #
-def test_R13_overpass_query_requests_streams_and_rivers(monkeypatch):
+def test_R13_overpass_query_requests_streams_and_rivers():
     from wwtp.annotation_scripts import NEW_02_EXTRACTOSMDATAFULL_GEOJSON as osm
 
-    sent = {}
-
-    class _Response:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {"elements": []}
-
-    class _Session:
-        def get(self, url, params, timeout):
-            sent["q"] = params["data"]
-            return _Response()
-
-    monkeypatch.setattr(osm, "requests_session_with_retries", lambda **kwargs: _Session())
-    osm.query_overpass("0,0,1,1", osm.queries, "https://example.invalid")
-
-    assert '["waterway"="stream"]' in sent["q"]
-    assert '["waterway"="river"]' in sent["q"]
+    for mode in ("body", "geom"):
+        q = osm.build_query("0,0,1,1", osm.queries, 180, mode)
+        assert '["waterway"="stream"]' in q
+        assert '["waterway"="river"]' in q
 
 
 # --------------------------------------------------------------------------- #

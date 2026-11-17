@@ -154,6 +154,7 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
         d.mkdir(parents=True, exist_ok=True)
 
     cfg = {
+        "max_image_offset_m": 10,
         "annotations": {
             "cell_size": 3072,
             "factor": 1.194,
@@ -185,7 +186,7 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
     grids = gpd.GeoDataFrame({"idx": [1], "geometry": [box(0, 0, 10, 10)]}, geometry="geometry", crs="EPSG:4326")
     points = gpd.GeoDataFrame({"idx": [1], "geometry": [Point(5, 5)]}, geometry="geometry", crs="EPSG:4326")
 
-    def _read_file(path):
+    def _read_file(path, **kwargs):
         p = str(path)
         if p.endswith("ref.geojson"):
             return points.copy()
@@ -199,7 +200,7 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
     )
 
     # Seed a source image so process_bbox can load it.
-    dba.Image.new("RGB", (64, 64), "black").save(images_dir / "0.png")
+    dba.Image.new("RGB", (3072, 3072), "black").save(images_dir / "0.png")
 
     class _QRes:
         def __init__(self, frame):
@@ -226,3 +227,23 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
 
     monkeypatch.setattr(duckdb, "connect", lambda *a, **k: _Conn())
     runpy.run_module("wwtp.annotation_scripts.download_bing_annotate", run_name="__main__")
+
+
+def test_the_overlay_stops_when_the_images_do_not_fit(tmp_path):
+    """Images made for another plant list, or of another size, stop the overlay before it draws."""
+    from wwtp.annotation_scripts.images_ref import check_image_size, check_images_ref
+
+    plants = gpd.GeoDataFrame({"idx": [1, 2]}, geometry=[Point(8, 47), Point(9, 47)], crs="EPSG:4326")
+    ref = gpd.GeoDataFrame({"idx": [2, 1]}, geometry=[Point(9, 47), Point(8, 47.0001)], crs="EPSG:4326")
+    check_images_ref(ref.to_crs(3857), plants, 20, "ref.geojson")  # 11 m: the same plant
+    with pytest.raises(ValueError, match="1 of 2 images are farther than 5 m"):
+        check_images_ref(ref, plants, 5, "ref.geojson")
+    with pytest.raises(ValueError, match="not in the plant list"):
+        check_images_ref(gpd.GeoDataFrame({"idx": [3]}, geometry=[Point(0, 0)], crs=4326), plants, 5, "ref")
+
+    dba.Image.new("RGB", (512, 512), "black").save(tmp_path / "1.png")
+    with pytest.raises(ValueError, match="is 512 x 512 pixels; the overlay expects 3072 x 3072"):
+        check_image_size(str(tmp_path), [0, 1], 3072)
+    check_image_size(str(tmp_path), [1], 512)
+    with pytest.raises(FileNotFoundError):
+        check_image_size(str(tmp_path), [5], 512)

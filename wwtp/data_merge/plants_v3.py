@@ -39,6 +39,7 @@ import pyogrio
 from pyproj import Geod
 from scipy.spatial import cKDTree
 
+from ..annotation_scripts.images_ref import check_images_ref
 from ..annotation_scripts.merge_annotations import decode_gen_text, parse_idx_from_image_name
 from ..geo_utils import UnionFind, parse_diameters_to_round_area
 from ..starter import load_config
@@ -68,14 +69,7 @@ def image_results(cfg, work):
     paths = cfg["paths"]
     ref = gpd.read_file(paths["images_ref"]).to_crs(4326)
     ref["idx"] = ref["idx"].astype(int)
-    unknown = ~ref["idx"].isin(work["idx"])
-    if unknown.any():
-        raise ValueError(f"{paths['images_ref']}: {int(unknown.sum())} images of plants not in the work list")
-    at = gpd.GeoSeries(work.set_index("idx").geometry.reindex(ref["idx"]).to_numpy(), crs=4326)
-    off = metres(at, ref.geometry) > float(cfg["max_image_offset_m"])
-    if off.any():
-        raise ValueError(f"{paths['images_ref']}: {int(off.sum())} images are not at their work-list plant; "
-                         "the work list changed after the images were taken")  # fmt: skip
+    check_images_ref(ref, work, float(cfg["max_image_offset_m"]), paths["images_ref"])
 
     seg = pd.read_csv(paths["segmentation_results"])
     row = pd.to_numeric(seg["img_name"].astype(str).str.split(".").str[0], errors="coerce")

@@ -39,6 +39,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake annotation_overlay --config run_once=annotation_overlay
                                 the text overlay, once their images and ref.geojson are in
                                 download_bing_annotate.paths.annotations_images_dir
+    snakemake overpass_benchmark    the Overpass endpoints compared on sample tiles: which ones, with how
+                                many workers, the OSM download should use (results.zip to send back)
     snakemake calibration       everything the calibration needs from the cluster, before any sweep:
                                 national_data + the plant sizes by country, the national size scale and
                                 the radius rule from national connection statistics (JMP; SDG 6.3.1,
@@ -113,6 +115,7 @@ TARGETS = {
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
     "annotation_context": "annotation without images: `snakemake annotation_context --config run_once=annotation_context`",
     "annotation_overlay": "text overlay once the images are there: `... annotation_overlay --config run_once=annotation_overlay`",
+    "overpass_benchmark": "Overpass endpoints compared on sample tiles (speed, refusals, same features), results.zip to send back",
     "calibration": "before any sweep: national_data + size and radius calibration tables, in one zip to send back",
     "connection_radius": "only the calibration tables: plant sizes by country, national size scale, radius rule",
     "calibration_figures": "Extended Data figures and Methods numbers of the calibration, from its tables",
@@ -231,6 +234,18 @@ rule annotation_context:
 rule annotation_overlay:
     """The text overlay on the images of the annotated plants (after annotation_context)."""
     input: OVERLAY
+
+
+OB = wf.config("overpass_benchmark")["paths"]
+rule overpass_benchmark:
+    """Overpass endpoints compared on sample tiles (a cluster job: compute nodes have internet)."""
+    input: GRIDS
+    output: f"{OB['output_dir']}/results.zip"
+    params: module="annotation_scripts.overpass_benchmark", cli=[]
+    log: wf.log("overpass_benchmark")
+    threads: threads("overpass_benchmark")
+    resources: **res("overpass_benchmark")
+    shell: STAGE
 
 
 if "download_pop" in ONCE:

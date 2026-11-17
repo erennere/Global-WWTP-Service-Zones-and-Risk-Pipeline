@@ -34,7 +34,9 @@ Cluster-specific defaults for imagery and annotation outputs must be overridden 
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
 | `NEW_01_GENERATEGRIDS.py` | Python worker | Builds annotation grids around corrected WWTP points | corrected WWTP layer, grid parameters | grid GeoPackages |
-| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.py` | Python worker | Extracts OSM context for each grid | grid files, OSM settings, retries | per-grid OSM GeoJSON |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.py` | Python worker | Downloads the OSM features of each tile from Overpass: one tile queue, `workers` requests per endpoint, a pause after refusals | grid file, Overpass endpoints | per-tile lines/polygons GeoJSON, or an empty marker |
+| `overpass_benchmark.py` | Python worker | Compares Overpass endpoints on sample tiles: answers, refusals, seconds, tiles per minute, data age, same features; recommends endpoints for NEW_02 | grid file, candidate endpoints | `overpass_benchmark/results.zip` |
+| `images_ref.py` | Helper | Checks that the images (`ref.geojson`) belong to the plant list and have the expected size, before the overlay or plants_v3 use them | ref.geojson, plant points, images | — |
 | `download_bing_annotate.py` | Python worker | Draws annotation overlays on pre-downloaded imagery | imagery directory, OSM context, tile ids | annotated image assets |
 | `merge_annotations.py` | Python worker | Parses annotation text and merges labels into WWTP points | annotation CSV, annotated images, corrected layer | updated corrected-all GeoPackage |
 | `annotations_inspection.py` | Python worker | Builds class summaries and inspection samples | annotated images and annotation results | QA sample set |
@@ -61,6 +63,7 @@ Snakemake rules: `annotation_grids` (NEW_01 + NEW_02, a cluster job; Overpass is
 snakemake --profile workflow/profiles/slurm annotations --config run_once=annotations                 # the whole chain
 snakemake --profile workflow/profiles/slurm annotation_context --config run_once=annotation_context   # without images
 snakemake --profile workflow/profiles/slurm annotation_overlay --config run_once=annotation_overlay   # text overlay, once the images are there
+snakemake --profile workflow/profiles/slurm overpass_benchmark                                        # compare Overpass endpoints (results.zip)
 python -m wwtp.annotation_scripts.merge_annotations           # one stage on its own
 python -m wwtp.annotation_scripts.annotations_inspection      # QA sampling (not part of the workflow)
 python -m wwtp.annotation_scripts.copy_falsy_images
@@ -68,13 +71,14 @@ python -m wwtp.annotation_scripts.copy_falsy_images
 
 Job logs are in `{data_dir}/workflow/logs/`.
 
-Each set of plants (`annotation_points_filepath`) has its own folders (now `data/annotations/new_plants/`: `GRID`, `osm_by_idx`, `data`, `temp_parquets`, `images`, `annotated`) and stamps (`<step>__<points file name>`). The first global run (`all_merged_v2.gpkg`) is in `data/annotations/GRID` and `osm_by_idx`; `merge_annotations` and the QA scripts keep reading its inference results and images.
+Each set of plants (`annotation_points_filepath`) has its own folders (now `data/annotations/new_plants/`: `GRID`, `osm_by_idx`, `data`, `temp_parquets`; the images and the overlay in Sukanya's `/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/`) and stamps (`<step>__<points file name>`). The first global run (`all_merged_v2.gpkg`) is in `data/annotations/GRID` and `osm_by_idx`; `merge_annotations` and the QA scripts keep reading its inference results and images.
 
 ## Smart Behaviors
 - `annotations_inspection.py` uses `annotations.n_sample_size` with a default fallback of `1000` and saves figures in headless runs instead of relying on an interactive display.
 - `merge_annotations.py` parses the image index defensively from filenames and drops any existing annotation columns before re-merging to avoid duplicate `_x`/`_y` columns.
 - `download_bing_annotate.py` reads `annotations_images_dir` and `annotated_images_output_dir` from config, so local imagery paths can be swapped without touching code.
-- `download_bing_annotate` runs as `workflow.bing_annotate_shards` jobs; each takes its share of the tiles (seeded shuffle, `annotations.random_seed`).
+- `download_bing_annotate` runs as `workflow.bing_annotate_shards` jobs; each takes its share of the tiles (seeded shuffle, `annotations.random_seed`). It first checks that every image of `ref.geojson` lies within `max_image_offset_m` of its plant (same `idx`) and that the images are `image_size_px` wide, and stops otherwise.
+- NEW_02 asks each tile once: a tile with none of the queried features gets `idx_<idx>_empty.txt`, so a rerun asks only the missing tiles. A tile refused by one endpoint (429, 406, 503, 504, a timeout) goes to another; the refusing endpoint pauses `refused_pause_seconds`. Tiles still without an answer after `max_attempts` make the job fail; run it again. Public Overpass instances are shared and ban clients that send parallel requests or ignore 429s (see the Overpass API wiki page): keep `workers` low and the user agent identifying.
 
 Delete the grid, annotation, or merged outputs to force a rerun of the corresponding stage.
 
@@ -83,11 +87,15 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | --- | --- | --- |
 | `NEW_01_GENERATEGRIDS.annotations.cell_size` | `3072` | Grid cell size |
 | `NEW_01_GENERATEGRIDS.annotations.factor` | `1.194` | Grid expansion factor |
-| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.max_workers` | `8` | OSM query parallelism |
-| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.overwrite` | `false` | Overwrite existing OSM outputs |
-| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.retries` | `5` | OSM retry count |
-| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.overpass_urls` | list | Rotating Overpass endpoint list |
-| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.overpass_pause_seconds` | `0.1` | Pause between task-batch submissions |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.overwrite_existing` | `false` | Ask again for tiles that have their files |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.overpass_endpoints` | VK Maps 4, private.coffee 4, overpass-api.de 1 | Endpoints and their requests at a time |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.user_agent` | HeiGIT-plant-capacity | Identifies the requests (Overpass operators require it) |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.output_mode` | `geom` | Way coordinates inline (`body`: nodes as elements); the same features |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.refused_pause_seconds` | `30` | An endpoint's pause after a refusal |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.max_attempts` | `4` | Attempts per tile and run, over all endpoints |
+| `overpass_benchmark.annotations.candidates` | 4 endpoints | Endpoints compared, with their requests at a time |
+| `overpass_benchmark.annotations.sample_tiles` | `40` | Tiles every endpoint is asked for |
+| `download_bing_annotate.max_image_offset_m` | `10` | An image farther from its plant stops the overlay |
 | `annotations_inspection.annotations.n_sample_size` | `1000` | QA sample size |
 | `download_bing_annotate.annotations.random_seed` | `42` | Sampling/splitting seed, declared here because this is its earliest consumer |
 | `annotations_inspection.annotations.random_seed` | null | Inherits the seed above so QA sampling and the imagery split stay aligned |

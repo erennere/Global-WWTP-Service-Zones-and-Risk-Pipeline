@@ -365,7 +365,7 @@ def test_plants_v3_stops_when_the_images_belong_to_another_work_list(v3_world):
     ref = gpd.read_file(cfg["paths"]["images_ref"])
     ref.loc[1, "geometry"] = offset(ref.geometry[1].x, ref.geometry[1].y, east_m=50)
     ref.to_file(cfg["paths"]["images_ref"], driver="GeoJSON")
-    with pytest.raises(ValueError, match="not at their work-list plant"):
+    with pytest.raises(ValueError, match="1 of 4 images are farther than 10 m from their plant"):
         p3.build(cfg)
 
 
