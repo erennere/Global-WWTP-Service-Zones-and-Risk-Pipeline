@@ -26,6 +26,13 @@ def point_to_square(geom, half):
     return box(geom.x - half, geom.y - half, geom.x + half, geom.y + half)
 
 
+def square_tiles(gdf, half):
+    """The square tile (Web Mercator, ``half`` metres either way) around every plant point."""
+    tiles = gdf.to_crs(epsg=3857)
+    tiles["geometry"] = tiles.geometry.apply(lambda geom: point_to_square(geom, half))
+    return tiles.set_crs(epsg=3857, allow_override=True)
+
+
 def parse_args():
     """Parse the standardized named config-override flags."""
     parser = argparse.ArgumentParser(description="Run NEW_01_GENERATEGRIDS.")
@@ -66,9 +73,7 @@ def main(cell_size, half, points_path, output_path):
     check_idx(gdf, points_path)
 
     # Create the square tiles in Web Mercator so the cell size is interpreted in meters.
-    gdf_3857 = gdf.to_crs(epsg=3857)
-    gdf_3857["geometry"] = gdf_3857.geometry.apply(lambda geom: point_to_square(geom, half))
-    gdf_3857.set_crs(epsg=3857, inplace=True)
+    gdf_3857 = square_tiles(gdf, half)
 
     with atomic_output(output_path) as tmp_path:
         gdf_3857.to_file(tmp_path, driver="GPKG")

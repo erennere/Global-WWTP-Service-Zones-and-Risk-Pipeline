@@ -154,6 +154,8 @@ overpass_benchmark:
       - {url: 'https://overpass.kumi.systems/api/interpreter', workers: 2}   # the old name of private.coffee
       - {url: 'https://overpass-api.de/api/interpreter', workers: 1}
     sample_tiles: 40
+    cell_size: null                 # NEW_01's tile
+    factor: null
     compare_tiles: 8                # also asked in the other output_mode, one at a time
     min_answered_share: 0.9         # recommended: answers at least this share of the tiles ...
     min_agreement: 0.9              # ... and finds the same features as most endpoints for this share

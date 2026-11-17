@@ -234,16 +234,15 @@ def test_main_skips_done_tiles_leaves_out_dead_endpoints_and_fails_on_missing_on
 
 def test_benchmark_compares_endpoints_and_recommends_the_good_ones(servers, tmp_path, monkeypatch):
     good, slow, refusing = servers(delay=0.01), servers(delay=0.1), servers(refuse=1000)
-    grid_dir = tmp_path / "grid"
-    grid_dir.mkdir()
-    gpd.GeoDataFrame({"idx": range(12)}, geometry=[box(i, 0, i + 0.03, 0.03) for i in range(12)],
-                     crs=4326).to_file(grid_dir / "grids_points.gpkg")  # fmt: skip
+    # the plants only: the benchmark makes their tiles itself (no grid file yet), one plant without location
+    gpd.GeoDataFrame({"idx": range(13)}, geometry=[Point(i, 0.01) for i in range(12)] + [None],
+                     crs=4326).to_file(tmp_path / "points.gpkg")  # fmt: skip
     cfg = load_config(script_name="overpass_benchmark")
     cfg["annotations"].update(
         candidates=[{"url": u.url, "workers": 2} for u in (good, slow, refusing)], sample_tiles=6, compare_tiles=2,
         refused_pause_seconds=0.05, request_timeout_seconds=5,
     )  # fmt: skip
-    cfg["paths"].update(annotation_points_filepath=str(tmp_path / "points.gpkg"), annotations_grid_dir=str(grid_dir),
+    cfg["paths"].update(annotation_points_filepath=str(tmp_path / "points.gpkg"), annotations_grid_dir=str(tmp_path / "none"),
                         annotations_by_osm_dir=str(tmp_path / "osm"), output_dir=str(tmp_path / "bench"))  # fmt: skip
     monkeypatch.setattr(ob, "parse_args", lambda: None)
     monkeypatch.setattr(ob, "parse_config_overrides", lambda args=None: {})

@@ -4,7 +4,8 @@ Settings: config.yaml, section ``overpass_benchmark``. Command:
 ``python -m wwtp.annotation_scripts.overpass_benchmark`` (Snakemake target ``overpass_benchmark``; it
 needs internet, which the compute nodes have).
 
-Every endpoint of ``candidates`` gets the same ``sample_tiles`` random tiles with NEW_02's query, with
+Every endpoint of ``candidates`` gets the same ``sample_tiles`` random tiles (NEW_01's square around a
+random plant of ``annotation_points_filepath``) with NEW_02's query, with
 its ``workers`` requests at a time; the endpoints run side by side (each is a different server). The
 first ``compare_tiles`` are then asked once more with the other ``output_mode``, one at a time, to
 compare the two query forms. Per request: answer, seconds, bytes, features and the age of the data.
@@ -34,6 +35,7 @@ import pandas as pd
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from ..utils import atomic_output, configure_logging, requests_session_with_retries
+from .NEW_01_GENERATEGRIDS import check_idx, square_tiles
 from .NEW_02_EXTRACTOSMDATAFULL_GEOJSON import Tile, build_query, done_tiles, elements_to_gdf, fetch, find_bbox, queries
 
 logger = logging.getLogger(__name__)
@@ -189,16 +191,18 @@ def main():
     cfg = load_config(script_name="overpass_benchmark", **overrides)
     bench = cfg["annotations"]
     paths = cfg["paths"]
-    grid_path = os.path.join(
-        paths["annotations_grid_dir"], f"grids_{os.path.basename(paths['annotation_points_filepath'])}"
-    )
-    grid = gpd.read_file(grid_path).to_crs(4326)
-    grid["bbox"] = grid["geometry"].map(find_bbox)
-    grid = grid[grid["bbox"].notna()]
-    sample = grid.sample(n=min(int(bench["sample_tiles"]), len(grid)), random_state=int(bench["random_seed"]))
+    # The tiles of NEW_01 around a sample of the plants (the grid file need not exist yet)
+    points = gpd.read_file(paths["annotation_points_filepath"])
+    points = points[points.geometry.notna() & ~points.geometry.is_empty & (points.geom_type == "Point")]
+    check_idx(points, paths["annotation_points_filepath"])
+    half = float(bench["cell_size"]) * float(bench["factor"]) / 2
+    sample = points.sample(n=min(int(bench["sample_tiles"]), len(points)), random_state=int(bench["random_seed"]))
+    sample = square_tiles(sample, half).to_crs(4326)
+    sample["bbox"] = sample["geometry"].map(find_bbox)
     tiles = [Tile(int(i), b) for i, b in zip(sample["idx"], sample["bbox"])]
     osm_dir = paths["annotations_by_osm_dir"]
-    remaining = int((~grid["idx"].astype(int).isin(done_tiles(osm_dir) if os.path.isdir(osm_dir) else set())).sum())
+    done = done_tiles(osm_dir) if os.path.isdir(osm_dir) else set()
+    remaining = int((~points["idx"].astype(int).isin(done)).sum())
 
     with ThreadPoolExecutor(max_workers=len(bench["candidates"])) as pool:
         parts = list(pool.map(lambda e: run_endpoint(e, tiles, bench), bench["candidates"]))

@@ -238,6 +238,8 @@ class OverpassAnnotations(Strict):
 class OverpassBenchmarkSettings(Strict):
     candidates: list[OverpassEndpoint] = Field(min_length=1)
     sample_tiles: PositiveInt
+    cell_size: PositiveInt
+    factor: PositiveFloat
     compare_tiles: NonNegativeInt
     min_answered_share: Annotated[float, Field(ge=0, le=1)]
     min_agreement: Annotated[float, Field(ge=0, le=1)]

@@ -239,7 +239,7 @@ rule annotation_overlay:
 OB = wf.config("overpass_benchmark")["paths"]
 rule overpass_benchmark:
     """Overpass endpoints compared on sample tiles (a cluster job: compute nodes have internet)."""
-    input: GRIDS
+    input: wf.annotation_points()
     output: f"{OB['output_dir']}/results.zip"
     params: module="annotation_scripts.overpass_benchmark", cli=[]
     log: wf.log("overpass_benchmark")
