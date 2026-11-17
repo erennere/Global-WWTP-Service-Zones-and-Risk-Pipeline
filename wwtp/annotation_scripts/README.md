@@ -54,7 +54,7 @@ graph TD
   F -. external inference .-> G[merge_annotations]
   G --> H[(annotation-enriched WWTP layer)]
 ```
-Snakemake rules: `annotation_grids` (NEW_01 + NEW_02; a local job, Overpass needs internet), `wastewater_join` (NEW_03), `download_bing_annotate` (the text overlay, one job per shard), `merge_annotations`; targets `annotations` (all), `annotation_context` (the first two: everything without the images) and `annotation_overlay` (the text overlay, once the images and their `ref.geojson` are in `annotations_images_dir`).
+Snakemake rules: `annotation_grids` (NEW_01 + NEW_02, a cluster job; Overpass is reached from the compute node), `wastewater_join` (NEW_03), `download_bing_annotate` (the text overlay, one job per shard), `merge_annotations`; targets `annotations` (all), `annotation_context` (the first two: everything without the images) and `annotation_overlay` (the text overlay, once the images and their `ref.geojson` are in `annotations_images_dir`).
 
 ## Run Instructions
 ```bash

@@ -28,7 +28,7 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
     snakemake annotation_context --config run_once=annotation_context
                                 the annotation of the plants in NEW_01_GENERATEGRIDS.paths.annotation_points_filepath
-                                without the images: tiles, OSM features per tile (login node: Overpass), merged layers
+                                without the images: tiles, OSM features per tile (Overpass), merged layers
     snakemake annotation_overlay --config run_once=annotation_overlay
                                 the text overlay, once their images and ref.geojson are in
                                 download_bing_annotate.paths.annotations_images_dir
@@ -145,12 +145,10 @@ GRIDS = wf.annotation_grid()
 OSM_EXTRACT = wf.annotation_stamp("osm_extract")
 if "annotation_grids" in ONCE:
     rule annotation_grids:
-        """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02).
+        """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02, from Overpass).
 
-        A local job: the OSM features come from Overpass, and compute nodes may have no internet.
         Tiles already downloaded are kept (NEW_02_EXTRACTOSMDATAFULL_GEOJSON.overwrite_existing).
         """
-        localrule: True
         input: wf.annotation_points()
         output:
             GRIDS,
