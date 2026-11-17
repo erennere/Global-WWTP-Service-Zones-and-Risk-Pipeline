@@ -273,3 +273,22 @@ def test_clean_columns_normalizes_names_and_values():
     out = n2.clean_columns(gdf)
     assert list(out.columns) == ["bad_col_", "another_col", "geometry"] and out["bad_col_"].iloc[0] == "1"
     assert out["another_col"].iloc[0] == ""
+
+
+def test_benchmark_survives_one_sided_answers_and_slow_servers(servers, monkeypatch):
+    """A tile with lines but no polygons (KeyError 'id' on the cluster, 17 Nov) and a server slower than
+    the time budget: the run still finishes with a row for every tile."""
+    lines_only = {"elements": [{"type": "way", "id": 1, "geometry": [{"lon": 0, "lat": 0}, {"lon": 1, "lat": 1}]}]}
+    assert ob.features_key(lines_only)[:2] == (1, 0)
+    assert ob.features_key({"elements": []})[:2] == (0, 0)
+
+    slow = servers(delay=0.4)
+    cfg = load_config(script_name="overpass_benchmark")["annotations"]
+    cfg.update(time_budget_minutes=0.5 / 60, compare_tiles=1, request_timeout_seconds=5, refused_pause_seconds=0.05)
+    rows = ob.run_endpoint({"url": slow.url, "workers": 1}, tiles(6), cfg)
+    assert len(rows) == 7 and 1 <= sum(r["ok"] for r in rows) < 7
+    assert any(r["error"] == "not asked: time budget used up" for r in rows)
+
+    monkeypatch.setattr(ob, "fetch", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    row = ob.ask(None, slow.url, tiles(1)[0], "geom", cfg)
+    assert not row["ok"] and row["error"] == "RuntimeError: boom"

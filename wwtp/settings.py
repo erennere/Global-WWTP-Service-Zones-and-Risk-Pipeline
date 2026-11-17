@@ -243,6 +243,7 @@ class OverpassBenchmarkSettings(Strict):
     compare_tiles: NonNegativeInt
     min_answered_share: Annotated[float, Field(ge=0, le=1)]
     min_agreement: Annotated[float, Field(ge=0, le=1)]
+    time_budget_minutes: PositiveFloat
     random_seed: int
     user_agent: str = Field(min_length=1)
     output_mode: Literal["geom", "body"]

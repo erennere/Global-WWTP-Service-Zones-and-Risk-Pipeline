@@ -153,17 +153,19 @@ overpass_benchmark:
       - {url: 'https://overpass.private.coffee/api/interpreter', workers: 4}
       - {url: 'https://overpass.kumi.systems/api/interpreter', workers: 2}   # the old name of private.coffee
       - {url: 'https://overpass-api.de/api/interpreter', workers: 1}
+      - {url: 'https://overpass.openstreetmap.fr/api/interpreter', workers: 1}   # OSM France
     sample_tiles: 40
     cell_size: null                 # NEW_01's tile
     factor: null
     compare_tiles: 8                # also asked in the other output_mode, one at a time
     min_answered_share: 0.9         # recommended: answers at least this share of the tiles ...
     min_agreement: 0.9              # ... and finds the same features as most endpoints for this share
+    time_budget_minutes: 15         # per endpoint; tiles not asked by then count as not answered
     random_seed: null
     user_agent: null
     output_mode: null
     query_timeout_seconds: null
-    request_timeout_seconds: null
+    request_timeout_seconds: 120    # a tile of 3.7 km takes seconds on a working server
     refused_pause_seconds: null
   paths:
     data_dir: null
@@ -1492,7 +1494,7 @@ workflow:
   resources:
     combine_locations: {threads: 4, mem_mb: 65536, runtime: 2880}
     annotation_grids: {threads: 16, mem_mb: 131072, runtime: 2880}
-    overpass_benchmark: {threads: 4, mem_mb: 8192, runtime: 120}
+    overpass_benchmark: {threads: 4, mem_mb: 8192, runtime: 60}
     download_bing_annotate: {threads: 64, mem_mb: 239616, runtime: 2880}
     wastewater_join: {threads: 16, mem_mb: 65536, runtime: 2880}
     merge_annotations: {threads: 2, mem_mb: 4096, runtime: 2880}

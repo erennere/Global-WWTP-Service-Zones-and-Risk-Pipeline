@@ -8,7 +8,8 @@ Every endpoint of ``candidates`` gets the same ``sample_tiles`` random tiles (NE
 random plant of ``annotation_points_filepath``) with NEW_02's query, with
 its ``workers`` requests at a time; the endpoints run side by side (each is a different server). The
 first ``compare_tiles`` are then asked once more with the other ``output_mode``, one at a time, to
-compare the two query forms. Per request: answer, seconds, bytes, features and the age of the data.
+compare the two query forms. Each endpoint gets ``time_budget_minutes``: tiles not asked by then count as
+not answered, so a server that does not answer cannot hold the run for hours. Every request is logged. Per request: answer, seconds, bytes, features and the age of the data.
 An endpoint's tiles agree when it finds the same features as most endpoints.
 
 Writes to ``paths.output_dir``: ``requests.csv`` (one row per request), ``endpoints.csv`` (per endpoint:
@@ -45,21 +46,36 @@ OTHER_MODE = {"geom": "body", "body": "geom"}
 def features_key(data):
     """Counts and a fingerprint of the features an answer gives (ids per kind)."""
     lines, polys = elements_to_gdf(data)
-    ids = ",".join(f"l{i}" for i in sorted(lines["id"])) + ";" + ",".join(f"p{i}" for i in sorted(polys["id"])) \
-        if len(lines) or len(polys) else ""  # fmt: skip
-    return len(lines), len(polys), hashlib.sha1(ids.encode()).hexdigest()[:12]
+
+    def ids(frame, kind):  # an empty frame has no id column
+        return ",".join(f"{kind}{i}" for i in sorted(frame["id"])) if len(frame) else ""
+
+    key = f"{ids(lines, 'l')};{ids(polys, 'p')}"
+    return len(lines), len(polys), hashlib.sha1(key.encode()).hexdigest()[:12]
+
+
+def row_of(url, tile, mode, **values):
+    row = {"url": url, "idx": tile.idx, "mode": mode, "status": np.nan, "seconds": np.nan, "bytes": 0, "ok": False,
+           "refused": False, "error": "", "lines": np.nan, "polygons": np.nan, "features": "", "osm_base": ""}  # fmt: skip
+    row.update(values)
+    return row
 
 
 def ask(session, url, tile, mode, cfg):
-    """One request, as a result row."""
-    query = build_query(tile.bbox, queries, cfg["query_timeout_seconds"], mode)
-    answer = fetch(session, url, query, float(cfg["request_timeout_seconds"]))
-    row = {"url": url, "idx": tile.idx, "mode": mode, "status": answer.status, "seconds": round(answer.seconds, 2),
-           "bytes": answer.size, "ok": answer.data is not None, "refused": answer.refused, "error": answer.error,
-           "lines": np.nan, "polygons": np.nan, "features": "", "osm_base": ""}  # fmt: skip
-    if answer.data is not None:
-        row["lines"], row["polygons"], row["features"] = features_key(answer.data)
-        row["osm_base"] = answer.data.get("osm3s", {}).get("timestamp_osm_base", "")
+    """One request, as a result row; never raises (a crash would lose the other endpoints' results)."""
+    try:
+        query = build_query(tile.bbox, queries, cfg["query_timeout_seconds"], mode)
+        answer = fetch(session, url, query, float(cfg["request_timeout_seconds"]))
+        row = row_of(url, tile, mode, status=answer.status, seconds=round(answer.seconds, 2), bytes=answer.size,
+                     ok=answer.data is not None, refused=answer.refused, error=answer.error)  # fmt: skip
+        if answer.data is not None:
+            row["lines"], row["polygons"], row["features"] = features_key(answer.data)
+            row["osm_base"] = answer.data.get("osm3s", {}).get("timestamp_osm_base", "")
+    except Exception as exc:
+        row = row_of(url, tile, mode, error=f"{type(exc).__name__}: {exc}")
+    logger.info("%s tile %s (%s): %s", url.split("/")[2], tile.idx, mode,
+                f"{row['seconds']} s, {row['lines']:.0f} lines, {row['polygons']:.0f} polygons" if row["ok"]
+                else f"no answer after {row['seconds']} s ({row['error']})")  # fmt: skip
     return row
 
 
@@ -77,6 +93,8 @@ def run_endpoint(endpoint, tiles, cfg):
     def one(tile, mode):
         while (delay := resume["at"] - time.monotonic()) > 0:
             time.sleep(delay)
+        if time.monotonic() > deadline:
+            return row_of(endpoint["url"], tile, mode, error="not asked: time budget used up")
         s = sessions.get()
         try:
             row = ask(s, endpoint["url"], tile, mode, cfg)
@@ -88,6 +106,7 @@ def run_endpoint(endpoint, tiles, cfg):
         return row
 
     start = time.monotonic()
+    deadline = start + float(cfg["time_budget_minutes"]) * 60
     with ThreadPoolExecutor(max_workers=int(endpoint["workers"])) as pool:
         rows = list(pool.map(lambda t: one(t, cfg["output_mode"]), tiles))
     wall = time.monotonic() - start
