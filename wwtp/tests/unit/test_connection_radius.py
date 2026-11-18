@@ -369,11 +369,16 @@ def test_country_sizes_and_the_packed_results(tmp_path):
     assert t.loc["BB", "offset"] == pytest.approx(-0.3, abs=0.03)
     assert np.isnan(t.loc["CC", "offset"]) and t.loc["CC", "unsized_from"] == ""  # 10 plants: too few for a value
     assert t.loc["AA", "unsized_people"] == pytest.approx(9e4, rel=0.05) and t.loc["AA", "unsized_from"] == "own"
-    # BB has no size-free plant with a record: the ratio of AA (its only source) times BB's median sized plant
-    ratio = t.loc["AA", "unsized_median"] / t.loc["AA", "sized_median"]
-    assert t["unsized_ratio"].iloc[0] == pytest.approx(ratio)
-    assert t.loc["BB", "unsized_people"] == pytest.approx(ratio * t.loc["BB", "sized_median"])
-    assert t.loc["BB", "unsized_from"] == "ratio"
+    # BB has no size-free plant with a record: BB's sized plants at the quantile where AA's (its only
+    # source) measured median sits among AA's sized plants
+    aa = plants[(plants["iso2"] == "AA") & plants["sized"]]
+    aa_people = 10 ** (1.5 + t.loc["AA", "offset"] + 0.7 * np.log10(aa["footprint_m2"]))
+    quantile = float((aa_people <= t.loc["AA", "unsized_median"]).mean())
+    assert t["unsized_quantile"].iloc[0] == pytest.approx(quantile)
+    bb = plants[(plants["iso2"] == "BB") & plants["sized"]]
+    bb_people = 10 ** (1.5 + t.loc["BB", "offset"] + 0.7 * np.log10(bb["footprint_m2"]))
+    assert t.loc["BB", "unsized_people"] == pytest.approx(np.quantile(bb_people, quantile))
+    assert t.loc["BB", "unsized_from"] == "quantile"
     assert t.loc["AA", "config_offset"] == 0.45 and t.loc["BB", "config_unsized_people"] == 1234.0
 
     out = tmp_path / "out"

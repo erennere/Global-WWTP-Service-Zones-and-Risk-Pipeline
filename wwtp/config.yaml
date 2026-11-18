@@ -365,11 +365,14 @@ create_voronoi:
   # unsized_people: lagoon plants and plants without detections (median reported size of such
   #   plants, n 13,442; 45 % of them in the US, where lagoons are common).
   # unsized_people_by_country replaces it: the median reported size of the country's such plants
-  #   where it has at least 30 (28 countries); otherwise 0.409 x the median footprint estimate of its
-  #   plants with a footprint (at least 30; 29 countries; the ratio is the median over the 28; a
-  #   left-out country's median is predicted within x1.44 by it, within x1.72 by one value for all).
+  #   where it has at least 30 (28 countries); otherwise the footprint estimate of its plants with a
+  #   footprint at their 15th percentile (14.8 %: where the measured medians of the 28 sit among the
+  #   sizes of their plants with tanks, median over them; at least 30 such plants; 29 countries;
+  #   Eren, 18 Nov 2026). A left-out country's median is predicted within x1.35 by it (x1.43 by the
+  #   earlier 0.409 x median, x1.68 by one value for all).
   # From python -m wwtp.calibration.connection_radius calibrate (plant_size_countries.csv, run of
-  # 13 Nov, the pipeline's own country join).
+  # 13 Nov, the pipeline's own country join); the 29 percentile values from the v2 population layer
+  # (18 Nov), until the next calibration run.
   footprint_to_people:
     intercept: 1.523
     slope: 0.7
@@ -382,14 +385,14 @@ create_voronoi:
       'SE': 0.038, 'SK': -0.269, 'US': -0.180, 'ZA': -0.256
     }
     unsized_people_by_country: {
-      'AR': 7527, 'AT': 3667, 'BE': 3186, 'BG': 19054, 'BR': 4954, 'BY': 12659, 'CA': 10245, 'CH': 1632,
-      'CL': 5132, 'CN': 127500, 'CO': 4413, 'CZ': 2602, 'DE': 8374, 'DK': 5863, 'DZ': 8536, 'EE': 3811,
-      'EG': 9053, 'ES': 4902, 'FI': 13350, 'FR': 4172, 'GB': 4034, 'GR': 4500, 'HR': 8152, 'HU': 1903,
-      'IE': 4053, 'IL': 11487, 'IN': 40087, 'IQ': 6568, 'IR': 9423, 'IT': 2866, 'KR': 7936, 'KZ': 12808,
-      'LT': 4685, 'LV': 2177, 'MA': 10437, 'MD': 9174, 'MX': 11181, 'MY': 8498, 'NL': 36566, 'NO': 3102,
-      'PL': 3536, 'PT': 4200, 'RO': 13701, 'RU': 10133, 'SA': 8513, 'SE': 4623, 'SK': 1754, 'TH': 23734,
-      'TN': 10777, 'TR': 6215, 'TW': 5137, 'UA': 8922, 'US': 1182, 'UZ': 14462, 'VN': 11919, 'ZA': 2286,
-      'ZW': 5461
+      'AR': 7775, 'AT': 3667, 'BE': 3186, 'BG': 19054, 'BR': 4954, 'BY': 10387, 'CA': 6844, 'CH': 1632,
+      'CL': 3888, 'CN': 127500, 'CO': 3296, 'CZ': 2602, 'DE': 8374, 'DK': 5863, 'DZ': 7833, 'EE': 3495,
+      'EG': 10102, 'ES': 4902, 'FI': 13350, 'FR': 4172, 'GB': 4034, 'GR': 4500, 'HR': 8152, 'HU': 1903,
+      'IE': 4053, 'IL': 14337, 'IN': 40087, 'IQ': 6095, 'IR': 7038, 'IT': 2866, 'KR': 6778, 'KZ': 12426,
+      'LT': 4333, 'LV': 2106, 'MA': 9273, 'MD': 10302, 'MX': 11181, 'MY': 6386, 'NL': 36566, 'NO': 3102,
+      'PL': 3536, 'PT': 4200, 'RO': 16409, 'RU': 7492, 'SA': 7117, 'SE': 4623, 'SK': 1754, 'TH': 21321,
+      'TN': 6682, 'TR': 6374, 'TW': 5657, 'UA': 7279, 'US': 1182, 'UZ': 9596, 'VN': 11091, 'ZA': 2286,
+      'ZW': 2943
     }
   # Factor on every plant size of a country (reported or estimated), per size_measure:
   #   k = connected people (connected_share x people of the 2022 raster) / sum of its plant sizes,

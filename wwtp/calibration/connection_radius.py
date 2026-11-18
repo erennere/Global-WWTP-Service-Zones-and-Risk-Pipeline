@@ -693,12 +693,12 @@ def calibrate_by_region(cfg, countries, curves, references):
 def country_sizes(cfg, plants):
     """The country parts of the plant size from our plants, next to the values in config.yaml."""
     to_people = cfg["footprint_to_people"]
-    table, ratio = fit_country_sizes(
+    table, quantile = fit_country_sizes(
         plants.rename(columns={"iso2": "country"}), to_people, int(cfg["size_country_min_plants"])
     )
     table["config_offset"] = table["country"].map(to_people["country_offsets"])
     table["config_unsized_people"] = table["country"].map(to_people["unsized_people_by_country"])
-    table["unsized_ratio"] = ratio
+    table["unsized_quantile"] = quantile
     return table
 
 

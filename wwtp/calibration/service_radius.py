@@ -14,7 +14,9 @@ Two steps, both from published data matched to our own plants. They produce
    ``country_offsets``, the median of ``log10 S - (intercept + slope log10 F)``
    in countries with enough such plants, and ``unsized_people_by_country``, the
    median reported size of a country's size-free plants or, without enough of
-   them, a fixed share of the median size of its plants with a footprint.
+   them, the estimated size of its plants with a footprint at a low quantile (the
+   quantile at which the measured medians sit, median over the countries that
+   have both; Eren, 18 Nov 2026).
 
 2. **Radius** (``radius_calibration``). Census 2020 block-group population
    centroids (USpopcenters, ``block_group2020.rda``) in states where almost
@@ -151,9 +153,12 @@ def fit_country_sizes(plants, to_people, min_plants):
         ``min_plants``); ``n_sized`` and ``sized_median``, the median footprint estimate (with the
         offset) of all its sized plants (NaN below ``min_plants``); ``n_unsized_reported`` and
         ``unsized_median``, the median reported size of its size-free plants (NaN below
-        ``min_plants``); ``unsized_people``, that median or else ``ratio * sized_median``, and
-        ``unsized_from`` ('own', 'ratio' or ''). ``ratio`` is the median, over the countries with both,
-        of ``unsized_median / sized_median``.
+        ``min_plants``); ``sized_quantile``, the estimate (with the offset) at ``quantile`` of its sized
+        plants (NaN below ``min_plants``); ``unsized_people``, ``unsized_median`` or else
+        ``sized_quantile``, and ``unsized_from`` ('own', 'quantile' or ''). ``quantile`` is the median,
+        over the countries with both, of the share of their sized plants whose estimate is at most their
+        ``unsized_median``: where the measured median of the size-free plants sits among the sizes of
+        the plants with tanks.
     """
     sized = plants["sized"].to_numpy(dtype=bool)
     reported = plants["reported"].to_numpy(dtype=float)
@@ -170,20 +175,26 @@ def fit_country_sizes(plants, to_people, min_plants):
 
     n_fit, offset = medians(residual, sized & has)
     with_offset = pd.Series(estimate, index=plants.index) + country.map(offset).fillna(0.0)
-    n_sized, sized_median = medians(np.power(10.0, with_offset), sized)
+    sized_people = np.power(10.0, with_offset)
+    n_sized, sized_median = medians(sized_people, sized)
     n_unsized, unsized_median = medians(pd.Series(reported, index=plants.index), ~sized & has)
+    by_country = sized_people[sized].groupby(country[sized])
+    both = unsized_median.dropna().index.intersection(sized_median.dropna().index)
+    position = pd.Series({c: float((by_country.get_group(c) <= unsized_median[c]).mean()) for c in both})
+    quantile = float(position.median())
+    sized_quantile = by_country.quantile(quantile).where(n_sized >= min_plants)
     table = pd.DataFrame({"n_plants": country.groupby(country).size()})
     table["n_fit"], table["offset"] = n_fit, offset
     table["n_sized"], table["sized_median"] = n_sized, sized_median
     table["n_unsized_reported"], table["unsized_median"] = n_unsized, unsized_median
+    table["sized_quantile"] = sized_quantile
     for column in ("n_fit", "n_sized", "n_unsized_reported"):
         table[column] = table[column].fillna(0).astype(int)
-    ratio = float((table["unsized_median"] / table["sized_median"]).median())
-    table["unsized_people"] = table["unsized_median"].fillna(ratio * table["sized_median"])
+    table["unsized_people"] = table["unsized_median"].fillna(table["sized_quantile"])
     table["unsized_from"] = np.where(
-        table["unsized_median"].notna(), "own", np.where(table["unsized_people"].notna(), "ratio", "")
+        table["unsized_median"].notna(), "own", np.where(table["unsized_people"].notna(), "quantile", "")
     )
-    return table.rename_axis("country").reset_index(), ratio
+    return table.rename_axis("country").reset_index(), quantile
 
 
 # --------------------------------------------------------------------------- #

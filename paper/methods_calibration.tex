@@ -39,9 +39,10 @@ Fig.~\ref{fig:ed-plant-size}b) and is 0 elsewhere. On these countries the typica
 
 Plants without a usable area (lagoons, plants without detected tanks) get a fixed size $U_c$: the
 median reported size of such plants in country $c$ where there are at least \calOffsetMinPlants{}
-(\calUnsizedOwn{} countries); otherwise \calUnsizedRatio{} times the median estimated size of the
-country's plants with tanks, the median of this ratio over those countries
-(\calUnsizedRatioCountries{} countries); and \calUnsizedDefault{} people where neither is available.
+(\calUnsizedOwn{} countries); otherwise the estimated size of the country's plants with tanks at
+their \calUnsizedQuantile{}th percentile, the median percentile at which the measured medians of those
+countries sit among the sizes of their plants with tanks (\calUnsizedQuantileCountries{} countries); and
+\calUnsizedDefault{} people where neither is available.
 
 The size before the national scale is $S^{0}_i = R_i$ where a size is reported, $\hat P_i$ where the
 plant has a usable area and $U_c$ otherwise. The national scale makes the sizes of a country add up

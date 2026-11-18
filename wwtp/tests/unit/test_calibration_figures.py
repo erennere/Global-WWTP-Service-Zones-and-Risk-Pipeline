@@ -115,8 +115,8 @@ def _tables(rng):
                 "country": ["IN", "US"],
                 "n_fit": [40, 120],
                 "offset": [0.8, -0.2],
-                "unsized_from": ["own", "ratio"],
-                "unsized_ratio": 0.409,
+                "unsized_from": ["own", "quantile"],
+                "unsized_quantile": 0.15,
             }
         ),  # fmt: skip
         "by_cap": by_cap,
