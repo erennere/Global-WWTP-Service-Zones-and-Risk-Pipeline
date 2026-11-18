@@ -394,6 +394,7 @@ rule national_data:
 NP = wf.config("national_plants")["paths"]
 WL = wf.config("work_list")["paths"]
 V3 = wf.config("plants_v3")["paths"]
+V3_TEXT = [V3["image_text_results"]] if wf.config("plants_v3")["with_image_text"] else []
 NATIONAL_PLANTS = [f"{NP['output_dir']}/{name}" for name in ("national_plants.gpkg", "national_plants.csv", "national_plants_left_out.csv")]
 WORK_LIST = [WL["work_list"], WL["removed_plants"], WL["eu_file_not_added"]]
 if "national_plants" in ONCE:
@@ -426,7 +427,7 @@ if "make_plants_v3" in ONCE:
     rule make_plants_v3:
         """v2 with the work list applied and the results of the new images; same sites merged, renumbered."""
         input:
-            WORK_LIST, V3["base_filepath"], V3["images_ref"], V3["segmentation_results"], V3["image_text_results"],
+            WORK_LIST, V3["base_filepath"], V3["images_ref"], V3["segmentation_results"], *V3_TEXT,
         output: V3["output"], V3["summary"]
         params: module="data_merge.plants_v3", cli=[]
         log: wf.log("plants_v3")

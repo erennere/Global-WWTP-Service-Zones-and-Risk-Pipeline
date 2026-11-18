@@ -369,6 +369,7 @@ def v3_world(tmp_path):
                         images_ref=str(images / "ref.geojson"), segmentation_results=str(tmp_path / "seg.csv"),
                         image_text_results=str(tmp_path / "i2t.csv"), output=str(tmp_path / "all_annotated_v3.gpkg"),
                         summary=str(tmp_path / "summary.csv"))  # fmt: skip
+    cfg["with_image_text"] = True
     return cfg, v2, moved_to, far, national, eu_new
 
 
@@ -402,6 +403,17 @@ def test_plants_v3_applies_the_work_list_and_the_new_images(v3_world):
     assert by[11]["category_name"] == "Residential" and by[11].geometry.equals(eu_new)
     summary = pd.read_csv(cfg["paths"]["summary"]).set_index("step")["plants"]
     assert summary["v3 plants"] == 7 and summary["removed (not in the corrected EU file)"] == 1
+
+
+def test_plants_v3_without_image_text_keeps_the_v2_categories(v3_world):
+    cfg = v3_world[0]
+    cfg["with_image_text"] = False
+    cfg["paths"]["image_text_results"] = "/nowhere/i2t.csv"  # not read
+    plants = p3.build(cfg)[0]
+    by = {k: plants[plants["idx_v2"] == k].iloc[0] for k in (2, 4, 11)}
+    assert by[2]["size_source"] == "new_image" and by[2]["diameters"] == "[20]"
+    assert by[2]["category_name"] == "old" and by[4]["category_name"] == "old"
+    assert by[11]["diameters"] == "[10 10]" and pd.isna(by[11]["category_name"])
 
 
 def test_plants_v3_stops_when_the_images_belong_to_another_work_list(v3_world):

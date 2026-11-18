@@ -740,6 +740,7 @@ class PlantsV3(Section):
     max_image_offset_m: PositiveFloat
     detection_columns: list[str] = Field(min_length=1)
     category_columns: list[str] = Field(min_length=3, max_length=3)
+    with_image_text: bool
     location_priority: list[Literal["corrected_eu_file", "national_plants", "v2"]] = Field(min_length=3, max_length=3)
     paths: Paths
 

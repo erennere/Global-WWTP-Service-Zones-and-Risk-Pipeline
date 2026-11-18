@@ -11,10 +11,11 @@ Steps, from ``base_filepath`` (all_annotated_v2):
    where it is, without the EU file's columns, and the file plant becomes a plant of its own.
 4. The new plants of the work list (national, corrected EU file) are added.
 5. The results of the new images replace the tank detections (``detection_columns``, from the
-   segmentation CSV) and the site category (``category_columns``, from the image-to-text CSV) of the
-   work-list plants that have them. Segmentation names an image ``<row>.png``, a row of the images'
-   ``ref.geojson`` (whose ``idx`` is the work-list idx); image-to-text names it ``bbox_<idx>.png``.
-   A work-list plant without a result keeps its v2 values (``size_source`` v2_image, or none).
+   segmentation CSV) and the site category (``category_columns``, from the image-to-text CSV, when
+   ``with_image_text``) of the work-list plants that have them. Segmentation names an image ``<row>.png``,
+   a row of the images' ``ref.geojson`` (whose ``idx`` is the work-list idx); image-to-text names it
+   ``bbox_<idx>.png``. A work-list plant without a result keeps its v2 values (``size_source`` v2_image,
+   or none). Without ``with_image_text`` every plant keeps its v2 category (new plants have none).
 6. Plants closer than ``same_site_distance_m`` are one plant: the location of the member whose
    ``location_source`` comes first in ``location_priority``, and per column the first value in that order;
    the largest POP_SERVED; ``idx_v2`` and ``origin`` of the member with the lowest idx_v2 (a v2 plant).
@@ -80,13 +81,16 @@ def image_results(cfg, work):
     seg = seg[["idx", "new_image", *cfg["detection_columns"]]].drop_duplicates("idx")
 
     cats = list(cfg["category_columns"])
-    text = pd.read_csv(paths["image_text_results"])
-    text["idx"] = text["image"].apply(parse_idx_from_image_name)
-    text = text[text["idx"].notna() & text["idx"].isin(ref["idx"])].astype({"idx": int})
-    text[cats] = pd.DataFrame([decode_gen_text(t) for t in text["gen_text"]], index=text.index, columns=cats)
-    text = text[["idx", *cats]].drop_duplicates("idx")
+    if cfg["with_image_text"]:
+        text = pd.read_csv(paths["image_text_results"])
+        text["idx"] = text["image"].apply(parse_idx_from_image_name)
+        text = text[text["idx"].notna() & text["idx"].isin(ref["idx"])].astype({"idx": int})
+        text[cats] = pd.DataFrame([decode_gen_text(t) for t in text["gen_text"]], index=text.index, columns=cats)
+        text = text[["idx", *cats]].drop_duplicates("idx")
+    else:  # the image-to-text results do not exist yet
+        text = pd.DataFrame({"idx": pd.Series(dtype=int), **{c: pd.Series(dtype=object) for c in cats}})
     results = seg.merge(text, on="idx", how="outer")
-    logger.info("new images: %d with tank detections, %d with a category", len(seg), len(text))
+    logger.info("new images: %d with segmentation results, %d with a site category", len(seg), len(text))
     return results
 
 
@@ -215,7 +219,7 @@ def build(cfg):
     plants = pd.concat([base.reset_index(drop=True), new], ignore_index=True)
     plants = gpd.GeoDataFrame(plants, geometry="geometry", crs=4326)
     plants = update_sizes(plants, image_results(cfg, work), cfg)
-    counts["sizes from the new images"] = int((plants["size_source"] == "new_image").sum())
+    counts["plants with a new image (segmentation results)"] = int((plants["size_source"] == "new_image").sum())
 
     plants, n_groups, n_rows = merge_same_sites(plants.reset_index(drop=True), cfg)
     counts[f"same-site groups merged (closer than {cfg['same_site_distance_m']:g} m)"] = n_groups

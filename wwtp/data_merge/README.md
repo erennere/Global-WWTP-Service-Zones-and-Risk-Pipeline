@@ -24,9 +24,12 @@ This module builds the plant list the rest of the pipeline reads, in two rounds:
   2. `work_list.py`: the plants that need a new image: v2 plants without detected tanks, the national
      plants, and the plants of the corrected EU file that v2 lacks. The corrected EU file is the truth
      in its countries (locations; plants not in it are removed). This is the annotation set.
-  3. `plants_v3.py`, once the new images have tank detections and site categories: removed, moved and
-     new plants applied, the new results in, same sites (500 m) merged, plants without a location left
-     out, every plant renumbered (`idx`; the v2 number stays in `idx_v2`).
+  3. `plants_v3.py`, once the new images have tank detections: removed, moved and new plants applied,
+     the new results in, same sites (500 m) merged, plants without a location left out, every plant
+     renumbered (`idx`; the v2 number stays in `idx_v2`). The site categories of the new images
+     (image-to-text) come in with `plants_v3.with_image_text: true`; until then plants keep their v2
+     category. The new images (18 Nov 2026) are 512 x 512 px at zoom 17; their detections are in metres,
+     like v2's.
 
 ## How It Fits In
 It is the first blocking stage after raw source collection. Its outputs feed Voronoi creation, population attachment, validation, industrial analysis, and all downstream reporting.
@@ -136,6 +139,7 @@ Delete the final merged GeoPackage and rerun the launcher to force a full rebuil
 | `work_list.reference_offset_m` | `1` | A reference plant moved farther goes back to its reference position |
 | `plants_v3.wrong_code_shift_m` | `50000` | A longer EU-file move: the plant had another plant's code |
 | `plants_v3.location_priority` | EU file, national, v2 | Location of a merged same-site plant |
+| `plants_v3.with_image_text` | `false` | Read the new images' site categories (image-to-text CSV) |
 
 ## Known Issues / TODOs
 - No explicit `TODO` or `FIXME` markers were found in this module.
