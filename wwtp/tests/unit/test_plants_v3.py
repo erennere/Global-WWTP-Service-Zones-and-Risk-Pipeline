@@ -5,6 +5,7 @@ import math
 import zipfile
 
 import geopandas as gpd
+from geopandas.testing import assert_geodataframe_equal
 import pandas as pd
 import pytest
 from shapely.geometry import Point, box
@@ -254,27 +255,37 @@ def test_work_list_follows_the_reference_order(work_world):
     cfg, _, _ = work_world
     out = wl.build(cfg)[0]
     ref = reference_of(out).sample(frac=1, random_state=1).reset_index(drop=True)  # another order
-    ordered = wl.in_reference_order(out, ref, 1.0, "ref.csv")
+    ordered = wl.keep_reference(out, ref, 1.0, cfg["size_groups"]["new"])
     assert ordered["idx"].tolist() == ref["idx"].tolist()
-    assert ordered.set_index("idx").sort_index().equals(out.set_index("idx").sort_index())
+    assert_geodataframe_equal(
+        ordered.set_index("idx").sort_index(), out.set_index("idx").sort_index(), check_dtype=False
+    )
     assert list(ordered.columns) == list(out.columns) and ordered.crs == out.crs
 
 
-@pytest.mark.parametrize(
-    "change, message",
-    [
-        (lambda r: r.iloc[1:], "1 plants are not in the reference"),
-        (lambda r: pd.concat([r, r.iloc[:1].assign(idx=99)]), "1 plants of the reference are missing"),
-        (lambda r: r.assign(plant_id=r["plant_id"].where(r.index != 2, "other")), "1 plants have another plant_id"),
-        (lambda r: r.assign(origin=r["origin"].where(r.index != 0, "new_plant_national")), "another origin"),
-        (lambda r: r.assign(lat=r["lat"].where(r.index != 3, r["lat"] + 0.001)), "more than 1 m from their reference"),
-    ],
-)  # fmt: skip
-def test_work_list_stops_when_it_differs_from_the_reference(work_world, change, message):
+def test_work_list_keeps_the_reference_plants_as_they_were(work_world):
     cfg, _, _ = work_world
-    out = wl.build(cfg)[0]
-    with pytest.raises(ValueError, match=message):
-        wl.in_reference_order(out, change(reference_of(out)), 1.0, "ref.csv")
+    first = wl.build(cfg)[0]
+    ref = reference_of(first)
+    # the rebuild: one national plant less, one more, the EU plants numbered one higher, a plant 110 m off
+    out = first[first["plant_id"] != "1004"].copy()
+    extra = first[first["plant_id"] == "AU_GA_1"].assign(plant_id="JP_P22_x", OLD_WASTE_ID="JP_P22_x", idx=23)
+    eu = out["origin"] == "new_plant_eu_file"
+    out.loc[eu, "idx"] = out.loc[eu, "idx"] + 1
+    out = gpd.GeoDataFrame(pd.concat([out, extra], ignore_index=True), crs=4326)
+    moved = out.index[out["plant_id"] == "DE3"][0]
+    out.loc[moved, "geometry"] = Point(out.geometry[moved].x, out.geometry[moved].y + 0.001)
+
+    kept = wl.keep_reference(out, ref, 1.0, cfg["size_groups"]["new"])
+    wl.check_ids(kept)
+    assert kept["plant_id"].astype(str).tolist() == [*ref["plant_id"], "JP_P22_x"]
+    assert kept["idx"].tolist() == [*ref["idx"], ref["idx"].max() + 1]  # the new plant after the highest
+    gone = kept.set_index("plant_id").loc["1004"]
+    assert gone["location_source"] == "reference_list" and gone["OLD_WASTE_ID"] == "1004"
+    assert gone["heigit_size_group"] == cfg["size_groups"]["new"] and gone["ISO_2"] == "AU"
+    back = kept.set_index("plant_id").loc["DE3"]
+    there = first.set_index("plant_id").loc["DE3"].geometry
+    assert back.geometry.distance(there) < 1e-6 and back["WKT_WWTP"] == there.wkt
 
 
 # --------------------------------------------------------------------------- #

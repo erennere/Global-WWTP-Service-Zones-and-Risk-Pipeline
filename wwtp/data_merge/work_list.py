@@ -25,10 +25,11 @@ part in its source's order. ``plant_id``: the SITE_UID, the national WASTE_ID or
 ``eu_file_uwwCode`` say where the location comes from.
 
 The new images were taken from the list of 17 Nov 2026; ``paths.reference_list`` (in git) keeps its
-plants and row order (idx, plant_id, origin, ISO_2, lon, lat). The rebuilt list must hold the same plants:
-the same idx with the same plant_id and origin, no farther than ``reference_offset_m`` from the
-reference position; otherwise it stops. It is written in the reference's row order, whatever the row
-order of the inputs.
+plants and row order (idx, plant_id, origin, ISO_2, lon, lat). Its plants stay as they were, matched by
+plant_id: first, in its row order, with its idx and its position (a plant the rebuild puts farther than
+``reference_offset_m`` away goes back there). A plant of the reference that the rebuild lacks is kept
+from the reference (those columns; ``location_source`` reference_list). Plants the reference lacks come
+after it: plants without size keep their idx, new plants are numbered after the highest idx.
 
 Writes the list to ``paths.work_list`` (GeoPackage) and the two side lists next to it.
 """
@@ -62,6 +63,8 @@ FOOTPRINT, LAGOON, CODE, COUNTRY, SITE, POINT = (
     "SITE_UID",
     "WKT_WWTP",
 )
+# The columns that hold plant_id, per origin (national(), eu_new_plants())
+ID_COLUMNS = {"new_plant_national": ["OLD_WASTE_ID"], "new_plant_eu_file": [CODE, "eu_file_uwwCode"]}
 # Columns the list adds after those of the population layer
 ADDED = ["heigit_size_group", "location_source", "location_shift_m", "eu_file_uwwCode", "newly_found_WWTPs",
          "origin", "plant_id"]  # fmt: skip
@@ -208,37 +211,62 @@ def build(cfg):
     new["epsg"] = [estimate_utm_epsg_for_geom(g) for g in new.geometry]
     out = pd.concat([old, new], ignore_index=True)
     out = gpd.GeoDataFrame(out.reindex(columns=columns + ADDED + ["geometry"]), geometry="geometry", crs=4326)
-    for name, column in (("idx", "idx"), ("plant_id", "plant_id")):
-        if out[column].isna().any() or out[column].duplicated().any():
-            raise ValueError(f"work list: {name} must be set and unique")
+    check_ids(out)
     return out, removed, not_added
 
 
-def in_reference_order(out, ref, max_offset_m, name):
-    """The list in the row order of ``ref`` (the list the new images were taken from). Stops unless both
-    hold the same plants: the same idx with the same plant_id and origin, no farther apart than
-    ``max_offset_m``."""
-    mine, ref = out.set_index("idx", drop=False), ref.set_index("idx")
-    problems = []
-    if missing := ref.index.difference(mine.index).tolist():
-        problems.append(f"{len(missing)} plants of the reference are missing (e.g. idx {missing[:5]})")
-    if extra := mine.index.difference(ref.index).tolist():
-        problems.append(f"{len(extra)} plants are not in the reference (e.g. idx {extra[:5]})")
-    common = ref.index.intersection(mine.index)
-    a, b = mine.loc[common], ref.loc[common]
-    for column in ("plant_id", "origin"):
-        if other := common[(a[column].astype(str) != b[column].astype(str)).to_numpy()].tolist():
-            problems.append(f"{len(other)} plants have another {column} (e.g. idx {other[:5]})")
-    offset = GEOD.inv(a.geometry.x.to_numpy(), a.geometry.y.to_numpy(), b["lon"].to_numpy(), b["lat"].to_numpy())[2]
-    if (far := offset > max_offset_m).any():
-        problems.append(f"{int(far.sum())} plants lie more than {max_offset_m:g} m from their reference position "
-                        f"(up to {offset.max():.0f} m; e.g. idx {common[far][:5].tolist()})")  # fmt: skip
-    if problems:
-        raise ValueError(f"the work list differs from {name}, the list the new images were taken from: "
-                         + "; ".join(problems))  # fmt: skip
-    moved = int((mine.index.to_numpy() != ref.index.to_numpy()).sum())
-    logger.info("work list: same plants, idx and positions as %s; %d rows put in its order", name, moved)
-    return mine.loc[ref.index].reset_index(drop=True)
+def check_ids(out):
+    for column in ("idx", "plant_id"):
+        if out[column].isna().any() or out[column].duplicated().any():
+            raise ValueError(f"work list: {column} must be set and unique")
+
+
+def keep_reference(out, ref, max_offset_m, new_group):
+    """The plants of ``ref`` (the list the new images were taken from) as they were, matched by plant_id:
+    first, in its row order, with its idx and its position (when the rebuild puts them farther than
+    ``max_offset_m`` away). A plant of ``ref`` that ``out`` lacks is kept from ``ref``. Then the plants
+    ``ref`` lacks: plants without size keep their idx, new plants are numbered after the highest idx."""
+    ref = gpd.GeoDataFrame(ref, geometry=gpd.points_from_xy(ref["lon"], ref["lat"]), crs=4326)
+    pid = out["plant_id"].astype(str)
+    row_of = pd.Series(np.arange(len(out)), index=pid.to_numpy())
+    found = ref["plant_id"].isin(row_of.index).to_numpy()
+
+    rows = row_of[ref.loc[found, "plant_id"]].to_numpy()
+    kept = out.iloc[rows].copy()
+    renumbered = int((kept["idx"].to_numpy() != ref.loc[found, "idx"].to_numpy()).sum())
+    reordered = int((rows != ref.index[found]).sum())
+    kept.index = ref.index[found]
+    kept["idx"] = ref.loc[found, "idx"]
+    there = ref.geometry[found]
+    offset = GEOD.inv(kept.geometry.x.to_numpy(), kept.geometry.y.to_numpy(), there.x.to_numpy(), there.y.to_numpy())[2]
+    back = offset > max_offset_m
+    kept.loc[back, "geometry"] = there[back]
+    kept.loc[back, POINT] = there[back].to_wkt(rounding_precision=-1)
+
+    gone = ref.loc[~found, ["idx", "plant_id", "origin", "ISO_2", "geometry"]].copy()
+    gone[POINT] = gone.geometry.to_wkt(rounding_precision=-1)
+    gone["epsg"] = [estimate_utm_epsg_for_geom(g) for g in gone.geometry]
+    gone["heigit_size_group"] = np.where(gone["origin"] == "without_heigit_size", None, new_group)
+    gone["location_source"] = "reference_list"
+    for origin, columns in ID_COLUMNS.items():
+        gone.loc[gone["origin"] == origin, columns] = gone["plant_id"]
+
+    extra = out[~pid.isin(set(ref["plant_id"])).to_numpy()].copy()
+    new = (extra["origin"] != "without_heigit_size").to_numpy()
+    first = max(int(ref["idx"].max()), int(extra.loc[~new, "idx"].max()) if (~new).any() else -1) + 1
+    extra.loc[new, "idx"] = np.arange(int(new.sum())) + first
+
+    kept_and_gone = pd.concat([kept, gone]).sort_index()
+    result = pd.concat([kept_and_gone, extra], ignore_index=True)
+    result = gpd.GeoDataFrame(result.reindex(columns=out.columns), geometry="geometry", crs=out.crs)
+    result["idx"] = result["idx"].astype(int)
+    logger.info("work list: the %d plants of the reference first, in its order (%d rows of the rebuild at another "
+                "row, %d with another idx); %d moved back to their reference position (up to %.0f m: %s); %d "
+                "kept from the reference, not in the rebuild (%s); %d plants the reference lacks after it (%s)",
+                len(ref), reordered, renumbered, int(back.sum()), offset.max(initial=0),
+                kept.loc[back, "plant_id"].astype(str).tolist(), int((~found).sum()), gone["plant_id"].tolist(),
+                len(extra), extra["origin"].value_counts().to_dict())  # fmt: skip
+    return result
 
 
 def write(cfg, out, removed, not_added):
@@ -256,7 +284,8 @@ def main():
     out, removed, not_added = build(cfg)
     path = cfg["paths"]["reference_list"]
     ref = pd.read_csv(path, dtype={"plant_id": str, "origin": str})
-    out = in_reference_order(out, ref, float(cfg["reference_offset_m"]), path)
+    out = keep_reference(out, ref, float(cfg["reference_offset_m"]), cfg["size_groups"]["new"])
+    check_ids(out)
     write(cfg, out, removed, not_added)
     logger.info("work list: %d plants %s", len(out), out["origin"].value_counts().to_dict())
 

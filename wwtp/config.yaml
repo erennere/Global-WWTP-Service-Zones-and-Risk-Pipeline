@@ -1214,7 +1214,7 @@ national_plants:
 # the annotation set of NEW_01_GENERATEGRIDS. The corrected EU file is the truth in its countries.
 work_list:
   same_site_distance_m: 500          # closer than this: the same plant (final_data_merge.threshold)
-  reference_offset_m: 1              # farther from its position in reference_list: the plant moved
+  reference_offset_m: 1              # a reference plant the rebuild puts farther away goes back to its reference position
   code_countries: {EL: GR}           # uwwCode prefixes that are not ISO 3166 country codes
   # Overseas parts of file countries with an ISO 3166 code of their own: lon min, lat min, lon max, lat max
   territories:
@@ -1239,8 +1239,8 @@ work_list:
     work_list: '{data_dir}/heigit_sizes/plants_without_size_and_new_plants.gpkg'
     removed_plants: '{data_dir}/heigit_sizes/plants_removed_not_in_eu_file.csv'
     eu_file_not_added: '{data_dir}/heigit_sizes/eu_file_plants_not_added.csv'
-    # The list the new images were taken from (17 Nov 2026, in git): the rebuilt list must hold the same
-    # plants (idx, plant_id, origin, position) and is written in its row order
+    # The list the new images were taken from (17 Nov 2026, in git): its plants stay as they were (idx, row
+    # order, position; matched by plant_id); plants it lacks come after it
     reference_list: '{data_dir}/heigit_sizes/work_list_reference_2026-11-17.csv'
 
 # Plant list v3 (wwtp/data_merge/plants_v3.py): all_annotated_v2 with the work list applied (removed,
