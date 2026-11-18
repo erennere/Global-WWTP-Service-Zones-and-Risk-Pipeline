@@ -89,18 +89,21 @@ NEW_01_GENERATEGRIDS:
 # and a long pause after a refusal. overpass-api.de (FOSSGIS) is overloaded and bans parallel scripts,
 # load spread over its servers and retries after a 429: one request at a time, if at all. Which
 # endpoints and how many workers: `snakemake overpass_benchmark` (overpass_benchmark section).
+# Benchmark of 18 Nov 2026 (40 tiles, from Eren's laptop): OSM France answered 40/40 (median 6 s,
+# current data); overpass-api.de 18/40 (instant 502s, 429s; 39 s); VK Maps 9/40 (instant 504s; 21 s);
+# private.coffee and its old name kumi.systems 6/40 and 5/40 (90 s, data of 28 Jul 2026): left out.
 NEW_02_EXTRACTOSMDATAFULL_GEOJSON:
   version: null
   overwrite_existing: false
   annotations:
     overpass_endpoints:
-      - {url: 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', workers: 4}   # VK Maps, no limits
-      - {url: 'https://overpass.private.coffee/api/interpreter', workers: 4}   # 4 servers, no limit (was kumi.systems)
+      - {url: 'https://overpass.openstreetmap.fr/api/interpreter', workers: 2}   # OSM France
       - {url: 'https://overpass-api.de/api/interpreter', workers: 1}
+      - {url: 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', workers: 2}   # VK Maps
     user_agent: 'HeiGIT-plant-capacity/1.0 (WWTP image annotation; one query per 3.7 km tile)'
     output_mode: 'geom'             # way coordinates inline ('body': nodes as elements, the first global run)
     query_timeout_seconds: 180      # [timeout:] of each query, on the server
-    request_timeout_seconds: 300    # waiting for an answer
+    request_timeout_seconds: 120    # waiting for an answer (working servers answer a tile in seconds)
     refused_pause_seconds: 30       # an endpoint's pause after 429, 406, 503, 504 or a timeout (FOSSGIS: >= 30 s)
     max_attempts: 4                 # per tile and run, over all endpoints
     progress_every: 250             # tiles between progress lines in the log

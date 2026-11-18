@@ -88,7 +88,7 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | `NEW_01_GENERATEGRIDS.annotations.cell_size` | `3072` | Grid cell size |
 | `NEW_01_GENERATEGRIDS.annotations.factor` | `1.194` | Grid expansion factor |
 | `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.overwrite_existing` | `false` | Ask again for tiles that have their files |
-| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.overpass_endpoints` | VK Maps 4, private.coffee 4, overpass-api.de 1 | Endpoints and their requests at a time |
+| `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.overpass_endpoints` | OSM France 2, overpass-api.de 1, VK Maps 2 | Endpoints and their requests at a time (benchmark of 18 Nov 2026: OSM France answered 40 of 40 tiles, median 6 s; the others 5-18 of 40) |
 | `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.user_agent` | HeiGIT-plant-capacity | Identifies the requests (Overpass operators require it) |
 | `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.output_mode` | `geom` | Way coordinates inline (`body`: nodes as elements); the same features |
 | `NEW_02_EXTRACTOSMDATAFULL_GEOJSON.annotations.refused_pause_seconds` | `30` | An endpoint's pause after a refusal |
