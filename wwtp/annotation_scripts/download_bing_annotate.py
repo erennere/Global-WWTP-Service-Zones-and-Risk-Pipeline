@@ -75,7 +75,9 @@ IMAGE_SIZE = [3072, 3072]
 BASE_Z17_RES = 1.1943285669555664
 MAX_WORKERS = 64
 GEOREFERENCED = False
-FONTSIZE = 24
+# Label text and its halo, in pixels of the output image (TARGET_SIZE)
+LABEL_FONT_PX = 8
+LABEL_HALO_PX = 1
 DPI = 72
 EARTH_RADIUS = 6378137
 WORLD_WIDTH = 2 * math.pi * EARTH_RADIUS  # ~40075016.685
@@ -213,8 +215,8 @@ def split_grids_for_instance(grids, instance_id, num_instances, split_seed):
     return shuffled[instance_id::num_instances]
 
 
-def draw_annotations(image, annotations, fontsize=12):
-    """Orchestrates drawing, ensuring lines are drawn before polygon labels."""
+def draw_annotations(image, annotations, fontsize=12, halo=3):
+    """Orchestrates drawing, ensuring lines are drawn before polygon labels (``halo``: outline in pixels)."""
     image = image.convert("RGBA")
 
     font = ImageFont.truetype(FONT_PATH, fontsize)
@@ -223,16 +225,16 @@ def draw_annotations(image, annotations, fontsize=12):
     #  (Alpha Compositing)
     for ann in [a for a in annotations if a["style"] == "line"]:
         draw_rotated_text_with_padding(
-            image, (ann["x"], ann["y"]), ann["text"], ann["angle"], font, "white", "blue", pad=3
+            image, (ann["x"], ann["y"]), ann["text"], ann["angle"], font, "white", "blue", pad=halo
         )
 
     # 2. Draw Static Labels (Polygons) on top
     draw = ImageDraw.Draw(image)
     for ann in [a for a in annotations if a["style"] != "line"]:
         if ann["style"] == "man_made":
-            draw_text_with_padding(draw, (ann["x"], ann["y"]), ann["text"], font, "yellow", "black", pad=3)
+            draw_text_with_padding(draw, (ann["x"], ann["y"]), ann["text"], font, "yellow", "black", pad=halo)
         else:
-            draw_text_with_padding(draw, (ann["x"], ann["y"]), ann["text"], font, "black", "white", pad=3)
+            draw_text_with_padding(draw, (ann["x"], ann["y"]), ann["text"], font, "black", "white", pad=halo)
     return image
 
 
@@ -371,13 +373,23 @@ def process_bbox(idx, bbox_geom, img_idx, poly_gdf, cols, line_gdf, line_cols, o
                 )
 
         # -------- DRAW & OUTPUT --------
-        image = draw_annotations(image, annotations, fontsize=FONTSIZE)
+        # Drawn at the larger of the image and the output size, so the labels stay sharp: an image smaller
+        # than the output (512 px -> 1024 px) is enlarged first. Label sizes are given in output pixels.
+        draw_px = IMAGE_SIZE[0] if GEOREFERENCED else max(IMAGE_SIZE[0], TARGET_SIZE[0])
+        if draw_px != image.size[0]:
+            image = image.resize((draw_px, draw_px), resample=Image.LANCZOS)
+        scale, per_output_px = draw_px / IMAGE_SIZE[0], draw_px / TARGET_SIZE[0]
+        for ann in annotations:
+            ann["x"], ann["y"] = int(round(ann["x"] * scale)), int(round(ann["y"] * scale))
+        image = draw_annotations(image, annotations, fontsize=max(1, round(LABEL_FONT_PX * per_output_px)),
+                                 halo=round(LABEL_HALO_PX * per_output_px))  # fmt: skip
         if GEOREFERENCED:
             out_path = os.path.join(output_dir, f"bbox_{idx}.tif")
             georef_write(image, cx, cy, out_path)
         else:
             out_path = os.path.join(output_dir, f"bbox_{idx}.png")
-            image = image.resize(TARGET_SIZE, resample=Image.LANCZOS)
+            if image.size != tuple(TARGET_SIZE):
+                image = image.resize(TARGET_SIZE, resample=Image.LANCZOS)
             ensure_output_dir_for_file(out_path)
             image.save(out_path, dpi=(DPI, DPI))
         return idx, len(annotations), None
@@ -495,7 +507,8 @@ if __name__ == "__main__":
     BASE_Z17_RES = float(annotations_cfg["base_z17_resolution"])
     MAX_WORKERS = int(annotations_cfg["max_workers"])
     GEOREFERENCED = bool(annotations_cfg["georeferenced"])
-    FONTSIZE = int(annotations_cfg["fontsize"])
+    LABEL_FONT_PX = float(annotations_cfg["label_font_px"])
+    LABEL_HALO_PX = float(annotations_cfg["label_halo_px"])
     DPI = int(annotations_cfg["dpi"])
     target_size_px = int(annotations_cfg["target_size_px"])
     TARGET_SIZE = [target_size_px, target_size_px]

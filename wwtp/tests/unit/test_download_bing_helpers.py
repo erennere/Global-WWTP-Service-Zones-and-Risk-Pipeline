@@ -59,7 +59,7 @@ def test_draw_annotations_and_georef_write(monkeypatch, tmp_path):
 
 def test_process_bbox_and_parallel_dispatch(monkeypatch, tmp_path):
     monkeypatch.setattr(dba, "get_image", lambda idx, images_dir: Image.new("RGB", (3072, 3072), (0, 0, 0)))
-    monkeypatch.setattr(dba, "draw_annotations", lambda image, annotations, fontsize=12: image)
+    monkeypatch.setattr(dba, "draw_annotations", lambda image, annotations, **kw: image)
     monkeypatch.setattr(dba, "ensure_output_dir_for_file", lambda path: None)
 
     bbox = box(0, 0, 100, 100)

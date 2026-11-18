@@ -148,12 +148,17 @@ download_bing_annotate:
   annotations:
     cell_size: null
     factor: null
-    image_size_px: 3072
+    # The new images (Sukanya, 18 Nov 2026): 512 x 512 px at the first run's scale (about 0.6 m per pixel,
+    # about 300 m wide, centred on the plant); the first run's were 3072 px
+    image_size_px: 512
     zoom_level: 17
     base_z17_resolution: 1.1943285669555664
     max_workers: 64
     georeferenced: false
-    fontsize: 24
+    # Label text and its outline in pixels of the output image (target_size_px): the first run drew 24 and 3
+    # on its 3072 px images, 8 and 1 after the resize to 1024. Smaller images are enlarged before drawing.
+    label_font_px: 8
+    label_halo_px: 1
     dpi: 72
     target_size_px: 1024
     mercator_tile_size_px: 256

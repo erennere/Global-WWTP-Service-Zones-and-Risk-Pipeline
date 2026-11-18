@@ -286,7 +286,8 @@ class BingAnnotations(Strict):
     base_z17_resolution: PositiveFloat
     max_workers: PositiveInt
     georeferenced: bool
-    fontsize: PositiveInt
+    label_font_px: PositiveFloat
+    label_halo_px: NonNegativeFloat
     dpi: PositiveInt
     target_size_px: PositiveInt
     mercator_tile_size_px: PositiveInt

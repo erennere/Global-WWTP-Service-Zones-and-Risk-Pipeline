@@ -35,9 +35,9 @@ def test_image_helpers_and_drawing(tmp_path):
 
 def test_bing_process_bbox_georeferenced_output(tmp_path, monkeypatch):
     monkeypatch.setattr(dba, "get_image", lambda idx, images_dir: Image.new("RGB", (3072, 3072), (0, 0, 0)))
-    monkeypatch.setattr(dba, "FONTSIZE", 16)
+    monkeypatch.setattr(dba, "LABEL_FONT_PX", 16)
     monkeypatch.setattr(dba, "GEOREFERENCED", True)
-    monkeypatch.setattr(dba, "draw_annotations", lambda image, annotations, fontsize=12: image)
+    monkeypatch.setattr(dba, "draw_annotations", lambda image, annotations, **kw: image)
 
     bbox_geom = box(0, 0, 100, 100)
     poly_gdf = gpd.GeoDataFrame(
@@ -163,7 +163,8 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
             "base_z17_resolution": 1.1943285669555664,
             "max_workers": 1,
             "georeferenced": False,
-            "fontsize": 24,
+            "label_font_px": 8,
+            "label_halo_px": 1,
             "dpi": 300,
             "target_size_px": 1024,
             "mercator_tile_size_px": 256,
