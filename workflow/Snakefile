@@ -35,7 +35,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels
     snakemake annotation_context --config run_once=annotation_context
                                 the annotation of the plants in NEW_01_GENERATEGRIDS.paths.annotation_points_filepath
-                                without the images: tiles, OSM features per tile (Overpass), merged layers
+                                without the images: the OSM planet (downloaded and filtered once), tiles, OSM
+                                features per tile cut from it, merged layers
     snakemake annotation_overlay --config run_once=annotation_overlay
                                 the text overlay, once their images and ref.geojson are in
                                 download_bing_annotate.paths.annotations_images_dir
@@ -53,7 +54,7 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
     snakemake calibration_figures   Extended Data figures and LaTeX numbers of the calibration from its tables
                                 (data/figures/calibration; paper/methods_calibration.tex)
 
-One-time stages (combine_locations, the four annotation rules, download_pop, national_plants,
+One-time stages (combine_locations, osm_planet, the four annotation rules, download_pop, national_plants,
 make_work_list, make_plants_v3) are left out
 of every run: their outputs are taken as they are. Name them to include them in one run,
 e.g. `snakemake analysis --config run_once=download_pop` (or list them in workflow.run_once).
@@ -152,15 +153,26 @@ if "combine_locations" in ONCE:
             then("data_merge.merge_seg_results", "--variant new")
 
 
+OP = wf.config("osm_planet")["paths"]
+PLANET = [f"{OP['planet_dir']}/{name}" for name in ("filtered.osm.pbf", "planet_info.json")]
+if "osm_planet" in ONCE:
+    rule osm_planet:
+        """The OSM planet, downloaded once and filtered to the tags of the annotation (osmium)."""
+        output: PLANET
+        params: module="annotation_scripts.osm_planet", cli=["prepare"]
+        log: wf.log("osm_planet")
+        threads: threads("osm_planet")
+        resources: **res("osm_planet")
+        shell: STAGE
+
+
 GRIDS = wf.annotation_grid()
 OSM_EXTRACT = wf.annotation_stamp("osm_extract")
 if "annotation_grids" in ONCE:
     rule annotation_grids:
-        """One square tile per plant (NEW_01) and the OSM features in each tile (NEW_02, from Overpass).
-
-        Tiles already downloaded are kept (NEW_02_EXTRACTOSMDATAFULL_GEOJSON.overwrite_existing).
-        """
-        input: wf.annotation_points()
+        """One square tile per plant (NEW_01) and the OSM features in each tile, cut from the filtered
+        planet (osm_planet tiles; every tile written again from that snapshot)."""
+        input: wf.annotation_points(), PLANET
         output:
             GRIDS,
             touch(OSM_EXTRACT),
@@ -168,7 +180,7 @@ if "annotation_grids" in ONCE:
         log: wf.log("annotation_grids")
         threads: threads("annotation_grids")
         resources: **res("annotation_grids")
-        shell: STAGE + then("annotation_scripts.NEW_02_EXTRACTOSMDATAFULL_GEOJSON")
+        shell: STAGE + then("annotation_scripts.osm_planet", "tiles")
 
 
 if "wastewater_join" in ONCE:
@@ -227,7 +239,7 @@ rule annotations:
 
 
 rule annotation_context:
-    """The annotation without the images: tiles, OSM features per tile, merged OSM layers."""
+    """The annotation without the images: OSM planet, tiles, OSM features per tile, merged OSM layers."""
     input: GRIDS, OSM_EXTRACT, wf.osm_layers()
 
 

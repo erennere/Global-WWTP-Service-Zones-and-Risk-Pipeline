@@ -258,6 +258,19 @@ class OverpassBenchmark(Section):
     paths: Paths
 
 
+class OsmPlanet(Section):
+    version: Version
+    planet_urls: list[str] = Field(min_length=1)
+    keep_planet: bool
+    osmium_version: str
+    micromamba_url: str
+    download_chunk_mb: PositiveInt
+    request_timeout_seconds: PositiveFloat
+    workers: PositiveInt
+    tiles_per_task: PositiveInt
+    paths: Paths
+
+
 class ExtractOsm(Section):
     version: Version
     overwrite_existing: bool
@@ -872,6 +885,7 @@ class JobResources(Strict):
 # annotation rules.
 OneTimeStage = Literal[
     "combine_locations",
+    "osm_planet",
     "annotations",
     "annotation_context",
     "annotation_overlay",
@@ -980,6 +994,7 @@ SECTIONS: dict[str, type[Section]] = {
     "NEW_01_GENERATEGRIDS": Generategrids,
     "NEW_02_EXTRACTOSMDATAFULL_GEOJSON": ExtractOsm,
     "overpass_benchmark": OverpassBenchmark,
+    "osm_planet": OsmPlanet,
     "download_bing_annotate": DownloadBingAnnotate,
     "merge_annotations": MergeAnnotations,
     "annotations_inspection": AnnotationsInspection,

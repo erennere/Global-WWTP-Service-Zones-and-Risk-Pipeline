@@ -23,6 +23,7 @@ dependencies:
   - joblib
   - tqdm
   - requests
+  - osmium-tool  # annotation_scripts/osm_planet.py (installed by the stage itself when missing)
   - pycountry
   - matplotlib
   - seaborn

@@ -26,9 +26,10 @@ RUN_KEYS = ("level", "version", "buffer", "weight_method", "weight_func", "dynam
 # (workflow.run_once, or ``snakemake --config run_once=...``); otherwise their outputs are plain inputs.
 ONE_TIME_STAGES = {
     "combine_locations": ("combine_locations",),
-    "annotations": ("annotation_grids", "wastewater_join", "download_bing_annotate", "merge_annotations"),
-    # the annotation without the images: tiles, OSM features per tile, merged OSM layers
-    "annotation_context": ("annotation_grids", "wastewater_join"),
+    "annotations": ("osm_planet", "annotation_grids", "wastewater_join", "download_bing_annotate", "merge_annotations"),
+    # the annotation without the images: OSM planet, tiles, OSM features per tile, merged OSM layers
+    "annotation_context": ("osm_planet", "annotation_grids", "wastewater_join"),
+    "osm_planet": ("osm_planet",),
     # the text overlay on the images, once they are in download_bing_annotate.paths.annotations_images_dir
     "annotation_overlay": ("download_bing_annotate",),
     "annotation_grids": ("annotation_grids",),

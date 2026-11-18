@@ -171,13 +171,13 @@ def test_the_sweep_makes_approach0_once_per_weighting_and_extent(work):
 
 
 def test_annotation_context_then_overlay(work):
-    """Without images: tiles + OSM and the merged layers; the overlay waits for ref.geojson."""
+    """Without images: OSM planet, tiles + OSM and the merged layers; the overlay waits for ref.geojson."""
     points = wf.annotation_points()
     os.makedirs(os.path.dirname(points), exist_ok=True)
     open(points, "a").close()
     result, jobs = _plan(work, "annotation_context", "--config", "run_once=annotation_context")
     assert result.returncode == 0, result.stderr[-2000:]
-    assert jobs == {"annotation_grids", "wastewater_join", "annotation_context"}
+    assert jobs == {"osm_planet", "annotation_grids", "wastewater_join", "annotation_context"}
 
     for path in (wf.annotation_grid(), wf.annotation_stamp("osm_extract"), *wf.osm_layers()):
         os.makedirs(os.path.dirname(path), exist_ok=True)

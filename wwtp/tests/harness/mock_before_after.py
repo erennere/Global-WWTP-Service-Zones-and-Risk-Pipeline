@@ -122,6 +122,8 @@ def write_config(code_root, data_dir, out_path, settings=None):
     if n != 1:
         raise RuntimeError(f"Could not set data_dir in {code_root}/{package_of(code_root)}/config.yaml")
     text = re.sub(r"^(\s*\w*(?:max_workers|_workers|concurrency)): \d+", r"\1: 2", text, flags=re.M)
+    # Cluster paths (Sukanya's image folders on SDS@hd) go into the copy too, so tests never write there.
+    text = text.replace("'/mnt/sds-hd/", f"'{data_dir}/sds-hd/")
     # Other relative paths point into the package (templates); the copy lives elsewhere, so make them absolute.
     package_dir = code_root / package_of(code_root)
     text = re.sub(

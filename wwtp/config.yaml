@@ -83,7 +83,8 @@ NEW_01_GENERATEGRIDS:
     annotation_points_filepath: '{data_dir}/heigit_sizes/plants_without_size_and_new_plants.gpkg'
     annotations_grid_dir: '{data_dir}/annotations/new_plants/GRID'
 
-# OSM features per tile from Overpass (wwtp/annotation_scripts/NEW_02_...py). One queue of tiles; every
+# OSM features per tile from Overpass (wwtp/annotation_scripts/NEW_02_...py; not in the workflow since
+# 18 Nov 2026: osm_planet below does it from one planet file, for small sets only). One queue of tiles; every
 # endpoint has `workers` requests at a time, a fast one answers more tiles. Public instances are shared
 # (https://wiki.openstreetmap.org/wiki/Overpass_API): an identifying user agent, few parallel requests,
 # and a long pause after a refusal. overpass-api.de (FOSSGIS) is overloaded and bans parallel scripts,
@@ -112,6 +113,32 @@ NEW_02_EXTRACTOSMDATAFULL_GEOJSON:
     annotation_points_filepath: null
     annotations_grid_dir: null
     annotations_by_osm_dir: '{data_dir}/annotations/new_plants/osm_by_idx'
+
+# OSM features per tile from one OSM planet file instead of Overpass servers (wwtp/annotation_scripts/
+# osm_planet.py; the workflow's annotation step). `prepare` once: the planet (~90 GB, the first URL
+# that works, md5-checked) filtered to the tags NEW_02 asks for; `tiles` per plant set: the same
+# features per tile as the Overpass query, all from one dated OSM snapshot (planet_info.json).
+osm_planet:
+  version: null
+  planet_urls:   # weekly planet; mirrors first (faster), <url>.md5 next to each
+    - 'https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/pbf/planet-latest.osm.pbf'
+    - 'https://ftp.fau.de/osm-planet/pbf/planet-latest.osm.pbf'
+    - 'https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf'
+  keep_planet: false               # the filtered file (~10-20 GB) is kept; the planet is not
+  osmium_version: '1.19.1'         # osmium-tool, installed from conda-forge when not on the PATH
+  micromamba_url: 'https://conda.anaconda.org/conda-forge/linux-64/micromamba-2.10.0-0.tar.bz2'
+  download_chunk_mb: 16
+  request_timeout_seconds: 120
+  workers: 4                       # processes writing the tile files (each may hold a copy of the features)
+  tiles_per_task: 200
+  paths:
+    data_dir: null
+    planet_dir: '{data_dir}/osm_planet'
+    tools_dir: '{data_dir}/tools'
+    annotation_points_filepath: null
+    annotations_grid_dir: null
+    annotations_by_osm_dir: null
+    area_dir: '{data_dir}/annotations/new_plants/osm_area'
 
 download_bing_annotate:
   version: null
@@ -1484,9 +1511,9 @@ validation_figures:
 # stage the workflow runs needs an entry. A cluster overlay can tune any of them.
 workflow:
   bing_annotate_shards: 10
-  # One-time stages: combine_locations, the image annotation (annotation_grids,
-  # wastewater_join, download_bing_annotate, merge_annotations; all four:
-  # 'annotations'; without the images: 'annotation_context' = annotation_grids +
+  # One-time stages: combine_locations, the image annotation (osm_planet, annotation_grids,
+  # wastewater_join, download_bing_annotate, merge_annotations; all five:
+  # 'annotations'; without the images: 'annotation_context' = osm_planet + annotation_grids +
   # wastewater_join; the text overlay: 'annotation_overlay' = download_bing_annotate)
   # download_pop, and the plant list v3 ('work_list' = national_plants + make_work_list;
   # 'plants_v3' = make_plants_v3). A run takes their outputs as they are and
@@ -1498,6 +1525,7 @@ workflow:
     combine_locations: {threads: 4, mem_mb: 65536, runtime: 2880}
     annotation_grids: {threads: 16, mem_mb: 131072, runtime: 2880}
     overpass_benchmark: {threads: 4, mem_mb: 8192, runtime: 60}
+    osm_planet: {threads: 8, mem_mb: 32768, runtime: 720}
     download_bing_annotate: {threads: 64, mem_mb: 239616, runtime: 2880}
     wastewater_join: {threads: 16, mem_mb: 65536, runtime: 2880}
     merge_annotations: {threads: 2, mem_mb: 4096, runtime: 2880}
