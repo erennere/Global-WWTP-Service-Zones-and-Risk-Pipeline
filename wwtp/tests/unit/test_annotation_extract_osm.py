@@ -275,6 +275,20 @@ def test_clean_columns_normalizes_names_and_values():
     assert out["another_col"].iloc[0] == ""
 
 
+def test_save_tile_writes_tags_that_clean_to_the_same_name(tmp_path):
+    """A tile with name:ja and name_ja (KeyError 0 on the cluster, 18 Nov), keys alike in their first 60
+    characters and a tag that cleans to geometry: every tag is written, under a name of its own."""
+    long = "x" * 60
+    square = [{"lon": 0, "lat": 0}, {"lon": 1, "lat": 0}, {"lon": 1, "lat": 1}, {"lon": 0, "lat": 0}]
+    tags = {"name:ja": "a", "name_ja": "b", "name ja": "c", long + "1": "d", long + "2": "e", "geometry:": "f"}
+    data = {"elements": [{"type": "way", "id": 1, "tags": {**tags, "landuse": "industrial"}, "geometry": square}]}
+    assert n2.save_tile(data, 7, str(tmp_path)) == (0, 1)
+    out = gpd.read_file(n2.tile_files(str(tmp_path), 7)[1])
+    assert {"name_ja", "name_ja_2", "name_ja_3", long, long + "_2", "geometry_", "landuse", "id"} <= set(out.columns)
+    assert out[["name_ja", "name_ja_2", "name_ja_3"]].iloc[0].tolist() == ["a", "b", "c"]
+    assert out.geometry.iloc[0].geom_type == "Polygon"
+
+
 def test_benchmark_survives_one_sided_answers_and_slow_servers(servers, monkeypatch):
     """A tile with lines but no polygons (KeyError 'id' on the cluster, 17 Nov) and a server slower than
     the time budget: the run still finishes with a row for every tile."""

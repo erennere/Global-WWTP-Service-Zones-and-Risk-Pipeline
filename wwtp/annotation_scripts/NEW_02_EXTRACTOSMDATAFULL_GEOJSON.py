@@ -60,10 +60,25 @@ SERVER_ERROR = re.compile(r"runtime error|timed out|out of memory", re.IGNORECAS
 
 
 def clean_columns(gdf):
-    """Clean column names and ensure valid types for GeoJSON export."""
+    """Clean column names and ensure valid types for GeoJSON export.
+
+    Tag keys that clean to the same name (``name:ja`` and ``name_ja``, keys alike in their first 60
+    characters) get ``_2``, ``_3``, ... in the order they come."""
     if gdf.empty:
         return gdf
-    gdf.columns = [re.sub(r"[^0-9a-zA-Z_]", "_", c)[:60] for c in gdf.columns]
+    names, taken = [], {"geometry"}
+    for column in gdf.columns:
+        if column == "geometry":
+            names.append(column)
+            continue
+        name = base = re.sub(r"[^0-9a-zA-Z_]", "_", column)[:60]
+        n = 1
+        while name in taken:
+            n += 1
+            name = f"{base}_{n}"
+        taken.add(name)
+        names.append(name)
+    gdf.columns = names
     for col in gdf.columns:
         if col != "geometry":
             gdf[col] = gdf[col].apply(lambda x: str(x) if x is not None else "")
