@@ -353,7 +353,9 @@ def v3_world(tmp_path):
     ref_idx = [11, 2, 3, 10]  # image <row>.png shows the plant ref_idx[row]
     images = tmp_path / "images"
     images.mkdir()
-    gpd.GeoDataFrame({"idx": ref_idx}, geometry=list(work.set_index("idx").geometry[ref_idx]),
+    imaged = list(work["idx"])[::-1]  # the list the images were made from; ref.geojson counts its rows
+    pd.DataFrame({"idx": imaged}).to_csv(tmp_path / "imaged_list.csv", index=False)
+    gpd.GeoDataFrame({"idx": [imaged.index(i) for i in ref_idx]}, geometry=list(work.set_index("idx").geometry[ref_idx]),
                      crs=4326).to_file(images / "ref.geojson", driver="GeoJSON")  # fmt: skip
     pd.DataFrame({"img_name": ["1.png", "2.png", "0.png"], "num_detection_circle": [1, 1, 2],
                   "diameters": ["[20]", "[10]", "[10 10]"], "num_detection_rect": [0, 0, 0],
@@ -366,7 +368,8 @@ def v3_world(tmp_path):
     cfg = load_config(script_name="plants_v3")
     cfg["paths"].update(base_filepath=str(tmp_path / "all_annotated_v2.gpkg"), work_list=str(tmp_path / "work_list.gpkg"),
                         removed_plants=str(tmp_path / "removed.csv"), eu_file=str(tmp_path / "eu.geojson"),
-                        images_ref=str(images / "ref.geojson"), segmentation_results=str(tmp_path / "seg.csv"),
+                        images_ref=str(images / "ref.geojson"), images_ref_list=str(tmp_path / "imaged_list.csv"),
+                        segmentation_results=str(tmp_path / "seg.csv"),
                         image_text_results=str(tmp_path / "i2t.csv"), output=str(tmp_path / "all_annotated_v3.gpkg"),
                         summary=str(tmp_path / "summary.csv"))  # fmt: skip
     cfg["with_image_text"] = True

@@ -117,7 +117,8 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | `download_bing_annotate.annotations.mercator_tile_size_px` | `256` | Web-Mercator base tile size |
 | `download_bing_annotate.annotations.imagery_reference_tile_size_px` | `512` | Imagery provider native tile size used in pixel scaling |
 | `NEW_01_GENERATEGRIDS.paths.annotation_points_filepath` | work list | The plants to annotate (unique integer `idx`) |
-| `download_bing_annotate.paths.annotations_images_dir` | `{data_dir}/annotations/new_plants/images` | Source imagery: `<row>.png` and `ref.geojson` (each plant's `idx`) |
+| `download_bing_annotate.paths.annotations_images_dir` | `{data_dir}/annotations/new_plants/images` | Source imagery: `<row>.png` and `ref.geojson` (its `idx`: the plant's row in `images_ref_list`) |
+| `download_bing_annotate.paths.images_ref_list` | `{data_dir}/heigit_sizes/work_list_reference_2026-11-17.csv` | The list the images were made from: `ref.geojson`'s `idx` is a row of it (from 0), the plant's `idx` that row's `idx` |
 | `download_bing_annotate.paths.annotated_images_output_dir` | `{data_dir}/annotations/new_plants/annotated` | Annotated image output directory |
 | `merge_annotations.paths.annotations_results_filepath` | ⚠️ path | Annotation results CSV |
 | `annotations_inspection.paths.annotations_verf_image_outpath_dir` | ⚠️ path | QA image output directory |

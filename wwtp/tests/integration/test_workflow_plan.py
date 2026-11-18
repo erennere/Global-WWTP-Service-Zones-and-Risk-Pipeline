@@ -186,9 +186,9 @@ def test_annotation_context_then_overlay(work):
     result, _ = _plan(work, "annotation_overlay", "--config", "run_once=annotation_overlay")
     assert result.returncode != 0 and "ref.geojson" in result.stdout + result.stderr  # no images yet
 
-    ref = wf.annotation_images_ref()
-    os.makedirs(os.path.dirname(ref), exist_ok=True)
-    open(ref, "a").close()
+    for ref in (wf.annotation_images_ref(), wf.config("download_bing_annotate")["paths"]["images_ref_list"]):
+        os.makedirs(os.path.dirname(ref), exist_ok=True)
+        open(ref, "a").close()  # the images' ref.geojson and the list its idx counts rows of (in git)
     result, jobs = _plan(work, "annotation_overlay", "--config", "run_once=annotation_overlay")
     assert result.returncode == 0, result.stderr[-2000:]
     assert jobs == {"download_bing_annotate", "annotation_overlay"}

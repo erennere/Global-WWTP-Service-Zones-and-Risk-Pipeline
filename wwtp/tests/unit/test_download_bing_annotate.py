@@ -178,14 +178,16 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
             "annotations_by_osm_dir": str(osm_dir),
             "annotation_points_filepath": str(tmp_path / "all.csv"),
             "annotated_images_output_dir": str(out_dir),
+            "images_ref_list": str(tmp_path / "imaged_list.csv"),
         },
     }
+    pd.DataFrame({"idx": [7, 1]}).to_csv(tmp_path / "imaged_list.csv", index=False)  # ref.geojson row 1 = plant 1
 
     monkeypatch.setattr(starter, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
 
     grids = gpd.GeoDataFrame({"idx": [1], "geometry": [box(0, 0, 10, 10)]}, geometry="geometry", crs="EPSG:4326")
-    points = gpd.GeoDataFrame({"idx": [1], "geometry": [Point(5, 5)]}, geometry="geometry", crs="EPSG:4326")
+    points = gpd.GeoDataFrame({"idx": [1], "geometry": [Point(5, 5)]}, geometry="geometry", crs="EPSG:4326")  # row 1
 
     def _read_file(path, **kwargs):
         p = str(path)
@@ -228,6 +230,20 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
 
     monkeypatch.setattr(duckdb, "connect", lambda *a, **k: _Conn())
     runpy.run_module("wwtp.annotation_scripts.download_bing_annotate", run_name="__main__")
+
+
+def test_ref_geojson_rows_become_plant_numbers(tmp_path):
+    """Sukanya's ref.geojson numbers the plants by their row in the list she got (cluster, 18 Nov: 13,932
+    of 17,519 images "not in the plant list")."""
+    from wwtp.annotation_scripts.images_ref import plant_idx_of_rows
+
+    pd.DataFrame({"idx": [47999, 8869, 64862]}).to_csv(tmp_path / "list.csv", index=False)
+    ref = gpd.GeoDataFrame({"idx": [2, 0]}, geometry=[Point(2.77, 41.76), Point(45.07, 12.89)], crs=4326)
+    out = plant_idx_of_rows(ref, tmp_path / "list.csv")
+    assert out["idx"].tolist() == [64862, 47999] and out["list_row"].tolist() == [2, 0]
+    assert ref["idx"].tolist() == [2, 0]  # the input stays as it is
+    with pytest.raises(ValueError, match="1 images of ref.geojson have a row outside the 3 rows"):
+        plant_idx_of_rows(ref.assign(idx=[3, 0]), tmp_path / "list.csv")
 
 
 def test_the_overlay_stops_when_the_images_do_not_fit(tmp_path):

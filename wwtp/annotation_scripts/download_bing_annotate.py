@@ -23,7 +23,7 @@ import shapely.wkt
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from ..geo_utils import ensure_duckdb_spatial
-from .images_ref import check_image_size, check_images_ref
+from .images_ref import check_image_size, check_images_ref, plant_idx_of_rows
 from ..utils import (
     configure_logging,
     duckdb_connection,
@@ -527,8 +527,7 @@ if __name__ == "__main__":
     bbox_gdf = gpd.read_file(grids_filepath).to_crs(3857)
     bbox_gdf["idx"] = bbox_gdf["idx"].astype(int)
 
-    points_gdf = gpd.read_file(points_path).to_crs(3857)
-    points_gdf["idx"] = points_gdf["idx"].astype(int)
+    points_gdf = plant_idx_of_rows(gpd.read_file(points_path).to_crs(3857), cfg["paths"]["images_ref_list"])
     points_gdf["img_idx"] = points_gdf.index.astype(int)
     # Before drawing anything: the images belong to these plants and have the size the labels assume
     plants = gpd.read_file(cfg["paths"]["annotation_points_filepath"], columns=["idx"])

@@ -13,7 +13,8 @@ Steps, from ``base_filepath`` (all_annotated_v2):
 5. The results of the new images replace the tank detections (``detection_columns``, from the
    segmentation CSV) and the site category (``category_columns``, from the image-to-text CSV, when
    ``with_image_text``) of the work-list plants that have them. Segmentation names an image ``<row>.png``,
-   a row of the images' ``ref.geojson`` (whose ``idx`` is the work-list idx); image-to-text names it
+   a row of the images' ``ref.geojson`` (whose ``idx`` is the plant's row in ``images_ref_list``, the list the
+   images were made from: images_ref.plant_idx_of_rows gives the work-list idx); image-to-text names it
    ``bbox_<idx>.png``. A work-list plant without a result keeps its v2 values (``size_source`` v2_image,
    or none). Without ``with_image_text`` every plant keeps its v2 category (new plants have none).
 6. Plants closer than ``same_site_distance_m`` are one plant: the location of the member whose
@@ -40,7 +41,7 @@ import pyogrio
 from pyproj import Geod
 from scipy.spatial import cKDTree
 
-from ..annotation_scripts.images_ref import check_images_ref
+from ..annotation_scripts.images_ref import check_images_ref, plant_idx_of_rows
 from ..annotation_scripts.merge_annotations import decode_gen_text, parse_idx_from_image_name
 from ..geo_utils import UnionFind, parse_diameters_to_round_area
 from ..starter import load_config
@@ -68,8 +69,7 @@ def metres(a, b):
 def image_results(cfg, work):
     """Detections and categories of the new images, by work-list idx."""
     paths = cfg["paths"]
-    ref = gpd.read_file(paths["images_ref"]).to_crs(4326)
-    ref["idx"] = ref["idx"].astype(int)
+    ref = plant_idx_of_rows(gpd.read_file(paths["images_ref"]).to_crs(4326), paths["images_ref_list"])
     check_images_ref(ref, work, float(cfg["max_image_offset_m"]), paths["images_ref"])
 
     seg = pd.read_csv(paths["segmentation_results"])
