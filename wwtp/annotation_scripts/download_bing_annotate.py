@@ -519,12 +519,7 @@ if __name__ == "__main__":
 
     images_dir = cfg["paths"]["annotations_images_dir"]
     grid_filedir = cfg["paths"]["annotations_grid_dir"]
-    temp_parquet_dir = cfg["paths"]["annotations_temp_parquet_dir"]
     geojson_file_dir = cfg["paths"]["annotations_by_osm_dir"]
-    file_location_dir = os.path.join(os.path.abspath(os.path.join(grid_filedir, "..")), "data")
-
-    poly_filepath = os.path.join(file_location_dir, "merged_polygons.parquet")
-    line_filepath = os.path.join(file_location_dir, "merged_lines.parquet")
 
     points_path = f"{images_dir}/ref.geojson"
     grids_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(cfg['paths']['annotation_points_filepath'])}")

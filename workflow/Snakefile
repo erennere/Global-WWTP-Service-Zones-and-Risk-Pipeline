@@ -204,7 +204,7 @@ if "download_bing_annotate" in ONCE:
         Needs the images: <row>.png and ref.geojson (each plant's idx) in
         download_bing_annotate.paths.annotations_images_dir; only plants listed there are drawn.
         """
-        input: GRIDS, OSM_EXTRACT, wf.osm_layers(), wf.annotation_images_ref()
+        input: GRIDS, OSM_EXTRACT, wf.annotation_images_ref()  # reads each tile's OSM files, not NEW_03's layers
         output: touch(wf.annotation_stamp("bing_annotate_{shard}"))
         params:
             module="annotation_scripts.download_bing_annotate",

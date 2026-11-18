@@ -279,7 +279,8 @@ def annotation_images_ref():
 
 
 def osm_layers():
-    """NEW_03's merged OSM polygons and lines (``<annotations>/data``), read by download_bing_annotate."""
+    """NEW_03's merged OSM polygons and lines (``<annotations>/data``); the text overlay does not need them
+    (it reads each tile's own OSM files)."""
     folder = os.path.join(
         os.path.dirname(config("NEW_03_WASTEWATERJOIN_GEOJSON")["paths"]["annotations_grid_dir"]), "data"
     )

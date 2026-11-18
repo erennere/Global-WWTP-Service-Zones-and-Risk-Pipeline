@@ -123,6 +123,6 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | `annotations_inspection.paths.annotations_verf_image_outpath_dir` | ⚠️ path | QA image output directory |
 
 ## Known Issues / TODOs
-- `NEW_03_WASTEWATERJOIN_GEOJSON.py` is part of the workflow (rule `wastewater_join`; `download_bing_annotate` reads its merged layers). `NEW_04_EXPORTGEOTIFF.py` is an optional helper outside it.
+- `NEW_03_WASTEWATERJOIN_GEOJSON.py` is part of the workflow (rule `wastewater_join`, in `annotation_context`). The text overlay does not wait for it: `download_bing_annotate` reads each tile's own OSM files, not the merged layers. `NEW_04_EXPORTGEOTIFF.py` is an optional helper outside it.
 - `sample_annotations_by_class.py` (QA sampling) and `annotations_inspection.py` / `copy_falsy_images.py` run by hand; they are not rules of the workflow.
 - No explicit `TODO` or `FIXME` markers were found in this module.
