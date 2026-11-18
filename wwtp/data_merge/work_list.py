@@ -24,6 +24,12 @@ part in its source's order. ``plant_id``: the SITE_UID, the national WASTE_ID or
 ``location_source`` (heigit_layer, corrected_eu_file, national_plants), ``location_shift_m`` and
 ``eu_file_uwwCode`` say where the location comes from.
 
+The new images were taken from the list of 17 Nov 2026; ``paths.reference_list`` (in git) keeps its
+plants and row order (idx, plant_id, origin, ISO_2, lon, lat). The rebuilt list must hold the same plants:
+the same idx with the same plant_id and origin, no farther than ``reference_offset_m`` from the
+reference position; otherwise it stops. It is written in the reference's row order, whatever the row
+order of the inputs.
+
 Writes the list to ``paths.work_list`` (GeoPackage) and the two side lists next to it.
 """
 
@@ -208,6 +214,33 @@ def build(cfg):
     return out, removed, not_added
 
 
+def in_reference_order(out, ref, max_offset_m, name):
+    """The list in the row order of ``ref`` (the list the new images were taken from). Stops unless both
+    hold the same plants: the same idx with the same plant_id and origin, no farther apart than
+    ``max_offset_m``."""
+    mine, ref = out.set_index("idx", drop=False), ref.set_index("idx")
+    problems = []
+    if missing := ref.index.difference(mine.index).tolist():
+        problems.append(f"{len(missing)} plants of the reference are missing (e.g. idx {missing[:5]})")
+    if extra := mine.index.difference(ref.index).tolist():
+        problems.append(f"{len(extra)} plants are not in the reference (e.g. idx {extra[:5]})")
+    common = ref.index.intersection(mine.index)
+    a, b = mine.loc[common], ref.loc[common]
+    for column in ("plant_id", "origin"):
+        if other := common[(a[column].astype(str) != b[column].astype(str)).to_numpy()].tolist():
+            problems.append(f"{len(other)} plants have another {column} (e.g. idx {other[:5]})")
+    offset = GEOD.inv(a.geometry.x.to_numpy(), a.geometry.y.to_numpy(), b["lon"].to_numpy(), b["lat"].to_numpy())[2]
+    if (far := offset > max_offset_m).any():
+        problems.append(f"{int(far.sum())} plants lie more than {max_offset_m:g} m from their reference position "
+                        f"(up to {offset.max():.0f} m; e.g. idx {common[far][:5].tolist()})")  # fmt: skip
+    if problems:
+        raise ValueError(f"the work list differs from {name}, the list the new images were taken from: "
+                         + "; ".join(problems))  # fmt: skip
+    moved = int((mine.index.to_numpy() != ref.index.to_numpy()).sum())
+    logger.info("work list: same plants, idx and positions as %s; %d rows put in its order", name, moved)
+    return mine.loc[ref.index].reset_index(drop=True)
+
+
 def write(cfg, out, removed, not_added):
     path = cfg["paths"]["work_list"]
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -221,6 +254,9 @@ def write(cfg, out, removed, not_added):
 def main():
     cfg = load_config(script_name="work_list")
     out, removed, not_added = build(cfg)
+    path = cfg["paths"]["reference_list"]
+    ref = pd.read_csv(path, dtype={"plant_id": str, "origin": str})
+    out = in_reference_order(out, ref, float(cfg["reference_offset_m"]), path)
     write(cfg, out, removed, not_added)
     logger.info("work list: %d plants %s", len(out), out["origin"].value_counts().to_dict())
 

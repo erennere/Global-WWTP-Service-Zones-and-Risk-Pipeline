@@ -244,6 +244,39 @@ def test_work_list_takes_the_eu_file_as_truth(work_world):
     assert gpd.read_file(cfg["paths"]["work_list"])["idx"].tolist() == out["idx"].tolist()
 
 
+def reference_of(out):
+    """The reference file's columns of a work list."""
+    return pd.DataFrame({"idx": out["idx"], "plant_id": out["plant_id"].astype(str), "origin": out["origin"],
+                         "ISO_2": out["ISO_2"], "lon": out.geometry.x, "lat": out.geometry.y})  # fmt: skip
+
+
+def test_work_list_follows_the_reference_order(work_world):
+    cfg, _, _ = work_world
+    out = wl.build(cfg)[0]
+    ref = reference_of(out).sample(frac=1, random_state=1).reset_index(drop=True)  # another order
+    ordered = wl.in_reference_order(out, ref, 1.0, "ref.csv")
+    assert ordered["idx"].tolist() == ref["idx"].tolist()
+    assert ordered.set_index("idx").sort_index().equals(out.set_index("idx").sort_index())
+    assert list(ordered.columns) == list(out.columns) and ordered.crs == out.crs
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        (lambda r: r.iloc[1:], "1 plants are not in the reference"),
+        (lambda r: pd.concat([r, r.iloc[:1].assign(idx=99)]), "1 plants of the reference are missing"),
+        (lambda r: r.assign(plant_id=r["plant_id"].where(r.index != 2, "other")), "1 plants have another plant_id"),
+        (lambda r: r.assign(origin=r["origin"].where(r.index != 0, "new_plant_national")), "another origin"),
+        (lambda r: r.assign(lat=r["lat"].where(r.index != 3, r["lat"] + 0.001)), "more than 1 m from their reference"),
+    ],
+)  # fmt: skip
+def test_work_list_stops_when_it_differs_from_the_reference(work_world, change, message):
+    cfg, _, _ = work_world
+    out = wl.build(cfg)[0]
+    with pytest.raises(ValueError, match=message):
+        wl.in_reference_order(out, change(reference_of(out)), 1.0, "ref.csv")
+
+
 # --------------------------------------------------------------------------- #
 # plants_v3                                                                   #
 # --------------------------------------------------------------------------- #

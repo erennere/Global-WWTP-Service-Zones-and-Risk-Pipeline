@@ -110,6 +110,7 @@ The log is `{data_dir}/workflow/logs/combine_locations.log`.
 - The `combine_locations` rule always runs the merge chain in a fixed order, as one job.
 - `final_data_merge.py` starts from the corrected locations with the first segmentation results (`seg_corrected_south`).
 - `work_list.py` keeps every `idx` of v2 and numbers the new plants after v2's highest, in a fixed order: the same inputs give the same list. Images are named by these numbers, so `plants_v3.py` stops if `ref.geojson` of the images does not match the work list.
+- `work_list.py` checks the rebuilt list against `data/heigit_sizes/work_list_reference_2026-11-17.csv` (in git: the list the new images were taken from, 17 Nov 2026) and writes it in that file's row order. It stops if a plant is missing or extra, or has another `plant_id`, `origin` or position (> 1 m).
 - `plants_v3.py`: a plant the corrected EU file moves more than `wrong_code_shift_m` (50 km) carried another plant's EU code (3 in v2: two Hungarian plants with a French and a Swiss code, one Czech position with a Slovak code). The v2 plant stays where it is and the file plant is added as a plant of its own.
 - `plants_v3.py`: plants closer than 500 m become one plant (31 groups now, mostly two registered plants at one site); its location comes from the corrected EU file first, then the national registers, then v2.
 - The segmentation input path is cluster-specific in `wwtp/config.yaml`, so this stage often needs a local override.
@@ -131,6 +132,8 @@ Delete the final merged GeoPackage and rerun the launcher to force a full rebuil
 | `final_data_merge.paths.thailand_filepath` | template | Thailand source file |
 | `work_list.same_site_distance_m` | `500` | Closer than this: the same plant (EU file, v3 merge) |
 | `work_list.paths.eu_file` | template | The corrected EU file (truth) |
+| `work_list.paths.reference_list` | template | The list the new images were taken from: same plants, its row order |
+| `work_list.reference_offset_m` | `1` | Farther from its reference position: the plant moved (stop) |
 | `plants_v3.wrong_code_shift_m` | `50000` | A longer EU-file move: the plant had another plant's code |
 | `plants_v3.location_priority` | EU file, national, v2 | Location of a merged same-site plant |
 

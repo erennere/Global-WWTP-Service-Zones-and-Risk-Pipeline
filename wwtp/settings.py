@@ -717,6 +717,7 @@ class WorkList(Section):
     """Plants that need a new image, and the new plants (wwtp/data_merge/work_list.py)."""
 
     same_site_distance_m: PositiveFloat
+    reference_offset_m: PositiveFloat
     code_countries: dict[str, Iso2]
     territories: dict[Iso2, Annotated[list[float], Field(min_length=4, max_length=4)]]
     size_groups: dict[Literal["lagoon", "nothing", "new"], str]
