@@ -148,9 +148,11 @@ download_bing_annotate:
   annotations:
     cell_size: null
     factor: null
-    # The new images (Sukanya, 18 Nov 2026): 512 x 512 px at the first run's scale (about 0.6 m per pixel,
-    # about 300 m wide, centred on the plant); the first run's were 3072 px
-    image_size_px: 512
+    # The new plants' images (Sukanya, 19 Nov 2026): 3072 x 3072 px at zoom 17 of 256 px tiles (1.194 m per
+    # pixel in Web Mercator, so 3,669 m: NEW_01's tile), centred on the plant. Measured on a tennis court, a
+    # running track and a football pitch (0.6 m/px would make them half their size). The work list's images of
+    # 17-18 Nov were 512 px.
+    image_size_px: 3072
     zoom_level: 17
     base_z17_resolution: 1.1943285669555664
     # processes per overlay job, one tile per task (= workflow.resources.download_bing_annotate.threads)
@@ -163,7 +165,11 @@ download_bing_annotate:
     dpi: 72
     target_size_px: 1024
     mercator_tile_size_px: 256
-    imagery_reference_tile_size_px: 512
+    # metres per pixel = base_z17_resolution x mercator_tile_size_px / this: 256 -> 1.194 (the new plants' images)
+    imagery_reference_tile_size_px: 256
+    # Which file is the image of a ref.geojson feature: ref_idx = <n>.png for the feature whose own idx is n (the
+    # new plants' set: checked by eye on Banff, Lancie, Fey, Giromagny), ref_row = <n>.png for the n-th feature
+    image_names: ref_idx
     earth_radius_m: 6378137
     # Single source of truth for annotation-pipeline seeding; declared here
     # because this is the earliest consumer.
@@ -185,6 +191,8 @@ download_bing_annotate:
     images_ref_list: '{data_dir}/heigit_sizes/new_plants_reference_2026-11-19.csv'
     # Apart from the overlay of the work list's images (.../annotated/mm/Images_z17_512)
     annotated_images_output_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/annotated/mm/Images_z17_3072/Images_z17_512'
+    # One row per image: its plant, its OSM tiles and how they were found, features, labels, errors
+    match_report_dir: '{data_dir}/annotations/new_plants/overlay_match'
 
 # Overpass endpoints compared on sample tiles (wwtp/annotation_scripts/overpass_benchmark.py; Snakemake
 # target overpass_benchmark): which of them, with how many workers, NEW_02 should use.

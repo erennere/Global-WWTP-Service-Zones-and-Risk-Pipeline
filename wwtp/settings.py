@@ -292,6 +292,7 @@ class BingAnnotations(Strict):
     target_size_px: PositiveInt
     mercator_tile_size_px: PositiveInt
     imagery_reference_tile_size_px: PositiveInt
+    image_names: Literal["ref_idx", "ref_row"]
     earth_radius_m: PositiveInt
     random_seed: int
 

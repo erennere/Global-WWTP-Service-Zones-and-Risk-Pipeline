@@ -6,7 +6,7 @@ into image space, and writes annotated PNG or GeoTIFF outputs. References to
 an ML CLIP model.
 """
 
-import os, sys
+import os
 import argparse
 import math
 import multiprocessing
@@ -14,6 +14,8 @@ import random
 import numpy as np
 import geopandas as gpd
 import pandas as pd
+import shapely
+from shapely.geometry import box
 import rasterio
 from rasterio.transform import from_origin
 from PIL import Image, ImageDraw, ImageFont
@@ -21,7 +23,7 @@ from pyproj import Geod, Transformer
 import logging
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from .images_ref import check_image_size, check_images_ref, plant_idx_of_rows
+from .images_ref import image_offsets_m, plant_idx_of_rows
 from ..utils import configure_logging, ensure_output_dir_for_file
 
 logger = logging.getLogger(__name__)
@@ -82,6 +84,18 @@ def get_image(idx, images_dir):
         return None
 
 
+def pixel_size_m():
+    """Web Mercator metres per image pixel: BASE_Z17_RES x mercator tile / imagery reference tile (the new
+    plants' 3072 px images, 19 Nov 2026: 1.194, so an image shows NEW_01's 3,669 m tile)."""
+    return BASE_Z17_RES * (WEB_MERCATOR_TILE_SIZE / IMAGERY_REFERENCE_TILE_SIZE)
+
+
+def image_frame(x, y):
+    """The square an image centred at ``x, y`` (EPSG:3857) shows: IMAGE_SIZE pixels of pixel_size_m()."""
+    half = IMAGE_SIZE[0] * pixel_size_m() / 2
+    return box(x - half, y - half, x + half, y + half)
+
+
 def mercator_to_pixel(x, y, cx, cy, IMAGE_SIZE, wrap=True):
     """
     Specifically tuned for Maxar Zoom 17 with a 3072px buffer.
@@ -97,7 +111,7 @@ def mercator_to_pixel(x, y, cx, cy, IMAGE_SIZE, wrap=True):
     # Since Maxar Zoom 17 typically refers to the 512px tile scale,
     # we use 512 as the divisor if your imagery was pulled as 512px tiles.
     # However, standard Web Mercator math uses 256 as the base unit:
-    res = BASE_Z17_RES * (WEB_MERCATOR_TILE_SIZE / IMAGERY_REFERENCE_TILE_SIZE)
+    res = pixel_size_m()
 
     # 3. Calculate distance from center
     dx = x - cx
@@ -393,71 +407,91 @@ def read_tile_features(folder, grids, kind, columns, files):
     return features[features.geometry.notna()].to_crs(3857)
 
 
-# What every tile worker needs besides its tile; filled before the pool starts, inherited by fork
+# What every tile worker needs besides its task; filled before the pool starts, inherited by fork
 _TILES = {}
+OSM_OUTPUTS = ("lines.geojson", "polygons.geojson", "empty.txt")
 
 
-def annotate_tile(idx, bbox_geom, img_idx):
-    """One tile from start to end: its own OSM files, its labels, its image. Returns
-    ``(idx, label_count, error_message)``; a tile that fails comes back with its error instead of raising."""
+def has_osm_output(idx, osm_files):
+    """True when osm_planet wrote the tile ``idx``: its lines, polygons or the marker of an empty tile."""
+    return any(f"idx_{int(idx)}_{kind}" in osm_files for kind in OSM_OUTPUTS)
+
+
+def match_osm_tiles(images, tiles, osm_files, max_offset_m):
+    """Which tiles' OSM files hold the features on each image, found by place, not by number.
+
+    ``images``: idx (the plant) and geometry (the image centre, EPSG:3857); ``tiles``: idx and geometry (NEW_01's
+    squares, EPSG:3857). Only tiles with OSM output count. Per image (same order): ``osm_tiles`` (tuple of tile
+    idx), ``osm_source`` and ``osm_coverage`` (share of the image covered by those tiles):
+    - own_tile: the plant's own tile, centred on the image (within ``max_offset_m``);
+    - tile_at_image: another tile centred on the image (the tiles were numbered differently);
+    - overlapping_tiles: no tile centred on the image; all tiles overlapping it, their features together;
+    - none: no tile with OSM output overlaps the image.
+    """
+    tiles = tiles[[has_osm_output(i, osm_files) for i in tiles["idx"]]].drop_duplicates("idx").reset_index(drop=True)
+    tile_idx = tiles["idx"].astype(int).to_numpy()
+    centres = tiles.geometry.centroid
+    tree = shapely.STRtree(tiles.geometry.to_numpy())
+    rows = []
+    for idx, point in zip(images["idx"].astype(int), images.geometry):
+        frame = image_frame(point.x, point.y)
+        near = tree.query(frame, predicate="intersects")
+        if not len(near):
+            rows.append(((), "none", 0.0))
+            continue
+        # ground metres: Web Mercator metres x cos(latitude)
+        scale = math.cos(math.atan(math.sinh(point.y / EARTH_RADIUS)))
+        dist = np.hypot(centres.x.to_numpy()[near] - point.x, centres.y.to_numpy()[near] - point.y) * scale
+        own = near[(tile_idx[near] == idx) & (dist <= max_offset_m)]
+        if len(own):
+            rows.append(((idx,), "own_tile", 1.0))
+        elif dist.min() <= max_offset_m:
+            rows.append(((int(tile_idx[near[np.argmin(dist)]]),), "tile_at_image", 1.0))
+        else:
+            covered = shapely.union_all(tiles.geometry.to_numpy()[near]).intersection(frame).area / frame.area
+            rows.append((tuple(int(t) for t in tile_idx[near]), "overlapping_tiles", round(float(covered), 4)))
+    out = pd.DataFrame(rows, columns=["osm_tiles", "osm_source", "osm_coverage"], index=images.index)
+    return out
+
+
+def read_osm_of_image(osm_tiles, kind, columns):
+    """The ``kind`` features of the tiles ``osm_tiles``; a feature in several of them is kept once."""
     t = _TILES
-    try:
-        polys = read_tile_features(t["osm_dir"], [idx], "polygons", t["poly_cols"], t["osm_files"])
-        lines = read_tile_features(t["osm_dir"], [idx], "lines", t["line_cols"], t["osm_files"])
-    except Exception as e:
-        logger.exception("bbox %s: its OSM files could not be read", idx)
-        return idx, 0, str(e)
-    return process_bbox(idx, bbox_geom, img_idx, polys, t["poly_labels"], lines, t["line_labels"],
-                        t["output_dir"], t["images_dir"])  # fmt: skip
+    features = read_tile_features(t["osm_dir"], list(osm_tiles), kind, columns, t["osm_files"])
+    if len(osm_tiles) > 1 and len(features):
+        key = features["id"].astype(str) if "id" in features.columns else pd.Series("", index=features.index)
+        features = features[~(key + features.geometry.to_wkb(hex=True)).duplicated()]
+    return features
 
 
-def _annotate_tile(task):
-    return annotate_tile(*task)
-
-
-def check_tiles_on_images(tiles, images, osm_files, max_offset_m):
-    """Raise unless every image has its tile, centred on the image's point (within ``max_offset_m``), and
-    OSM output (lines, polygons or the empty marker). Tiles and images are joined by ``idx`` only: tiles
-    made from another numbering of the plants would put another place's OSM labels on every image.
-    ``tiles``: idx, geometry (EPSG:3857 squares around the plants, NEW_01); ``images``: idx, geometry."""
-    tiles = tiles.drop_duplicates("idx").set_index("idx")
-    no_tile = ~images["idx"].isin(tiles.index)
-    if no_tile.any():
-        raise ValueError(f"{int(no_tile.sum())} of {len(images)} images have no tile in the grid (e.g. idx "
-                         f"{images.loc[no_tile, 'idx'].head(5).tolist()}): rerun annotation_grids for this plant list")  # fmt: skip
-    centre = gpd.GeoSeries(tiles.geometry.reindex(images["idx"]).to_numpy(), crs=tiles.crs).centroid.to_crs(4326)
-    point = images.geometry.to_crs(4326)
-    offset = GEOD.inv(centre.x.to_numpy(), centre.y.to_numpy(), point.x.to_numpy(), point.y.to_numpy())[2]
-    off = offset > float(max_offset_m)
-    if off.any():
-        raise ValueError(f"{int(off.sum())} of {len(images)} tiles are farther than {max_offset_m:g} m from their "
-                         f"image (up to {offset.max():.0f} m, e.g. idx {images.loc[off, 'idx'].head(5).tolist()}): "
-                         "the tiles were made from another plant list; rerun annotation_grids")  # fmt: skip
-    no_osm = [int(i) for i in images["idx"]
-              if not any(f"idx_{int(i)}_{kind}" in osm_files for kind in ("lines.geojson", "polygons.geojson", "empty.txt"))]  # fmt: skip
-    if no_osm:
-        raise ValueError(f"{len(no_osm)} of {len(images)} tiles have no OSM files (e.g. idx {no_osm[:5]}): rerun "
-                         "annotation_grids")  # fmt: skip
-    return float(offset.max(initial=0))
-
-
-def osm_on_tile(idx, tile):
-    """``(idx, OSM features of the tile, how many of them touch it, error)``. Every feature osm_planet writes
-    for a tile is a way that crosses it or a member way of a relation that does, so at least one touches."""
+def annotate_image(idx, img_idx, x, y, osm_tiles):
+    """One image from start to end: the OSM features on it, its labels, the annotated image ``bbox_<idx>.png``.
+    Returns a report row; a failure is reported, never raised."""
     t = _TILES
+    row = {"idx": idx, "image": f"{img_idx}.png", "image_px": None, "osm_features": 0, "osm_features_on_image": 0,
+           "labels": 0, "error": None}  # fmt: skip
+    frame = image_frame(x, y)
+    path = os.path.join(t["images_dir"], row["image"])
+    if os.path.exists(path):
+        with Image.open(path) as image:  # header only; another size is resized to IMAGE_SIZE before drawing
+            row["image_px"] = image.size[0]
     try:
-        n = touching = 0
-        for kind, columns in (("polygons", t["poly_cols"]), ("lines", t["line_cols"])):
-            features = read_tile_features(t["osm_dir"], [idx], kind, columns, t["osm_files"])
-            n += len(features)
-            touching += int(features.intersects(tile).sum())
-        return idx, n, touching, None
+        polys = read_osm_of_image(osm_tiles, "polygons", t["poly_cols"])
+        lines = read_osm_of_image(osm_tiles, "lines", t["line_cols"])
+        row["osm_features"] = len(polys) + len(lines)
+        row["osm_features_on_image"] = int(polys.intersects(frame).sum() + lines.intersects(frame).sum())
     except Exception as e:
-        return idx, 0, 0, str(e)
+        logger.exception("bbox %s: the OSM files of tiles %s could not be read", idx, osm_tiles)
+        row["error"] = f"OSM files: {e}"
+        return row
+    _, n, err = process_bbox(idx, frame, img_idx, polys, t["poly_labels"], lines, t["line_labels"],
+                             t["output_dir"], t["images_dir"])  # fmt: skip
+    row["labels"], row["error"] = n, err
+    return row
 
 
-def _osm_on_tile(task):
-    return osm_on_tile(task[0], task[1])
+def _annotate_image(task):
+    return annotate_image(*task)
 
 
 def run_tasks(func, tasks, workers):
@@ -470,61 +504,32 @@ def run_tasks(func, tasks, workers):
         yield from map(func, tasks)
 
 
-def check_osm_on_tiles(tasks, workers):
-    """Raise unless the OSM features of every tile lie on it (a tile with features of which none touches
-    it holds another place's features). Returns (tiles with features, features)."""
-    outside, failed, with_features, features = [], [], 0, 0
-    for idx, n, touching, err in run_tasks(_osm_on_tile, tasks, workers):
-        if err:
-            failed.append((idx, err))
-        elif n:
-            with_features, features = with_features + 1, features + n
-            if not touching:
-                outside.append(idx)
-    if failed:
-        raise RuntimeError(f"the OSM files of {len(failed)} tiles could not be read; first: bbox {failed[0][0]}: "
-                           f"{failed[0][1]}")  # fmt: skip
-    if outside:
-        raise ValueError(f"{len(outside)} of {with_features} tiles with OSM features have none on the tile (e.g. idx "
-                         f"{sorted(outside)[:5]}): the OSM files belong to other tiles; rerun annotation_grids")  # fmt: skip
-    return with_features, features
+def annotate_images(images, workers, **shared):
+    """Annotate ``images`` (columns idx, img_idx, osm_tiles, geometry = image centre in EPSG:3857) in
+    ``workers`` processes, one image per task. Never stops for a single image: returns one report row per
+    image (OSM features, those on the image, labels, error).
 
-
-def annotate_tiles(bbox_gdf, workers, **shared):
-    """Annotate the tiles of ``bbox_gdf`` (columns idx, img_idx, geometry) in ``workers`` processes.
-
-    Each tile is one task, read, labelled and written by one process, so reading the OSM files, cutting
-    the features and drawing all run in parallel (the threads of the earlier version shared one Python
-    interpreter lock, and the files of 128 tiles were read one after another before any was drawn).
     ``shared``: ``osm_dir``, ``osm_files`` (the names in it), ``poly_cols``/``line_cols`` (tag columns read),
-    ``poly_labels``/``line_labels`` (columns drawn), ``output_dir``, ``images_dir``. Tiles that fail are
-    reported after all others are written: RuntimeError.
+    ``poly_labels``/``line_labels`` (columns drawn), ``output_dir``, ``images_dir``.
     """
-    missing_cols = {"idx", "img_idx", "geometry"}.difference(bbox_gdf.columns)
+    missing_cols = {"idx", "img_idx", "osm_tiles", "geometry"}.difference(images.columns)
     if missing_cols:
-        raise KeyError(f"bbox_gdf is missing required columns: {sorted(missing_cols)}")
-    tasks = [(int(i), geom, int(img)) for i, geom, img in zip(bbox_gdf["idx"], bbox_gdf.geometry, bbox_gdf["img_idx"])]
+        raise KeyError(f"images is missing required columns: {sorted(missing_cols)}")
+    tasks = [(int(i), int(img), float(g.x), float(g.y), tuple(o))
+             for i, img, g, o in zip(images["idx"], images["img_idx"], images.geometry, images["osm_tiles"])]  # fmt: skip
     _TILES.clear()
     _TILES.update(shared)
-    with_features, features = check_osm_on_tiles(tasks, workers)
-    logger.info("OSM files match their tiles: %s of %s tiles have OSM features (%s), each with features on the "
-                "tile", with_features, len(tasks), features)  # fmt: skip
-    logger.info("Queued %s bboxes for annotation in %s processes", len(tasks), workers)
-
-    errors = []
-    for idx, n, err in run_tasks(_annotate_tile, tasks, workers):
-        if err:
-            logger.error("bbox %s failed: %s", idx, err)
-            errors.append((idx, err))
+    logger.info("Queued %s images for annotation in %s processes", len(tasks), workers)
+    rows = []
+    for row in run_tasks(_annotate_image, tasks, workers):
+        if row["error"]:
+            logger.error("bbox %s failed: %s", row["idx"], row["error"])
         else:
-            logger.info("bbox %s done (%s tags)", idx, n)
-
-    if errors:
-        first_idx, first_err = errors[0]
-        raise RuntimeError(
-            f"{len(errors)} of {len(tasks)} bbox annotation task(s) failed; "
-            f"first failure was bbox {first_idx}: {first_err}"
-        )
+            logger.info("bbox %s done (%s tags)", row["idx"], row["labels"])
+        rows.append(row)
+    return pd.DataFrame(
+        rows, columns=["idx", "image", "image_px", "osm_features", "osm_features_on_image", "labels", "error"]
+    )
 
 
 if __name__ == "__main__":
@@ -589,53 +594,51 @@ if __name__ == "__main__":
     points_path = f"{images_dir}/ref.geojson"
     grids_filepath = os.path.join(grid_filedir, f"grids_{os.path.basename(cfg['paths']['annotation_points_filepath'])}")
 
-    bbox_gdf = gpd.read_file(grids_filepath).to_crs(3857)
-    bbox_gdf["idx"] = bbox_gdf["idx"].astype(int)
+    max_offset_m = float(cfg["max_image_offset_m"])
+    images_tag = "-".join(os.path.normpath(images_dir).split(os.sep)[-2:])
+    tiles = gpd.read_file(grids_filepath).to_crs(3857)
+    tiles = tiles[tiles.geometry.notna() & ~tiles.geometry.is_empty].copy()
+    tiles["idx"] = tiles["idx"].astype(int)
+    osm_files = set(os.listdir(geojson_file_dir))
 
-    points_gdf = plant_idx_of_rows(gpd.read_file(points_path).to_crs(3857), cfg["paths"]["images_ref_list"])
-    points_gdf["img_idx"] = points_gdf.index.astype(int)
-    # Before drawing anything: the images belong to these plants and have the size the labels assume
+    # The images: which plant each one shows, and which file is its image. Nothing here stops the run; what
+    # does not fit is fixed where it can be and written to the match report.
+    ref = gpd.read_file(points_path).to_crs(3857)
+    ref["ref_row"] = np.arange(len(ref))
+    list_idx = pd.read_csv(cfg["paths"]["images_ref_list"], usecols=["idx"])["idx"]
+    inside = ref["idx"].astype(int).between(0, len(list_idx) - 1)
+    images = plant_idx_of_rows(ref[inside], cfg["paths"]["images_ref_list"])
+    # <n>.png: the image of the plant whose ref.geojson idx is n (new plants' set, checked by eye on 4 images),
+    # or of ref.geojson's n-th feature
+    images["img_idx"] = images["list_row" if annotations_cfg["image_names"] == "ref_idx" else "ref_row"]
     plants = gpd.read_file(cfg["paths"]["annotation_points_filepath"], columns=["idx"])
     plants["idx"] = plants["idx"].astype(int)
-    check_images_ref(points_gdf, plants, float(cfg["max_image_offset_m"]), points_path)
-    check_image_size(images_dir, points_gdf["img_idx"], image_size_px)
+    images["image_to_plant_m"] = image_offsets_m(images, plants).round(2)
+    # The OSM features of each image: from the tiles at its place (its own tile when that is centred on it)
+    images = images.join(match_osm_tiles(images, tiles, osm_files, max_offset_m))
+    logger.info(
+        "%s images (%s with a ref.geojson idx outside %s); %s farther than %g m from their plant; OSM from: %s",
+        len(images), int((~inside).sum()), cfg["paths"]["images_ref_list"],
+        int((images["image_to_plant_m"].fillna(np.inf) > max_offset_m).sum()), max_offset_m,
+        images["osm_source"].value_counts().to_dict(),
+    )  # fmt: skip
 
-    geojson_files = set(os.listdir(geojson_file_dir))
-    bbox_gdf = bbox_gdf[bbox_gdf.geometry.notna() & bbox_gdf.geometry.is_valid & ~bbox_gdf.geometry.is_empty]
-    # Before drawing anything: every image has its tile, centred on it, and the tile's OSM files
-    tile_offset = check_tiles_on_images(bbox_gdf, points_gdf, geojson_files, float(cfg["max_image_offset_m"]))
-    logger.info("%s images at their plants; their tiles centred on them (up to %.2f m) with OSM files",
-                len(points_gdf), tile_offset)  # fmt: skip
-    bbox_gdf = bbox_gdf.merge(points_gdf[["idx", "img_idx"]], on="idx", how="inner")
-    logger.info("Prepared %s valid bounding boxes", len(bbox_gdf))
     output_dir = cfg["paths"]["annotated_images_output_dir"]
     os.makedirs(output_dir, exist_ok=True)
-
-    grids = bbox_gdf["idx"].unique().tolist()
-    logger.info("Found %s total grids", len(grids))
-
-    grids = split_grids_for_instance(
-        grids,
+    plant_numbers = split_grids_for_instance(
+        images["idx"].unique().tolist(),
         instance_id=args.instance_id,
         num_instances=args.num_instances,
         split_seed=args.split_seed,
     )
-    logger.info(
-        "Instance %s/%s will process %s grids (seed=%s)",
-        args.instance_id,
-        args.num_instances,
-        len(grids),
-        args.split_seed,
-    )
-    if not grids:
-        logger.info("No grids assigned to this instance. Exiting.")
-        sys.exit(0)
-
-    annotate_tiles(
-        bbox_gdf[bbox_gdf["idx"].isin(grids)],
+    mine = images[images["idx"].isin(plant_numbers)]
+    logger.info("Instance %s/%s will draw %s images (seed=%s)", args.instance_id, args.num_instances, len(mine),
+                args.split_seed)  # fmt: skip
+    drawn = annotate_images(
+        mine,
         MAX_WORKERS,
         osm_dir=geojson_file_dir,
-        osm_files=geojson_files,
+        osm_files=osm_files,
         poly_cols=["id", "man_made", "landuse", "industrial", "power", "resource"],
         line_cols=["waterway", "man_made", "landuse", "industrial", "power", "resource", "water", "id"],
         poly_labels=["man_made", "landuse", "industrial", "power", "resource", "water"],
@@ -643,4 +646,24 @@ if __name__ == "__main__":
         output_dir=output_dir,
         images_dir=images_dir,
     )
-    logger.info("Annotation pipeline finished")
+
+    # The match report of this share: one row per image (and, in share 0, the ref.geojson rows outside the list)
+    columns = ["ref_row", "list_row", "img_idx", "plant_id", "ISO_2", "image_to_plant_m", "osm_source", "osm_tiles",
+               "osm_coverage"]  # fmt: skip
+    report = mine.assign(image=mine["img_idx"].astype(int).astype(str) + ".png")
+    report = report[["idx", "image", *[c for c in columns if c in report.columns]]].merge(drawn, on=["idx", "image"],
+                                                                                         how="left")  # fmt: skip
+    if args.instance_id == 0 and (~inside).any():
+        outside = pd.DataFrame({"ref_row": ref.loc[~inside, "ref_row"], "list_row": ref.loc[~inside, "idx"],
+                                "error": "ref.geojson idx outside images_ref_list"})  # fmt: skip
+        report = pd.concat([report, outside], ignore_index=True)
+    report["osm_tiles"] = report["osm_tiles"].map(lambda t: " ".join(map(str, t)) if isinstance(t, tuple) else t)
+    report_path = os.path.join(cfg["paths"]["match_report_dir"], f"{images_tag}_shard{args.instance_id}.csv")
+    ensure_output_dir_for_file(report_path)
+    report.to_csv(report_path, index=False)
+    failed = report["error"].notna()
+    logger.info(
+        "Annotation finished: %s images drawn, %s failed, %s without OSM features on them; match report %s",
+        int((~failed).sum()), int(failed.sum()), int((report["osm_features_on_image"].fillna(0) == 0).sum()),
+        report_path,
+    )  # fmt: skip

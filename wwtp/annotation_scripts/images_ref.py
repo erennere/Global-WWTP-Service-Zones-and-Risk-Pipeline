@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from PIL import Image
 from pyproj import Geod
@@ -34,17 +35,26 @@ def plant_idx_of_rows(ref, list_path):
     return out
 
 
-def check_images_ref(ref, points, max_offset_m, name):
-    """Raise unless every image's point lies within ``max_offset_m`` of its plant (same ``idx``)."""
+def image_offsets_m(ref, points):
+    """Metres from every image's point to its plant (same ``idx``) in ``points``; NaN for a plant not there."""
     ref = ref.to_crs(4326)
     points = points.to_crs(4326).drop_duplicates("idx").set_index("idx")
-    unknown = ~ref["idx"].isin(points.index)
+    known = ref["idx"].isin(points.index).to_numpy()
+    offset = np.full(len(ref), np.nan)
+    if known.any():
+        at = gpd.GeoSeries(points.geometry.reindex(ref["idx"][known]).to_numpy(), crs=4326).representative_point()
+        pt = ref.geometry[known].representative_point()
+        offset[known] = GEOD.inv(at.x.to_numpy(), at.y.to_numpy(), pt.x.to_numpy(), pt.y.to_numpy())[2]
+    return offset
+
+
+def check_images_ref(ref, points, max_offset_m, name):
+    """Raise unless every image's point lies within ``max_offset_m`` of its plant (same ``idx``)."""
+    offset = image_offsets_m(ref, points)
+    unknown = np.isnan(offset)
     if unknown.any():
         raise ValueError(f"{name}: {int(unknown.sum())} images of plants that are not in the plant list "
                          f"(e.g. idx {ref.loc[unknown, 'idx'].head(5).tolist()})")  # fmt: skip
-    at = gpd.GeoSeries(points.geometry.reindex(ref["idx"]).to_numpy(), crs=4326).centroid
-    pt = ref.geometry.centroid
-    offset = GEOD.inv(at.x.to_numpy(), at.y.to_numpy(), pt.x.to_numpy(), pt.y.to_numpy())[2]
     off = offset > float(max_offset_m)
     if off.any():
         raise ValueError(f"{name}: {int(off.sum())} of {len(ref)} images are farther than {max_offset_m:g} m from "

@@ -94,7 +94,7 @@ def test_process_bbox_and_parallel_dispatch(monkeypatch, tmp_path):
     assert n >= 1
 
 
-def test_annotate_tiles_requires_idx_and_img_idx_columns():
-    bbox_gdf = gpd.GeoDataFrame({"geometry": [box(0, 0, 100, 100)]}, geometry="geometry", crs="EPSG:3857")
+def test_annotate_images_requires_idx_img_idx_and_osm_tiles():
+    images = gpd.GeoDataFrame({"idx": [1]}, geometry=[box(0, 0, 100, 100).centroid], crs="EPSG:3857")
     with pytest.raises(KeyError, match="required columns"):
-        dba.annotate_tiles(bbox_gdf, 1)
+        dba.annotate_images(images, 1)

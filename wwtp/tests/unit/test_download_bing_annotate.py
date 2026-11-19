@@ -92,74 +92,82 @@ def test_download_bing_bbox_error_branches(monkeypatch, tmp_path):
     assert idx2 == 2 and n2 == 0 and err2 is not None
 
 
-def _tile_world(tmp_path, monkeypatch, n=6):
-    """``n`` tiles at 5 deg E, 5 deg N with a wastewater plant polygon each, and their shared settings."""
+def _osm_world(tmp_path, monkeypatch, n=6):
+    """``n`` images at 5 deg E, 5 deg N (512 px of 0.6 m) with a wastewater plant polygon on each tile."""
     osm_dir, out_dir = tmp_path / "osm", tmp_path / "out"
     osm_dir.mkdir()
     monkeypatch.setattr(dba, "IMAGE_SIZE", [512, 512])
+    monkeypatch.setattr(dba, "IMAGERY_REFERENCE_TILE_SIZE", 512)
     monkeypatch.setattr(dba, "get_image", lambda img_idx, images_dir: Image.new("RGB", (512, 512), "black"))
-    centre = (556597.45, 557305.26)  # 5 deg E, 5 deg N in EPSG:3857
     square = Polygon([(4.9999, 4.9999), (5.0001, 4.9999), (5.0001, 5.0001), (4.9999, 5.0001)])
     for idx in range(n):
-        gpd.GeoDataFrame({"man_made": ["wastewater_plant"], "Acres": ["1"], "ACRES": ["2"]}, geometry=[square],
-                         crs=4326).to_file(osm_dir / f"idx_{idx}_polygons.geojson")  # fmt: skip
-    tile = box(centre[0] - 150, centre[1] - 150, centre[0] + 150, centre[1] + 150)
-    bbox = gpd.GeoDataFrame({"idx": range(n), "img_idx": range(n)}, geometry=[tile] * n, crs=3857)
-    shared = dict(osm_dir=str(osm_dir), osm_files=set(os.listdir(osm_dir)), poly_cols=["man_made"], line_cols=[],
-                  poly_labels=["man_made"], line_labels=[], output_dir=str(out_dir), images_dir=str(tmp_path))  # fmt: skip
-    return bbox, shared, osm_dir, out_dir
+        gpd.GeoDataFrame({"man_made": ["wastewater_plant"], "id": ["11"], "ACRES": ["2"], "Acres": ["1"]},
+                         geometry=[square], crs=4326).to_file(osm_dir / f"idx_{idx}_polygons.geojson")  # fmt: skip
+    centre = gpd.GeoSeries([Point(5, 5)], crs=4326).to_crs(3857).iloc[0]
+    images = gpd.GeoDataFrame({"idx": range(n), "img_idx": range(n), "osm_tiles": [(i,) for i in range(n)]},
+                              geometry=[centre] * n, crs=3857)  # fmt: skip
+    shared = dict(osm_dir=str(osm_dir), osm_files=set(os.listdir(osm_dir)), poly_cols=["man_made", "id"],
+                  line_cols=[], poly_labels=["man_made"], line_labels=[], output_dir=str(out_dir),
+                  images_dir=str(tmp_path))  # fmt: skip
+    return images, shared, osm_dir, out_dir
 
 
-def test_annotate_tiles_writes_every_tile_and_reports_failures_at_the_end(monkeypatch, tmp_path):
-    """Tiles in parallel processes, each from its own OSM files; a tile that fails while drawing stops the job
-    only after the others are written."""
-    bbox, shared, _, out_dir = _tile_world(tmp_path, monkeypatch)
-    dba.annotate_tiles(bbox, 3, **shared)
+def test_annotate_images_never_stops(monkeypatch, tmp_path):
+    """Images in parallel processes, each with the OSM features of its tiles. A missing image or unreadable
+    OSM files are reported for that image; all others are written and nothing is raised."""
+    images, shared, osm_dir, out_dir = _osm_world(tmp_path, monkeypatch)
+    report = dba.annotate_images(images, 3, **shared)
     assert sorted(p.name for p in out_dir.iterdir()) == [f"bbox_{i}.png" for i in range(6)]
-    dba.annotate_tiles(bbox.iloc[:2], 1, **shared)  # one process: no pool
+    assert report["labels"].tolist() == [1] * 6 and report["osm_features_on_image"].tolist() == [1] * 6
+    assert report["error"].isna().all()
+    assert len(dba.annotate_images(images.iloc[:2], 1, **shared)) == 2  # one process: no pool
 
     for p in out_dir.iterdir():
         p.unlink()
-    monkeypatch.setattr(
-        dba, "get_image", lambda img_idx, images_dir: None if img_idx == 5 else Image.new("RGB", (512, 512))
-    )
-    with pytest.raises(RuntimeError, match="1 of 6 bbox annotation task.*bbox 5"):
-        dba.annotate_tiles(bbox, 3, **shared)
-    assert sorted(p.name for p in out_dir.iterdir()) == [f"bbox_{i}.png" for i in range(5)]
-
-
-def test_osm_files_of_another_place_stop_the_overlay_before_it_draws(monkeypatch, tmp_path):
-    """OSM files named by idx but cut for other tiles (another numbering), or unreadable: nothing is drawn."""
-    bbox, shared, osm_dir, out_dir = _tile_world(tmp_path, monkeypatch)
-    far = Polygon([(9.9999, 9.9999), (10.0001, 9.9999), (10.0001, 10.0001), (9.9999, 10.0001)])
-    gpd.GeoDataFrame({"man_made": ["wastewater_plant"]}, geometry=[far], crs=4326).to_file(
-        osm_dir / "idx_4_polygons.geojson"
-    )
-    with pytest.raises(ValueError, match="1 of 6 tiles with OSM features have none on the tile .*idx \\[4\\]"):
-        dba.annotate_tiles(bbox, 3, **shared)
     (osm_dir / "idx_4_polygons.geojson").write_text("not json")
-    with pytest.raises(RuntimeError, match="OSM files of 1 tiles could not be read; first: bbox 4"):
-        dba.annotate_tiles(bbox, 1, **shared)
-    assert not out_dir.exists()
+    no_image = lambda img_idx, images_dir: None if img_idx == 5 else Image.new("RGB", (512, 512))  # noqa: E731
+    monkeypatch.setattr(dba, "get_image", no_image)
+    report = dba.annotate_images(images, 3, **shared).set_index("idx")
+    assert report.loc[4, "error"].startswith("OSM files:") and "Image not found" in report.loc[5, "error"]
+    assert sorted(p.name for p in out_dir.iterdir()) == [f"bbox_{i}.png" for i in range(4)]
 
 
-def test_tiles_must_sit_on_their_images():
-    """Tiles are joined to images by idx only: a tile of another plant, an image without tile or a tile
-    without OSM files stops the overlay."""
-    images = gpd.GeoDataFrame({"idx": [1, 2]}, geometry=[Point(5, 5), Point(6, 6)], crs=4326).to_crs(3857)
-    tiles = images.assign(geometry=images.buffer(150, cap_style="square"))
-    files = {"idx_1_polygons.geojson", "idx_2_empty.txt"}
-    assert dba.check_tiles_on_images(tiles, images, files, 10) < 0.01
-    with pytest.raises(ValueError, match="1 of 2 images have no tile"):
-        dba.check_tiles_on_images(tiles.iloc[:1], images, files, 10)
-    other_place = tiles.assign(geometry=[tiles.geometry.iloc[0]] * 2)  # tile 2 is tile 1's square
-    with pytest.raises(ValueError, match="1 of 2 tiles are farther than 10 m from their image"):
-        dba.check_tiles_on_images(other_place, images, files, 10)
-    with pytest.raises(ValueError, match="1 of 2 tiles have no OSM files .*idx \\[2\\]"):
-        dba.check_tiles_on_images(tiles, images, {"idx_1_lines.geojson"}, 10)
+def test_a_feature_of_two_tiles_counts_once(monkeypatch, tmp_path):
+    images, shared, _, _ = _osm_world(tmp_path, monkeypatch, n=2)
+    report = dba.annotate_images(images.iloc[:1].assign(osm_tiles=[(0, 1)]), 1, **shared)
+    assert report["osm_features"].tolist() == [1] and report["labels"].tolist() == [1]
+
+
+def test_osm_tiles_are_found_by_place(monkeypatch):
+    """The OSM files of an image come from the tile at its place: its own tile when that is centred on it,
+    else another tile centred on it (tiles numbered differently), else all tiles overlapping it."""
+    monkeypatch.setattr(dba, "IMAGE_SIZE", [3072, 3072])
+    monkeypatch.setattr(dba, "IMAGERY_REFERENCE_TILE_SIZE", 256)  # 1.194 m/px: the image is NEW_01's tile
+    pts = gpd.GeoSeries([Point(5, 5), Point(6, 6), Point(7, 7), Point(30, 30)], crs=4326).to_crs(3857)
+    images = gpd.GeoDataFrame({"idx": [1, 2, 3, 4]}, geometry=pts.to_numpy(), crs=3857)
+    frame = lambda p, dx=0.0: dba.image_frame(p.x + dx, p.y)  # noqa: E731
+    half = dba.image_frame(0, 0).bounds[2]
+    tiles = gpd.GeoDataFrame({"idx": [1, 2, 7, 8, 9, 10]}, crs=3857, geometry=[
+        frame(pts[0]),               # image 1's own tile
+        frame(pts[0], 5 * half),     # tile "2" elsewhere: image 2 is at tile 7
+        frame(pts[1]),
+        frame(pts[2], -half),        # image 3: two tiles half off either side, together all of it
+        frame(pts[2], half),
+        frame(pts[3]),               # centred on image 4, but without OSM files
+    ])  # fmt: skip
+    files = {"idx_1_polygons.geojson", "idx_2_lines.geojson", "idx_7_empty.txt", "idx_8_lines.geojson",
+             "idx_9_polygons.geojson"}  # fmt: skip
+    m = dba.match_osm_tiles(images, tiles, files, 10)
+    assert m["osm_source"].tolist() == ["own_tile", "tile_at_image", "overlapping_tiles", "none"]
+    assert m["osm_tiles"].tolist() == [(1,), (7,), (8, 9), ()]
+    assert m["osm_coverage"].tolist() == [1.0, 1.0, 1.0, 0.0]
+    half_cover = dba.match_osm_tiles(images.iloc[[2]], tiles[tiles["idx"] != 9], files, 10)
+    assert half_cover["osm_tiles"].tolist() == [(8,)] and half_cover["osm_coverage"].tolist() == [0.5]
 
 
 def test_download_bing_main_smoke(monkeypatch, tmp_path, capsys):
+    """The new plants' set as it is: ref.geojson sorted west to east, <n>.png the image of the feature whose
+    idx is n; one plant's tile numbered differently. Each image gets the OSM features of its own place."""
     args = argparse.Namespace(
         instance_id=0,
         num_instances=1,
@@ -196,7 +204,8 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path, capsys):
             "dpi": 300,
             "target_size_px": 1024,
             "mercator_tile_size_px": 256,
-            "imagery_reference_tile_size_px": 3072,
+            "imagery_reference_tile_size_px": 256,
+            "image_names": "ref_idx",
             "earth_radius_m": 6378137,
         },
         "paths": {
@@ -207,17 +216,22 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path, capsys):
             "annotation_points_filepath": str(tmp_path / "all.csv"),
             "annotated_images_output_dir": str(out_dir),
             "images_ref_list": str(tmp_path / "imaged_list.csv"),
+            "match_report_dir": str(tmp_path / "report"),
         },
     }
-    pd.DataFrame({"idx": [7, 1]}).to_csv(tmp_path / "imaged_list.csv", index=False)  # ref.geojson row 1 = plant 1
+    pd.DataFrame({"idx": [7, 1]}).to_csv(tmp_path / "imaged_list.csv", index=False)  # list row 0 = plant 7
 
     monkeypatch.setattr(starter, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
 
-    grids = gpd.GeoDataFrame({"idx": [1], "geometry": [box(4.99, 4.99, 5.01, 5.01)]}, geometry="geometry", crs=4326)
-    points = gpd.GeoDataFrame({"idx": [1], "geometry": [Point(5, 5)]}, geometry="geometry", crs="EPSG:4326")  # row 1
+    # ref.geojson west to east: feature 0 is list row 1 (plant 1 at 5 E), feature 1 is list row 0 (plant 7 at 6 E)
+    points = gpd.GeoDataFrame({"idx": [1, 0]}, geometry=[Point(5, 5), Point(6, 5)], crs=4326)
+    plants = gpd.GeoDataFrame({"idx": [7, 1]}, geometry=[Point(6, 5), Point(5, 5)], crs=4326)
+    # tile 1 at plant 1; plant 7's tile carries another number (99)
+    grids = gpd.GeoDataFrame({"idx": [1, 99]}, geometry=[box(4.98, 4.98, 5.02, 5.02), box(5.98, 4.98, 6.02, 5.02)],
+                             crs=4326)  # fmt: skip
 
-    # Grid 1's OSM files as osm_planet wrote them on the cluster, with the two things that stopped the overlay
+    # Tile 1's OSM files as osm_planet wrote them on the cluster, with the two things that stopped the overlay
     # there (18 Nov): tag columns alike but for case (DuckDB: "duplicate column name") and a polygon whose ring
     # crosses itself (GEOS: "TopologyException: side location conflict").
     square = Polygon([(4.9999, 4.9999), (5.0001, 4.9999), (5.0001, 5.0001), (4.9999, 5.0001)])
@@ -228,24 +242,39 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path, capsys):
     lines = {"man_made": ["pipeline"], "id": ["3"], "Id": ["b"]}
     river = LineString([(4.9995, 5.0), (5.0005, 5.0)])
     gpd.GeoDataFrame(lines, geometry=[river], crs=4326).to_file(osm_dir / "idx_1_lines.geojson")
+    tank = Polygon([(5.9999, 4.9999), (6.0001, 4.9999), (6.0001, 5.0001), (5.9999, 5.0001)])
+    gpd.GeoDataFrame({"man_made": ["storage_tank"], "id": ["4"]}, geometry=[tank], crs=4326).to_file(
+        osm_dir / "idx_99_polygons.geojson"
+    )
     real_read_file = gpd.read_file
 
     def _read_file(path, **kwargs):
         p = str(path)
         if p.endswith("ref.geojson"):
             return points.copy()
+        if os.path.basename(p) == "all.csv":
+            return plants.copy()
         if p.startswith(str(osm_dir)):
             return real_read_file(path, **kwargs)
         return grids.copy()
 
     monkeypatch.setattr(gpd, "read_file", _read_file)
 
-    # Seed a source image so process_bbox can load it.
-    dba.Image.new("RGB", (3072, 3072), "black").save(images_dir / "0.png")
+    # 1.png shows plant 1 (red), 0.png plant 7 (blue)
+    dba.Image.new("RGB", (3072, 3072), "red").save(images_dir / "1.png")
+    dba.Image.new("RGB", (3072, 3072), "blue").save(images_dir / "0.png")
 
     runpy.run_module("wwtp.annotation_scripts.download_bing_annotate", run_name="__main__")
-    assert "bbox 1 done (3 tags)" in capsys.readouterr().err  # the plant, the industrial area, the pipeline
-    assert (out_dir / "bbox_1.png").exists()
+    err = capsys.readouterr().err
+    assert "bbox 1 done (3 tags)" in err and "bbox 7 done (1 tags)" in err
+    assert Image.open(out_dir / "bbox_1.png").convert("RGB").getpixel((5, 5)) == (255, 0, 0)
+    assert Image.open(out_dir / "bbox_7.png").convert("RGB").getpixel((5, 5)) == (0, 0, 255)
+    (report_file,) = (tmp_path / "report").iterdir()  # <last two folders of the images dir>_shard<k>.csv
+    assert report_file.name == f"{tmp_path.name}-images_shard0.csv"
+    report = pd.read_csv(report_file, dtype={"osm_tiles": str}).set_index("idx")
+    assert report.loc[1, ["image", "osm_source", "osm_tiles", "labels"]].tolist() == ["1.png", "own_tile", "1", 3]
+    assert report.loc[7, ["image", "osm_source", "osm_tiles", "labels"]].tolist() == ["0.png", "tile_at_image", "99", 1]
+    assert report["image_to_plant_m"].max() < 0.01 and report["error"].isna().all()
 
 
 def test_ref_geojson_rows_become_plant_numbers(tmp_path):
