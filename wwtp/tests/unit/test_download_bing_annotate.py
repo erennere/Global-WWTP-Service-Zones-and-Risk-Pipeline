@@ -7,9 +7,9 @@ from PIL import Image, ImageDraw, ImageFont
 from shapely.geometry import LineString, box
 from wwtp.annotation_scripts import download_bing_annotate as dba
 import argparse
+import os
 import runpy
-import duckdb
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 from wwtp import starter
 
 pytestmark = pytest.mark.unit
@@ -76,11 +76,7 @@ def test_bing_process_bbox_georeferenced_output(tmp_path, monkeypatch):
     assert (tmp_path / "bbox_1.tif").exists()
 
 
-def test_download_bing_log_preview_and_bbox_error_branches(monkeypatch, tmp_path):
-    gdf = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:3857")
-    dba.log_gdf_preview("x", gdf, ["missing"])
-    dba.log_gdf_preview("x", gdf, ["geometry"])
-
+def test_download_bing_bbox_error_branches(monkeypatch, tmp_path):
     bbox = box(0, 0, 10, 10)
     poly = gpd.GeoDataFrame({"grid": [1], "geometry": [box(1, 1, 2, 2)]}, geometry="geometry", crs="EPSG:3857")
     line = gpd.GeoDataFrame(
@@ -96,42 +92,30 @@ def test_download_bing_log_preview_and_bbox_error_branches(monkeypatch, tmp_path
     assert idx2 == 2 and n2 == 0 and err2 is not None
 
 
-def test_download_bing_annotate_parallel_error_logging_branch(monkeypatch, tmp_path):
-    bbox = gpd.GeoDataFrame(
-        {"idx": [1], "img_idx": [1], "geometry": [box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:3857"
-    )
-    poly = gpd.GeoDataFrame({"grid": [1], "geometry": [box(0, 0, 1, 1)]}, geometry="geometry", crs="EPSG:3857")
-    line = gpd.GeoDataFrame(
-        {"grid": [1], "geometry": [LineString([(0, 0), (1, 1)])]}, geometry="geometry", crs="EPSG:3857"
-    )
-
-    class _Future:
-        def __init__(self, payload):
-            self._payload = payload
-
-        def result(self):
-            return self._payload
-
-    class _Exec:
-        def __init__(self, max_workers=None):
-            self.max_workers = max_workers
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def submit(self, fn, *args, **kwargs):
-            return _Future((1, 0, "fail"))
-
-    monkeypatch.setattr(dba, "ThreadPoolExecutor", _Exec)
-    monkeypatch.setattr(dba, "as_completed", lambda futures: list(futures))
-    with pytest.raises(RuntimeError, match="bbox annotation task"):
-        dba.annotate_bboxes_parallel(bbox, poly, ["man_made"], line, ["waterway"], str(tmp_path), str(tmp_path), set())
+def test_annotate_tiles_writes_every_tile_and_reports_failures_at_the_end(monkeypatch, tmp_path):
+    """Tiles in parallel processes, each from its own OSM files; a tile that fails stops the job only after
+    the others are written."""
+    osm_dir, out_dir = tmp_path / "osm", tmp_path / "out"
+    osm_dir.mkdir()
+    monkeypatch.setattr(dba, "IMAGE_SIZE", [512, 512])
+    monkeypatch.setattr(dba, "get_image", lambda img_idx, images_dir: Image.new("RGB", (512, 512), "black"))
+    tiles, center = [], (556597.45, 557305.26)  # 5 deg E, 5 deg N in EPSG:3857
+    for idx in range(6):
+        square = Polygon([(4.9999, 4.9999), (5.0001, 4.9999), (5.0001, 5.0001), (4.9999, 5.0001)])
+        gpd.GeoDataFrame({"man_made": ["wastewater_plant"], "Acres": ["1"], "ACRES": ["2"]}, geometry=[square],
+                         crs=4326).to_file(osm_dir / f"idx_{idx}_polygons.geojson")  # fmt: skip
+        tiles.append(box(center[0] - 150, center[1] - 150, center[0] + 150, center[1] + 150))
+    (osm_dir / "idx_5_polygons.geojson").write_text("not json")
+    bbox = gpd.GeoDataFrame({"idx": range(6), "img_idx": range(6)}, geometry=tiles, crs=3857)
+    shared = dict(osm_dir=str(osm_dir), osm_files=set(os.listdir(osm_dir)), poly_cols=["man_made"], line_cols=[],
+                  poly_labels=["man_made"], line_labels=[], output_dir=str(out_dir), images_dir=str(tmp_path))  # fmt: skip
+    with pytest.raises(RuntimeError, match="1 of 6 bbox annotation task.*bbox 5"):
+        dba.annotate_tiles(bbox, 3, **shared)
+    assert sorted(p.name for p in out_dir.iterdir()) == [f"bbox_{i}.png" for i in range(5)]
+    dba.annotate_tiles(bbox.iloc[:2], 1, **shared)  # one process: no pool
 
 
-def test_download_bing_main_smoke(monkeypatch, tmp_path):
+def test_download_bing_main_smoke(monkeypatch, tmp_path, capsys):
     args = argparse.Namespace(
         instance_id=0,
         num_instances=1,
@@ -186,50 +170,38 @@ def test_download_bing_main_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(starter, "parse_config_overrides", lambda args=None: {})
     monkeypatch.setattr(starter, "load_config", lambda **kwargs: cfg)
 
-    grids = gpd.GeoDataFrame({"idx": [1], "geometry": [box(0, 0, 10, 10)]}, geometry="geometry", crs="EPSG:4326")
+    grids = gpd.GeoDataFrame({"idx": [1], "geometry": [box(4.99, 4.99, 5.01, 5.01)]}, geometry="geometry", crs=4326)
     points = gpd.GeoDataFrame({"idx": [1], "geometry": [Point(5, 5)]}, geometry="geometry", crs="EPSG:4326")  # row 1
+
+    # Grid 1's OSM files as osm_planet wrote them on the cluster, with the two things that stopped the overlay
+    # there (18 Nov): tag columns alike but for case (DuckDB: "duplicate column name") and a polygon whose ring
+    # crosses itself (GEOS: "TopologyException: side location conflict").
+    square = Polygon([(4.9999, 4.9999), (5.0001, 4.9999), (5.0001, 5.0001), (4.9999, 5.0001)])
+    bow_tie = Polygon([(4.9999, 4.9999), (5.0001, 5.0001), (5.0001, 4.9999), (4.9999, 5.0001)])
+    polygons = {"man_made": ["wastewater_plant", "nan"], "Acres": ["3", "nan"], "ID": ["a", "nan"], "id": ["1", "2"],
+                "landuse": ["nan", "industrial"], "ACRES": ["nan", "4"]}  # fmt: skip
+    gpd.GeoDataFrame(polygons, geometry=[square, bow_tie], crs=4326).to_file(osm_dir / "idx_1_polygons.geojson")
+    lines = {"man_made": ["pipeline"], "id": ["3"], "Id": ["b"]}
+    river = LineString([(4.9995, 5.0), (5.0005, 5.0)])
+    gpd.GeoDataFrame(lines, geometry=[river], crs=4326).to_file(osm_dir / "idx_1_lines.geojson")
+    real_read_file = gpd.read_file
 
     def _read_file(path, **kwargs):
         p = str(path)
         if p.endswith("ref.geojson"):
             return points.copy()
+        if p.startswith(str(osm_dir)):
+            return real_read_file(path, **kwargs)
         return grids.copy()
 
     monkeypatch.setattr(gpd, "read_file", _read_file)
 
-    # Pretend one polygon and one line geojson exist for grid 1.
-    monkeypatch.setattr(
-        dba.os, "listdir", lambda p: ["idx_1_polygons.geojson", "idx_1_lines.geojson"] if str(p) == str(osm_dir) else []
-    )
-
     # Seed a source image so process_bbox can load it.
     dba.Image.new("RGB", (3072, 3072), "black").save(images_dir / "0.png")
 
-    class _QRes:
-        def __init__(self, frame):
-            self._frame = frame
-
-        def df(self):
-            return self._frame
-
-    class _Conn:
-        def execute(self, query):
-            q = str(query)
-            if "DESCRIBE SELECT * FROM ST_READ" in q:
-                return _QRes(pd.DataFrame({"column_name": ["geom", "man_made", "waterway"]}))
-            if "_polygons.geojson" in q and "ST_AsText(geom) AS geometry" in q:
-                return _QRes(pd.DataFrame({"man_made": ["wwtp"], "geometry": [box(0, 0, 1, 1).wkt], "grid": ["1"]}))
-            if "_lines.geojson" in q and "ST_AsText(geom) AS geometry" in q:
-                return _QRes(
-                    pd.DataFrame({"waterway": ["river"], "geometry": [LineString([(0, 0), (1, 1)]).wkt], "grid": ["1"]})
-                )
-            return _QRes(pd.DataFrame())
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: _Conn())
     runpy.run_module("wwtp.annotation_scripts.download_bing_annotate", run_name="__main__")
+    assert "bbox 1 done (3 tags)" in capsys.readouterr().err  # the plant, the industrial area, the pipeline
+    assert (out_dir / "bbox_1.png").exists()
 
 
 def test_ref_geojson_rows_become_plant_numbers(tmp_path):

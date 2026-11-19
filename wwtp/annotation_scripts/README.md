@@ -107,7 +107,7 @@ Delete the grid, annotation, or merged outputs to force a rerun of the correspon
 | `annotations_inspection.annotations.random_seed` | null | Inherits the seed above so QA sampling and the imagery split stay aligned |
 | `download_bing_annotate.annotations.zoom_level` | `17` | Imagery zoom level |
 | `download_bing_annotate.annotations.image_size_px` | `512` | Width/height of the images in pixels (new images, 18 Nov 2026; the first run's were 3072), about 0.6 m per pixel |
-| `download_bing_annotate.annotations.max_workers` | `64` | Parallel bbox annotation worker count |
+| `download_bing_annotate.annotations.max_workers` | `64` | Processes per overlay job (one tile per task: its OSM files, labels and image); match `workflow.resources.download_bing_annotate.threads` |
 | `download_bing_annotate.annotations.georeferenced` | `false` | Write georeferenced GeoTIFF output instead of resized PNG |
 | `download_bing_annotate.annotations.label_font_px` | `8` | Label text size in pixels of the output image (`target_size_px`); smaller images are enlarged before drawing |
 | `download_bing_annotate.annotations.label_halo_px` | `1` | Outline around the label text, in output pixels |

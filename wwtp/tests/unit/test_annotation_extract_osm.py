@@ -289,6 +289,21 @@ def test_save_tile_writes_tags_that_clean_to_the_same_name(tmp_path):
     assert out.geometry.iloc[0].geom_type == "Polygon"
 
 
+def test_save_tile_writes_tags_alike_but_for_case_under_names_of_their_own(tmp_path):
+    """Acres and ACRES, ID next to the OSM id: DuckDB takes names alike but for case for one column and stops
+    ("duplicate column name", cluster 18 Nov). The OSM id keeps the name id and wins over a tag id."""
+    square = [{"lon": 0, "lat": 0}, {"lon": 1, "lat": 0}, {"lon": 1, "lat": 1}, {"lon": 0, "lat": 0}]
+    tags = {"Acres": "3", "ID": "a", "id": "tag", "man_made": "wastewater_plant"}
+    data = {"elements": [{"type": "way", "id": 9, "tags": tags, "geometry": square},
+                         {"type": "way", "id": 10, "tags": {"ACRES": "4"}, "geometry": square}]}  # fmt: skip
+    n2.save_tile(data, 7, str(tmp_path))
+    out = gpd.read_file(n2.tile_files(str(tmp_path), 7)[1])
+    names = [c for c in out.columns if c != "geometry"]
+    assert len({c.lower() for c in names}) == len(names)
+    assert {"id", "Acres", "ID_2", "ACRES_2", "man_made"} <= set(names)
+    assert out["id"].tolist() == ["9", "10"] and out["ACRES_2"].tolist() == ["nan", "4"]
+
+
 def test_benchmark_survives_one_sided_answers_and_slow_servers(servers, monkeypatch):
     """A tile with lines but no polygons (KeyError 'id' on the cluster, 17 Nov) and a server slower than
     the time budget: the run still finishes with a row for every tile."""

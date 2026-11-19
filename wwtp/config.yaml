@@ -153,6 +153,7 @@ download_bing_annotate:
     image_size_px: 512
     zoom_level: 17
     base_z17_resolution: 1.1943285669555664
+    # processes per overlay job, one tile per task (= workflow.resources.download_bing_annotate.threads)
     max_workers: 64
     georeferenced: false
     # Label text and its outline in pixels of the output image (target_size_px): the first run drew 24 and 3

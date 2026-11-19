@@ -7,7 +7,8 @@ executor: slurm
 # solver files. (The login session's $TMPDIR, removed at logout, is replaced for the whole run by
 # workflow.paths.tmp_dir in the Snakefile, wf.use_durable_tmpdir.)
 scheduler: greedy
-jobs: 100
+# At most 10 SLURM jobs at once; a job uses its CPUs itself (the overlay: one process per CPU)
+jobs: 10
 latency-wait: 60
 retries: 1
 rerun-incomplete: true

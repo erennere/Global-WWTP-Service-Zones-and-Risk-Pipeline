@@ -62,8 +62,9 @@ SERVER_ERROR = re.compile(r"runtime error|timed out|out of memory", re.IGNORECAS
 def clean_columns(gdf):
     """Clean column names and ensure valid types for GeoJSON export.
 
-    Tag keys that clean to the same name (``name:ja`` and ``name_ja``, keys alike in their first 60
-    characters) get ``_2``, ``_3``, ... in the order they come."""
+    Tag keys that clean to the same name, regardless of case (``name:ja`` and ``name_ja``, keys alike in
+    their first 60 characters, ``Acres`` and ``ACRES``, which DuckDB takes for one column), get ``_2``,
+    ``_3``, ... in the order they come."""
     if gdf.empty:
         return gdf
     names, taken = [], {"geometry"}
@@ -73,10 +74,10 @@ def clean_columns(gdf):
             continue
         name = base = re.sub(r"[^0-9a-zA-Z_]", "_", column)[:60]
         n = 1
-        while name in taken:
+        while name.lower() in taken:
             n += 1
             name = f"{base}_{n}"
-        taken.add(name)
+        taken.add(name.lower())
         names.append(name)
     gdf.columns = names
     for col in gdf.columns:
@@ -160,7 +161,9 @@ def elements_to_gdf(data):
     ways = {el["id"]: coords_of(el) for el in elements if el["type"] == "way"}
     lns, polys = [], []
     for el in elements:
-        tags = el.get("tags", {})
+        # the OSM id as the first column, so it keeps the name ``id`` next to a tag ``ID`` (clean_columns);
+        # its value wins over a tag ``id``
+        tags = {"id": el["id"], **el.get("tags", {})}
         if el["type"] == "way":
             coords = ways[el["id"]]
             try:  # a degenerate way (one point, a closed way of three) is left out

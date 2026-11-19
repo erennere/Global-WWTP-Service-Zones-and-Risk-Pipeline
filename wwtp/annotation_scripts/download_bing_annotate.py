@@ -9,6 +9,7 @@ an ML CLIP model.
 import os, sys
 import argparse
 import math
+import multiprocessing
 import random
 import numpy as np
 import geopandas as gpd
@@ -16,31 +17,14 @@ import pandas as pd
 import rasterio
 from rasterio.transform import from_origin
 from PIL import Image, ImageDraw, ImageFont
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyproj import Transformer
 import logging
-import shapely.wkt
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
-from ..geo_utils import ensure_duckdb_spatial
 from .images_ref import check_image_size, check_images_ref, plant_idx_of_rows
-from ..utils import (
-    configure_logging,
-    duckdb_connection,
-    ensure_output_dir_for_file,
-)
+from ..utils import configure_logging, ensure_output_dir_for_file
 
 logger = logging.getLogger(__name__)
-
-
-def safe_wkt_load(wkt_wtr):
-    """Parse WKT text into a Shapely geometry, returning None on bad rows."""
-    try:
-        if not wkt_wtr or not isinstance(wkt_wtr, str):
-            return None
-        return shapely.wkt.loads(wkt_wtr)
-    except Exception:
-        return None
 
 
 # Bundled asset, resolved against the package rather than the working directory.
@@ -187,22 +171,6 @@ def linestring_angle(line):
     return math.degrees(math.atan2(y2 - y1, x2 - x1))
 
 
-def log_gdf_preview(name, gdf, columns, n=5):
-    """Log a small preview of selected GeoDataFrame columns for debugging."""
-    available_cols = [c for c in columns if c in gdf.columns]
-    if not available_cols:
-        logger.info("%s columns not found. available=%s", name, list(gdf.columns))
-        return
-
-    logger.info("%s columns: %s", name, available_cols)
-    if gdf.empty:
-        logger.info("%s is empty", name)
-        return
-
-    preview = gdf[available_cols].head(n).to_string(index=False)
-    logger.info("%s sample rows:\n%s", name, preview)
-
-
 def split_grids_for_instance(grids, instance_id, num_instances, split_seed):
     """Deterministically shuffle and split grids into disjoint worker chunks."""
     if num_instances <= 0:
@@ -299,6 +267,10 @@ def process_bbox(idx, bbox_geom, img_idx, poly_gdf, cols, line_gdf, line_cols, o
         if image is None:
             return idx, 0, f"Image not found for img_idx={img_idx}"
         annotations = []
+        # OSM polygons can be invalid (a ring that crosses itself); GEOS then stops cutting them to the tile
+        # with a TopologyException ("side location conflict", cluster 18 Nov). Repaired first; valid ones
+        # stay exactly as they are.
+        poly_gdf = poly_gdf.set_geometry(poly_gdf.geometry.make_valid())
 
         # -------- POLYGONS --------
         # Filter first using spatial index (sjoin or intersects) for performance
@@ -398,66 +370,89 @@ def process_bbox(idx, bbox_geom, img_idx, poly_gdf, cols, line_gdf, line_cols, o
         return idx, 0, str(e)
 
 
-def annotate_bboxes_parallel(bbox_gdf, poly_gdf, cols, line_gdf, line_cols, output_dir, images_dir, files):
-    """Dispatch bbox annotation jobs across a thread pool.
+def read_tile_features(folder, grids, kind, columns, files):
+    """The ``kind`` features (``polygons`` or ``lines``) of the tiles ``grids`` in EPSG:3857: the tag
+    ``columns`` the tiles have, ``geometry`` and the tile number ``grid``.
 
-    Parameters
-    ----------
-    bbox_gdf : geopandas.GeoDataFrame
-        Grid-cell features to annotate.
-    poly_gdf : geopandas.GeoDataFrame
-        Polygon annotation features.
-    cols : list[str]
-        Polygon columns used for text labels.
-    line_gdf : geopandas.GeoDataFrame
-        Line annotation features.
-    line_cols : list[str]
-        Line columns used for text labels.
-    output_dir : str
-        Directory where annotated outputs are written.
-    images_dir : str
-        Directory containing source imagery.
-    files : Any
-        Unused compatibility parameter retained by the current call signature.
+    Read with GDAL (pyogrio), not DuckDB's ST_READ: ST_READ stops at a tile with tag columns that differ
+    only in case (``id`` and ``ID``, ``Acres`` and ``ACRES``: cluster, 18 Nov). ``files``: the names in
+    ``folder``; a tile without a file of this kind has no features of it.
     """
-    logger.info("Queued %s bboxes for annotation", len(bbox_gdf))
-    required_cols = {"idx", "img_idx", "geometry"}
-    missing_cols = required_cols.difference(bbox_gdf.columns)
+    frames = []
+    for grid in grids:
+        name = f"idx_{grid}_{kind}.geojson"
+        if name not in files:
+            continue
+        gdf = gpd.read_file(os.path.join(folder, name))
+        keep = [c for c in columns if c in gdf.columns] + ["geometry"]
+        frames.append(gdf[keep].set_crs(4326, allow_override=True).assign(grid=int(grid)))
+    if not frames:
+        return gpd.GeoDataFrame({"grid": pd.Series(dtype=int)}, geometry=[], crs=3857)
+    features = pd.concat(frames, ignore_index=True)
+    return features[features.geometry.notna()].to_crs(3857)
+
+
+# What every tile worker needs besides its tile; filled before the pool starts, inherited by fork
+_TILES = {}
+
+
+def annotate_tile(idx, bbox_geom, img_idx):
+    """One tile from start to end: its own OSM files, its labels, its image. Returns
+    ``(idx, label_count, error_message)``; a tile that fails comes back with its error instead of raising."""
+    t = _TILES
+    try:
+        polys = read_tile_features(t["osm_dir"], [idx], "polygons", t["poly_cols"], t["osm_files"])
+        lines = read_tile_features(t["osm_dir"], [idx], "lines", t["line_cols"], t["osm_files"])
+    except Exception as e:
+        logger.exception("bbox %s: its OSM files could not be read", idx)
+        return idx, 0, str(e)
+    return process_bbox(idx, bbox_geom, img_idx, polys, t["poly_labels"], lines, t["line_labels"],
+                        t["output_dir"], t["images_dir"])  # fmt: skip
+
+
+def _annotate_tile(task):
+    return annotate_tile(*task)
+
+
+def annotate_tiles(bbox_gdf, workers, **shared):
+    """Annotate the tiles of ``bbox_gdf`` (columns idx, img_idx, geometry) in ``workers`` processes.
+
+    Each tile is one task, read, labelled and written by one process, so reading the OSM files, cutting
+    the features and drawing all run in parallel (the threads of the earlier version shared one Python
+    interpreter lock, and the files of 128 tiles were read one after another before any was drawn).
+    ``shared``: ``osm_dir``, ``osm_files`` (the names in it), ``poly_cols``/``line_cols`` (tag columns read),
+    ``poly_labels``/``line_labels`` (columns drawn), ``output_dir``, ``images_dir``. Tiles that fail are
+    reported after all others are written: RuntimeError.
+    """
+    missing_cols = {"idx", "img_idx", "geometry"}.difference(bbox_gdf.columns)
     if missing_cols:
         raise KeyError(f"bbox_gdf is missing required columns: {sorted(missing_cols)}")
+    tasks = [(int(i), geom, int(img)) for i, geom, img in zip(bbox_gdf["idx"], bbox_gdf.geometry, bbox_gdf["img_idx"])]
+    logger.info("Queued %s bboxes for annotation in %s processes", len(tasks), workers)
+    _TILES.clear()
+    _TILES.update(shared)
 
-    futures = []
+    errors = []
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        for _, row in bbox_gdf.iterrows():
-            futures.append(
-                executor.submit(
-                    process_bbox,
-                    row["idx"],
-                    row.geometry,
-                    row["img_idx"],
-                    poly_gdf[poly_gdf["grid"] == row["idx"]].copy(),
-                    cols,
-                    line_gdf[line_gdf["grid"] == row["idx"]].copy(),
-                    line_cols,
-                    output_dir,
-                    images_dir,
-                )
-            )
-
-        errors = []
-        for future in as_completed(futures):
-            idx, n, err = future.result()
+    def collect(results):
+        for idx, n, err in results:
             if err:
                 logger.error("bbox %s failed: %s", idx, err)
                 errors.append((idx, err))
             else:
                 logger.info("bbox %s done (%s tags)", idx, n)
 
+    if workers > 1 and len(tasks) > 1:
+        # fork: the workers get _TILES and the configured module settings without pickling them
+        with multiprocessing.get_context("fork").Pool(min(workers, len(tasks))) as pool:
+            collect(pool.imap_unordered(_annotate_tile, tasks))
+    else:
+        collect(map(_annotate_tile, tasks))
+
     if errors:
         first_idx, first_err = errors[0]
         raise RuntimeError(
-            f"{len(errors)} of {len(futures)} bbox annotation task(s) failed; "
+            f"{len(errors)} of {len(tasks)} bbox annotation task(s) failed; "
             f"first failure was bbox {first_idx}: {first_err}"
         )
 
@@ -539,172 +534,39 @@ if __name__ == "__main__":
     bbox_gdf = bbox_gdf[bbox_gdf.geometry.is_valid & ~bbox_gdf.geometry.is_empty]
     logger.info("Prepared %s valid bounding boxes", len(bbox_gdf))
     output_dir = cfg["paths"]["annotated_images_output_dir"]
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-
-    files = set(os.listdir(output_dir))
+    os.makedirs(output_dir, exist_ok=True)
     geojson_files = set(os.listdir(geojson_file_dir))
 
-    poly_cols = ["id", "man_made", "landuse", "industrial", "power", "resource"]
-    line_cols = ["waterway", "man_made", "landuse", "industrial", "power", "resource", "water", "id"]
-    cols_string = ",".join(poly_cols)
-    line_cols_string = ",".join(line_cols)
+    grids = bbox_gdf["idx"].unique().tolist()
+    logger.info("Found %s total grids", len(grids))
 
-    # duckdb_connection owns the scratch database for the whole run; the
-    # previous randomly-named temp_*.db was never removed.
-    with duckdb_connection() as conn:
-        ensure_duckdb_spatial(conn)
-        logger.info("DuckDB initialized with SPATIAL extension")
+    grids = split_grids_for_instance(
+        grids,
+        instance_id=args.instance_id,
+        num_instances=args.num_instances,
+        split_seed=args.split_seed,
+    )
+    logger.info(
+        "Instance %s/%s will process %s grids (seed=%s)",
+        args.instance_id,
+        args.num_instances,
+        len(grids),
+        args.split_seed,
+    )
+    if not grids:
+        logger.info("No grids assigned to this instance. Exiting.")
+        sys.exit(0)
 
-        grids = bbox_gdf["idx"].unique().tolist()
-        logger.info("Found %s total grids", len(grids))
-
-        grids = split_grids_for_instance(
-            grids,
-            instance_id=args.instance_id,
-            num_instances=args.num_instances,
-            split_seed=args.split_seed,
-        )
-        logger.info(
-            "Instance %s/%s will process %s grids (seed=%s)",
-            args.instance_id,
-            args.num_instances,
-            len(grids),
-            args.split_seed,
-        )
-        if not grids:
-            logger.info("No grids assigned to this instance. Exiting.")
-            sys.exit(0)
-
-        for i in range(0, len(grids), 2 * MAX_WORKERS):
-            sub_grids = grids[i : i + 2 * MAX_WORKERS]
-            if not sub_grids:
-                continue
-
-            logger.info(
-                "Processing grid batch %s-%s (%s grids)",
-                i,
-                i + len(sub_grids) - 1,
-                len(sub_grids),
-            )
-
-            # --- Polygons ---
-            poly_file_columns = {}
-            all_poly_columns = set()
-            for grid in sub_grids:
-                polygon_file = f"idx_{grid}_polygons.geojson"
-                path = f"{geojson_file_dir}/{polygon_file}"
-                if polygon_file not in geojson_files:
-                    continue
-                cols = conn.execute(f"DESCRIBE SELECT * FROM ST_READ('{path}')").df()["column_name"].tolist()
-                poly_file_columns[grid] = cols
-                all_poly_columns.update(cols)
-
-            all_poly_columns = sorted(all_poly_columns - {"geom"})  # remove geom from attributes
-
-            poly_queries = []
-            for grid, cols in poly_file_columns.items():
-                polygon_file = f"{geojson_file_dir}/idx_{grid}_polygons.geojson"
-                select_cols = []
-
-                for c in all_poly_columns:
-                    if c not in poly_cols:
-                        continue
-                    if c in cols:
-                        select_cols.append(c)
-                    else:
-                        select_cols.append(f"NULL AS {c}")
-
-                if select_cols:
-                    select_clause = ", ".join(select_cols) + ", "
-                    poly_queries.append(f"""
-                        SELECT
-                            {select_clause}
-                            ST_AsText(geom) AS geometry,
-                            '{grid}' AS grid
-                        FROM ST_READ('{polygon_file}')
-                    """)
-                else:
-                    poly_queries.append(f"""
-                        SELECT
-                            ST_AsText(geom) AS geometry,
-                            '{grid}' AS grid
-                        FROM ST_READ('{polygon_file}')
-                    """)
-
-            poly_query = " UNION ALL ".join(poly_queries)
-            poly_df = conn.execute(poly_query).df()
-            poly_df = poly_df.dropna(subset=["geometry"])
-            poly_df["geometry"] = poly_df["geometry"].apply(safe_wkt_load)
-            poly_gdf = gpd.GeoDataFrame(poly_df, geometry="geometry", crs=4326).to_crs(3857)
-            poly_gdf["grid"] = poly_gdf["grid"].astype(int)
-
-            logger.info("Loaded %s polygon records in current batch", len(poly_gdf))
-            log_gdf_preview("poly_gdf", poly_gdf, ["grid", "geometry"])
-
-            # --- Lines ---
-            line_file_columns = {}
-            all_line_columns = set()
-            for grid in sub_grids:
-                line_file = f"idx_{grid}_lines.geojson"
-                path = f"{geojson_file_dir}/{line_file}"
-                if line_file not in geojson_files:
-                    continue
-                cols = conn.execute(f"DESCRIBE SELECT * FROM ST_READ('{path}')").df()["column_name"].tolist()
-                line_file_columns[grid] = cols
-                all_line_columns.update(cols)
-
-            all_line_columns = sorted(all_line_columns - {"geom"})
-
-            line_queries = []
-            for grid, cols in line_file_columns.items():
-                line_file = f"{geojson_file_dir}/idx_{grid}_lines.geojson"
-                select_cols = []
-
-                for c in all_line_columns:
-                    if c not in line_cols:
-                        continue
-                    if c in cols:
-                        select_cols.append(c)
-                    else:
-                        select_cols.append(f"NULL AS {c}")
-
-                if select_cols:
-                    select_clause = ", ".join(select_cols) + ", "
-                    line_queries.append(f"""
-                        SELECT
-                            {select_clause}
-                            ST_AsText(geom) AS geometry,
-                            '{grid}' AS grid
-                        FROM ST_READ('{line_file}')
-                    """)
-                else:
-                    line_queries.append(f"""
-                        SELECT
-                            ST_AsText(geom) AS geometry,
-                            '{grid}' AS grid
-                        FROM ST_READ('{line_file}')
-                    """)
-
-            line_query = " UNION ALL ".join(line_queries)
-            line_df = conn.execute(line_query).df()
-            line_df = line_df.dropna(subset=["geometry"])
-            line_df["geometry"] = line_df["geometry"].apply(safe_wkt_load)
-            line_gdf = gpd.GeoDataFrame(line_df, geometry="geometry", crs=4326).to_crs(3857)
-            line_gdf["grid"] = line_gdf["grid"].astype(int)
-
-            logger.info("Loaded %s line records in current batch", len(line_gdf))
-            log_gdf_preview("lines_gdf", line_gdf, ["grid", "geometry"])
-            batch_bbox_gdf = bbox_gdf[bbox_gdf["idx"].isin(sub_grids)].copy()
-
-            annotate_bboxes_parallel(
-                batch_bbox_gdf,
-                poly_gdf,
-                ["man_made", "landuse", "industrial", "power", "resource", "water"],
-                line_gdf,
-                ["waterway", "man_made", "landuse", "industrial", "power", "resource", "water"],
-                output_dir,
-                images_dir,
-                files,
-            )
-        logger.info("Annotation pipeline finished")
+    annotate_tiles(
+        bbox_gdf[bbox_gdf["idx"].isin(grids)],
+        MAX_WORKERS,
+        osm_dir=geojson_file_dir,
+        osm_files=geojson_files,
+        poly_cols=["id", "man_made", "landuse", "industrial", "power", "resource"],
+        line_cols=["waterway", "man_made", "landuse", "industrial", "power", "resource", "water", "id"],
+        poly_labels=["man_made", "landuse", "industrial", "power", "resource", "water"],
+        line_labels=["waterway", "man_made", "landuse", "industrial", "power", "resource", "water"],
+        output_dir=output_dir,
+        images_dir=images_dir,
+    )
+    logger.info("Annotation pipeline finished")

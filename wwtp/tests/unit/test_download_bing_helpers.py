@@ -12,11 +12,7 @@ from wwtp.annotation_scripts import download_bing_annotate as dba
 pytestmark = pytest.mark.unit
 
 
-def test_safe_wkt_and_projection_helpers():
-    assert dba.safe_wkt_load(None) is None
-    assert dba.safe_wkt_load("bad_wkt") is None
-    assert dba.safe_wkt_load("POINT (1 2)").geom_type == "Point"
-
+def test_projection_helpers():
     px, py = dba.mercator_to_pixel(0, 0, 0, 0, dba.IMAGE_SIZE)
     assert isinstance(px, int) and isinstance(py, int)
 
@@ -97,64 +93,8 @@ def test_process_bbox_and_parallel_dispatch(monkeypatch, tmp_path):
     assert err is None
     assert n >= 1
 
-    bbox_gdf = gpd.GeoDataFrame(
-        {"idx": [1], "img_idx": [42], "geometry": [bbox]},
-        geometry="geometry",
-        crs="EPSG:3857",
-    )
 
-    class _Future:
-        def __init__(self, value):
-            self._value = value
-
-        def result(self):
-            return self._value
-
-    class _Exec:
-        def __init__(self, max_workers=None):
-            self.max_workers = max_workers
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def submit(self, fn, *args, **kwargs):
-            return _Future(fn(*args, **kwargs))
-
-    monkeypatch.setattr(dba, "ThreadPoolExecutor", _Exec)
-    monkeypatch.setattr(dba, "as_completed", lambda futures: list(futures))
-
-    dba.annotate_bboxes_parallel(
-        bbox_gdf=bbox_gdf,
-        poly_gdf=poly,
-        cols=["man_made"],
-        line_gdf=line,
-        line_cols=["waterway"],
-        output_dir=str(tmp_path),
-        images_dir=str(tmp_path),
-        files=set(),
-    )
-
-
-def test_annotate_bboxes_parallel_requires_idx_and_img_idx_columns(tmp_path):
-    bbox_gdf = gpd.GeoDataFrame(
-        {"geometry": [box(0, 0, 100, 100)]},
-        geometry="geometry",
-        crs="EPSG:3857",
-    )
-    empty_poly = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:3857")
-    empty_line = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:3857")
-
+def test_annotate_tiles_requires_idx_and_img_idx_columns():
+    bbox_gdf = gpd.GeoDataFrame({"geometry": [box(0, 0, 100, 100)]}, geometry="geometry", crs="EPSG:3857")
     with pytest.raises(KeyError, match="required columns"):
-        dba.annotate_bboxes_parallel(
-            bbox_gdf=bbox_gdf,
-            poly_gdf=empty_poly,
-            cols=["man_made"],
-            line_gdf=empty_line,
-            line_cols=["waterway"],
-            output_dir=str(tmp_path),
-            images_dir=str(tmp_path),
-            files=set(),
-        )
+        dba.annotate_tiles(bbox_gdf, 1)
