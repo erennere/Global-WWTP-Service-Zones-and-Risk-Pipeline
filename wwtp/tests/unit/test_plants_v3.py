@@ -2,6 +2,8 @@
 
 import json
 import math
+import os
+import sys
 import zipfile
 
 import geopandas as gpd
@@ -211,7 +213,7 @@ def work_world(tmp_path):
     cfg["paths"].update(population_layer=str(tmp_path / "pop.gpkg"), corrected_all_filepath=str(tmp_path / "all_merged_v2.gpkg"),
                         eu_file=str(tmp_path / "eu.geojson"), national_plants_dir=str(tmp_path / "national"),
                         work_list=str(out / "work_list.gpkg"), removed_plants=str(out / "removed.csv"),
-                        eu_file_not_added=str(out / "not_added.csv"))  # fmt: skip
+                        eu_file_not_added=str(out / "not_added.csv"), new_plants=str(out / "new_plants.gpkg"))  # fmt: skip
     return cfg, p, eu
 
 
@@ -243,6 +245,25 @@ def test_work_list_takes_the_eu_file_as_truth(work_world):
     assert dict(zip(not_added["uwwCode"], not_added["reason"])) == {
         "DE2": within, "DE4": "code in all_merged_v2", "DE5": within}  # fmt: skip
     assert gpd.read_file(cfg["paths"]["work_list"])["idx"].tolist() == out["idx"].tolist()
+
+
+def test_the_new_plants_alone_in_one_file(work_world, monkeypatch):
+    """The plants all_merged_v2 lacks (national registers, corrected EU file) in one file, as the work list
+    has them (Eren, 19 Nov: one truth on the server); --new-plants-only writes it from the list as it is."""
+    cfg, _, _ = work_world
+    out, removed, not_added = wl.build(cfg)
+    wl.write(cfg, out, removed, not_added)
+    new = gpd.read_file(cfg["paths"]["new_plants"], layer="new_plants")
+    assert new["plant_id"].tolist() == ["AU_GA_1", "1004", "DE3", "EL1"] and new["idx"].tolist() == [21, 22, 23, 24]
+    assert "footprint_m2" not in new.columns  # empty for every new plant
+    assert {"origin", "ISO_2", "OLD_WASTE_ID", "eu_file_uwwCode"} <= set(new.columns)
+
+    os.remove(cfg["paths"]["new_plants"])
+    monkeypatch.setattr(wl, "load_config", lambda script_name: cfg)
+    monkeypatch.setattr(sys, "argv", ["work_list", "--new-plants-only"])
+    monkeypatch.setattr(wl, "build", lambda cfg: pytest.fail("--new-plants-only rebuilt the list"))
+    wl.main()
+    assert_geodataframe_equal(gpd.read_file(cfg["paths"]["new_plants"]), new)
 
 
 def reference_of(out):

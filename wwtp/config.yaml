@@ -1251,6 +1251,8 @@ work_list:
     work_list: '{data_dir}/heigit_sizes/plants_without_size_and_new_plants.gpkg'
     removed_plants: '{data_dir}/heigit_sizes/plants_removed_not_in_eu_file.csv'
     eu_file_not_added: '{data_dir}/heigit_sizes/eu_file_plants_not_added.csv'
+    # The new plants alone (national registers AU/CA/JP/NZ, corrected EU file): the plants all_merged_v2 lacks
+    new_plants: '{data_dir}/heigit_sizes/new_plants_national_and_eu_file.gpkg'
     # The list the new images were taken from (17 Nov 2026, in git): its plants stay as they were (idx, row
     # order, position; matched by plant_id); plants it lacks come after it
     reference_list: '{data_dir}/heigit_sizes/work_list_reference_2026-11-17.csv'

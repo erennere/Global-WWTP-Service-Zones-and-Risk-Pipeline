@@ -415,7 +415,7 @@ if "make_work_list" in ONCE:
     rule make_work_list:
         """Plants without a size, the national plants and the corrected EU file's plants that v2 lacks."""
         input: NATIONAL_PLANTS, WL["population_layer"], WL["corrected_all_filepath"], WL["eu_file"], WL["reference_list"]
-        output: WORK_LIST
+        output: WORK_LIST, WL["new_plants"]
         params: module="data_merge.work_list", cli=[]
         log: wf.log("work_list")
         threads: threads("work_list")

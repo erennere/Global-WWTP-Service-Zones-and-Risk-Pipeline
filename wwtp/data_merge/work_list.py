@@ -31,11 +31,15 @@ plant_id: first, in its row order, with its idx and its position (a plant the re
 from the reference (those columns; ``location_source`` reference_list). Plants the reference lacks come
 after it: plants without size keep their idx, new plants are numbered after the highest idx.
 
-Writes the list to ``paths.work_list`` (GeoPackage) and the two side lists next to it.
+Writes the list to ``paths.work_list`` (GeoPackage) and the two side lists next to it, and the new plants
+alone (the national and EU-file plants all_merged_v2 lacks, in the list's order and numbering, without the
+columns empty for all of them) to ``paths.new_plants``. ``--new-plants-only`` writes only that file, from
+the list as it is.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 
@@ -269,6 +273,22 @@ def keep_reference(out, ref, max_offset_m, new_group):
     return result
 
 
+def new_plants(out):
+    """The plants all_merged_v2 lacks (``origin`` new_plant_national, new_plant_eu_file) in the list's order,
+    with their idx, without the columns that are empty for all of them."""
+    new = out[out["origin"].isin(list(ID_COLUMNS))]
+    filled = [c for c in new.columns if c == "geometry" or new[c].replace("", np.nan).notna().any()]
+    return new[filled]
+
+
+def write_new_plants(cfg, out):
+    path = cfg["paths"]["new_plants"]
+    new = new_plants(out)
+    with atomic_output(path) as tmp:
+        new.to_file(tmp, driver="GPKG", layer="new_plants", engine="pyogrio")
+    logger.info("new plants: %d %s -> %s", len(new), new.groupby("origin")["ISO_2"].nunique().to_dict(), path)
+
+
 def write(cfg, out, removed, not_added):
     path = cfg["paths"]["work_list"]
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -277,10 +297,18 @@ def write(cfg, out, removed, not_added):
     for key, frame in (("removed_plants", removed), ("eu_file_not_added", not_added)):
         with atomic_output(cfg["paths"][key]) as tmp:
             frame.to_csv(tmp, index=False)
+    write_new_plants(cfg, out)
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Work list of plants that need a new image, and the new plants.")
+    parser.add_argument("--new-plants-only", action="store_true",
+                        help="only write paths.new_plants, from the work list as it is (nothing rebuilt)")  # fmt: skip
+    args = parser.parse_args()
     cfg = load_config(script_name="work_list")
+    if args.new_plants_only:
+        write_new_plants(cfg, gpd.read_file(cfg["paths"]["work_list"], engine="pyogrio"))
+        return
     out, removed, not_added = build(cfg)
     path = cfg["paths"]["reference_list"]
     ref = pd.read_csv(path, dtype={"plant_id": str, "origin": str})
