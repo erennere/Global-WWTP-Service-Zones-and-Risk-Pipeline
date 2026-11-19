@@ -17,7 +17,7 @@ import pandas as pd
 import rasterio
 from rasterio.transform import from_origin
 from PIL import Image, ImageDraw, ImageFont
-from pyproj import Transformer
+from pyproj import Geod, Transformer
 import logging
 
 from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
@@ -70,6 +70,7 @@ WEB_MERCATOR_TILE_SIZE = 256
 IMAGERY_REFERENCE_TILE_SIZE = 512
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+GEOD = Geod(ellps="WGS84")
 
 
 def get_image(idx, images_dir):
@@ -414,6 +415,81 @@ def _annotate_tile(task):
     return annotate_tile(*task)
 
 
+def check_tiles_on_images(tiles, images, osm_files, max_offset_m):
+    """Raise unless every image has its tile, centred on the image's point (within ``max_offset_m``), and
+    OSM output (lines, polygons or the empty marker). Tiles and images are joined by ``idx`` only: tiles
+    made from another numbering of the plants would put another place's OSM labels on every image.
+    ``tiles``: idx, geometry (EPSG:3857 squares around the plants, NEW_01); ``images``: idx, geometry."""
+    tiles = tiles.drop_duplicates("idx").set_index("idx")
+    no_tile = ~images["idx"].isin(tiles.index)
+    if no_tile.any():
+        raise ValueError(f"{int(no_tile.sum())} of {len(images)} images have no tile in the grid (e.g. idx "
+                         f"{images.loc[no_tile, 'idx'].head(5).tolist()}): rerun annotation_grids for this plant list")  # fmt: skip
+    centre = gpd.GeoSeries(tiles.geometry.reindex(images["idx"]).to_numpy(), crs=tiles.crs).centroid.to_crs(4326)
+    point = images.geometry.to_crs(4326)
+    offset = GEOD.inv(centre.x.to_numpy(), centre.y.to_numpy(), point.x.to_numpy(), point.y.to_numpy())[2]
+    off = offset > float(max_offset_m)
+    if off.any():
+        raise ValueError(f"{int(off.sum())} of {len(images)} tiles are farther than {max_offset_m:g} m from their "
+                         f"image (up to {offset.max():.0f} m, e.g. idx {images.loc[off, 'idx'].head(5).tolist()}): "
+                         "the tiles were made from another plant list; rerun annotation_grids")  # fmt: skip
+    no_osm = [int(i) for i in images["idx"]
+              if not any(f"idx_{int(i)}_{kind}" in osm_files for kind in ("lines.geojson", "polygons.geojson", "empty.txt"))]  # fmt: skip
+    if no_osm:
+        raise ValueError(f"{len(no_osm)} of {len(images)} tiles have no OSM files (e.g. idx {no_osm[:5]}): rerun "
+                         "annotation_grids")  # fmt: skip
+    return float(offset.max(initial=0))
+
+
+def osm_on_tile(idx, tile):
+    """``(idx, OSM features of the tile, how many of them touch it, error)``. Every feature osm_planet writes
+    for a tile is a way that crosses it or a member way of a relation that does, so at least one touches."""
+    t = _TILES
+    try:
+        n = touching = 0
+        for kind, columns in (("polygons", t["poly_cols"]), ("lines", t["line_cols"])):
+            features = read_tile_features(t["osm_dir"], [idx], kind, columns, t["osm_files"])
+            n += len(features)
+            touching += int(features.intersects(tile).sum())
+        return idx, n, touching, None
+    except Exception as e:
+        return idx, 0, 0, str(e)
+
+
+def _osm_on_tile(task):
+    return osm_on_tile(task[0], task[1])
+
+
+def run_tasks(func, tasks, workers):
+    """``func`` over ``tasks`` in ``workers`` processes (fork: they get _TILES and the configured module
+    settings without pickling them), results as they come."""
+    if workers > 1 and len(tasks) > 1:
+        with multiprocessing.get_context("fork").Pool(min(workers, len(tasks))) as pool:
+            yield from pool.imap_unordered(func, tasks)
+    else:
+        yield from map(func, tasks)
+
+
+def check_osm_on_tiles(tasks, workers):
+    """Raise unless the OSM features of every tile lie on it (a tile with features of which none touches
+    it holds another place's features). Returns (tiles with features, features)."""
+    outside, failed, with_features, features = [], [], 0, 0
+    for idx, n, touching, err in run_tasks(_osm_on_tile, tasks, workers):
+        if err:
+            failed.append((idx, err))
+        elif n:
+            with_features, features = with_features + 1, features + n
+            if not touching:
+                outside.append(idx)
+    if failed:
+        raise RuntimeError(f"the OSM files of {len(failed)} tiles could not be read; first: bbox {failed[0][0]}: "
+                           f"{failed[0][1]}")  # fmt: skip
+    if outside:
+        raise ValueError(f"{len(outside)} of {with_features} tiles with OSM features have none on the tile (e.g. idx "
+                         f"{sorted(outside)[:5]}): the OSM files belong to other tiles; rerun annotation_grids")  # fmt: skip
+    return with_features, features
+
+
 def annotate_tiles(bbox_gdf, workers, **shared):
     """Annotate the tiles of ``bbox_gdf`` (columns idx, img_idx, geometry) in ``workers`` processes.
 
@@ -428,26 +504,20 @@ def annotate_tiles(bbox_gdf, workers, **shared):
     if missing_cols:
         raise KeyError(f"bbox_gdf is missing required columns: {sorted(missing_cols)}")
     tasks = [(int(i), geom, int(img)) for i, geom, img in zip(bbox_gdf["idx"], bbox_gdf.geometry, bbox_gdf["img_idx"])]
-    logger.info("Queued %s bboxes for annotation in %s processes", len(tasks), workers)
     _TILES.clear()
     _TILES.update(shared)
+    with_features, features = check_osm_on_tiles(tasks, workers)
+    logger.info("OSM files match their tiles: %s of %s tiles have OSM features (%s), each with features on the "
+                "tile", with_features, len(tasks), features)  # fmt: skip
+    logger.info("Queued %s bboxes for annotation in %s processes", len(tasks), workers)
 
     errors = []
-
-    def collect(results):
-        for idx, n, err in results:
-            if err:
-                logger.error("bbox %s failed: %s", idx, err)
-                errors.append((idx, err))
-            else:
-                logger.info("bbox %s done (%s tags)", idx, n)
-
-    if workers > 1 and len(tasks) > 1:
-        # fork: the workers get _TILES and the configured module settings without pickling them
-        with multiprocessing.get_context("fork").Pool(min(workers, len(tasks))) as pool:
-            collect(pool.imap_unordered(_annotate_tile, tasks))
-    else:
-        collect(map(_annotate_tile, tasks))
+    for idx, n, err in run_tasks(_annotate_tile, tasks, workers):
+        if err:
+            logger.error("bbox %s failed: %s", idx, err)
+            errors.append((idx, err))
+        else:
+            logger.info("bbox %s done (%s tags)", idx, n)
 
     if errors:
         first_idx, first_err = errors[0]
@@ -530,12 +600,16 @@ if __name__ == "__main__":
     check_images_ref(points_gdf, plants, float(cfg["max_image_offset_m"]), points_path)
     check_image_size(images_dir, points_gdf["img_idx"], image_size_px)
 
+    geojson_files = set(os.listdir(geojson_file_dir))
+    bbox_gdf = bbox_gdf[bbox_gdf.geometry.notna() & bbox_gdf.geometry.is_valid & ~bbox_gdf.geometry.is_empty]
+    # Before drawing anything: every image has its tile, centred on it, and the tile's OSM files
+    tile_offset = check_tiles_on_images(bbox_gdf, points_gdf, geojson_files, float(cfg["max_image_offset_m"]))
+    logger.info("%s images at their plants; their tiles centred on them (up to %.2f m) with OSM files",
+                len(points_gdf), tile_offset)  # fmt: skip
     bbox_gdf = bbox_gdf.merge(points_gdf[["idx", "img_idx"]], on="idx", how="inner")
-    bbox_gdf = bbox_gdf[bbox_gdf.geometry.is_valid & ~bbox_gdf.geometry.is_empty]
     logger.info("Prepared %s valid bounding boxes", len(bbox_gdf))
     output_dir = cfg["paths"]["annotated_images_output_dir"]
     os.makedirs(output_dir, exist_ok=True)
-    geojson_files = set(os.listdir(geojson_file_dir))
 
     grids = bbox_gdf["idx"].unique().tolist()
     logger.info("Found %s total grids", len(grids))

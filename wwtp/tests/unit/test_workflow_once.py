@@ -52,6 +52,10 @@ def test_each_set_of_annotated_plants_has_its_own_stamps():
     assert points.endswith("plants_without_size_and_new_plants.gpkg")
     assert wf.annotation_grid().endswith("grids_plants_without_size_and_new_plants.gpkg")
     assert wf.annotation_stamp("osm_extract") == wf.stamp("osm_extract__plants_without_size_and_new_plants")
+    # one set of overlay stamps per image set: the new plants' images are drawn though the work list's are done
+    assert wf.overlay_stamp(3) == wf.stamp(
+        "bing_annotate_3__Images_z17_3072-Images_z17_512__plants_without_size_and_new_plants"
+    )
     assert (
         wf.annotation_images_ref()
         == wf.config("download_bing_annotate")["paths"]["annotations_images_dir"] + "/ref.geojson"

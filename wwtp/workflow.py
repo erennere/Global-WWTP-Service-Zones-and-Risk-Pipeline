@@ -272,6 +272,12 @@ def annotation_stamp(name):
     return stamp(f"{name}__{os.path.splitext(os.path.basename(annotation_points()))[0]}")
 
 
+def overlay_stamp(shard):
+    """Stamp of one text-overlay shard, per plant list and image set: another set of images is drawn anew."""
+    images = os.path.normpath(config("download_bing_annotate")["paths"]["annotations_images_dir"])
+    return annotation_stamp(f"bing_annotate_{shard}__{'-'.join(images.split(os.sep)[-2:])}")
+
+
 def annotation_images_ref():
     """``ref.geojson`` of the incoming images (idx of each plant, image ``<row>.png``): the text overlay
     starts only when it is there."""

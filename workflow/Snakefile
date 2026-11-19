@@ -196,7 +196,7 @@ if "wastewater_join" in ONCE:
 
 
 BING_SHARDS = wf.config("workflow")["bing_annotate_shards"]
-OVERLAY = expand(wf.annotation_stamp("bing_annotate_{shard}"), shard=range(BING_SHARDS))
+OVERLAY = expand(wf.overlay_stamp("{shard}"), shard=range(BING_SHARDS))
 if "download_bing_annotate" in ONCE:
     rule download_bing_annotate:
         """Text overlay: the tile's OSM labels drawn on its image, one job per share of the tiles.
@@ -205,7 +205,7 @@ if "download_bing_annotate" in ONCE:
         download_bing_annotate.paths.annotations_images_dir; only plants listed there are drawn.
         """
         input: GRIDS, OSM_EXTRACT, wf.annotation_images_ref(), wf.config("download_bing_annotate")["paths"]["images_ref_list"]
-        output: touch(wf.annotation_stamp("bing_annotate_{shard}"))
+        output: touch(wf.overlay_stamp("{shard}"))
         params:
             module="annotation_scripts.download_bing_annotate",
             cli=lambda w: [w.shard, "--num-instances", str(BING_SHARDS)],

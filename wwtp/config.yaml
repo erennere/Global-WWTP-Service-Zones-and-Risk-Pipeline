@@ -176,11 +176,15 @@ download_bing_annotate:
     annotations_temp_parquet_dir: '{data_dir}/annotations/new_plants/temp_parquets'
     # The images of the set: <row>.png per plant and ref.geojson with each plant's idx (row = image),
     # downloaded by Sukanya; the overlay goes next to them, as for the first global run.
-    annotations_images_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/Images_z17_512'
-    # ref.geojson's idx is the row (from 0) of the plant in the list the images were made from (the work
-    # list as Sukanya got it, 17 Nov 2026, in git); the plant's idx is that row's idx
-    images_ref_list: '{data_dir}/heigit_sizes/work_list_reference_2026-11-17.csv'
-    annotated_images_output_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/annotated/mm/Images_z17_512'
+    # 19 Nov 2026: the 5,384 new plants (national registers AU/CA/JP/NZ, corrected EU file). The work list's
+    # images of 17-18 Nov (17,519 plants) are in .../2026_global_extra/Images_z17_512 (plants_v3 uses them).
+    annotations_images_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/Images_z17_3072/Images_z17_512'
+    # ref.geojson's idx is the row (from 0) of the plant in the list the images were made from (the new
+    # plants as Sukanya got them, 19 Nov 2026 = work_list.paths.new_plants, in git); the plant's idx is that
+    # row's idx
+    images_ref_list: '{data_dir}/heigit_sizes/new_plants_reference_2026-11-19.csv'
+    # Apart from the overlay of the work list's images (.../annotated/mm/Images_z17_512)
+    annotated_images_output_dir: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/annotated/mm/Images_z17_3072/Images_z17_512'
 
 # Overpass endpoints compared on sample tiles (wwtp/annotation_scripts/overpass_benchmark.py; Snakemake
 # target overpass_benchmark): which of them, with how many workers, NEW_02 should use.
@@ -1282,7 +1286,8 @@ plants_v3:
     # The new images (512 x 512 px, zoom 17; Sukanya, 18 Nov 2026): ref.geojson (idx of the plant of image
     # <row>.png) and the segmentation results; the image-to-text path is the first run's layout (a guess).
     images_ref: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/Images_z17_512/ref.geojson'
-    images_ref_list: null              # download_bing_annotate's: what ref.geojson's idx counts rows of
+    # what images_ref's idx counts rows of: the work list as Sukanya got it (17 Nov 2026, in git)
+    images_ref_list: '{data_dir}/heigit_sizes/work_list_reference_2026-11-17.csv'
     segmentation_results: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/Images_z17_512/results/csv/segoutput.csv'
     image_text_results: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/annotated/mm/inference/output/inference/csv_files/chunk_1/i2t_res1.csv'
     output: '{data_dir}/all_annotated_v3.gpkg'
