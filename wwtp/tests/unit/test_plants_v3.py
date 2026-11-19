@@ -360,6 +360,7 @@ def v3_world(tmp_path):
             "location_shift_m": [100.0, 100_000.0, None, None, None],
             "WASTE_ID": [2.0, 3.0, 4.0, None, None],
             "OLD_WASTE_ID": ["2", "3", "4", "NZ_OSM_1", None],
+            "plant_id": ["s2", "s3", "s4", "NZ_OSM_1", "CH9"],
             "WWTP_NAME": ["plant 2", "plant 3", "plant 4", "national", None],
             "uwwCode": ["CH2", "FR3", None, None, "CH9"],
             "uwwName": ["two", "three", None, None, "nine"],
@@ -373,16 +374,22 @@ def v3_world(tmp_path):
     gpd.GeoDataFrame({"uwwCode": ["CH2"], "uwwName": ["two"], "lat": [0.0], "lon": [0.0]}, geometry=[moved_to],
                      crs=4326).to_file(tmp_path / "eu.geojson", driver="GeoJSON")  # fmt: skip
 
-    ref_idx = [11, 2, 3, 10]  # image <row>.png shows the plant ref_idx[row]
     images = tmp_path / "images"
     images.mkdir()
-    imaged = list(work["idx"])[::-1]  # the list the images were made from; ref.geojson counts its rows
-    pd.DataFrame({"idx": imaged}).to_csv(tmp_path / "imaged_list.csv", index=False)
-    gpd.GeoDataFrame({"idx": [imaged.index(i) for i in ref_idx]}, geometry=list(work.set_index("idx").geometry[ref_idx]),
-                     crs=4326).to_file(images / "ref.geojson", driver="GeoJSON")  # fmt: skip
-    pd.DataFrame({"img_name": ["1.png", "2.png", "0.png"], "num_detection_circle": [1, 1, 2],
+    # the list the images were made from (rows: 11, 10, 4, 3, 2); ref.geojson's idx is the row, its features
+    # in another order (as Sukanya's, west to east); <n>.png is the feature whose idx is n
+    imaged = list(work["idx"])[::-1]
+    pd.DataFrame({"idx": imaged, "plant_id": list(work["plant_id"])[::-1]}).to_csv(tmp_path / "imaged_list.csv",
+                                                                                   index=False)  # fmt: skip
+    ref_plants = [11, 2, 3, 10]
+    gpd.GeoDataFrame({"idx": [imaged.index(i) for i in ref_plants]},
+                     geometry=list(work.set_index("idx").geometry[ref_plants]), crs=4326).to_file(
+        images / "ref.geojson", driver="GeoJSON")  # fmt: skip
+    # plant 2 is list row 4, plant 3 row 3, plant 11 row 0
+    pd.DataFrame({"img_name": ["4.png", "3.png", "0.png"], "num_detection_circle": [1, 1, 2],
                   "diameters": ["[20]", "[10]", "[10 10]"], "num_detection_rect": [0, 0, 0],
                   "wwtp_area_rect": ["[0]"] * 3, "other": [1, 2, 3]}).to_csv(tmp_path / "seg.csv", index=False)  # fmt: skip
+    pd.DataFrame({"idx": [10, 11]}).to_csv(tmp_path / "new_plants.csv", index=False)
     text = "Analysis: a\n\nDecision: {}. {}\nJustification: j"
     pd.DataFrame({"image": ["bbox_2.png", "bbox_11.png", "bbox_99.png"],
                   "gen_text": [text.format(3, "Industrial"), text.format(2, "Residential"), text.format(1, "x")]}
@@ -393,16 +400,17 @@ def v3_world(tmp_path):
                         removed_plants=str(tmp_path / "removed.csv"), eu_file=str(tmp_path / "eu.geojson"),
                         images_ref=str(images / "ref.geojson"), images_ref_list=str(tmp_path / "imaged_list.csv"),
                         segmentation_results=str(tmp_path / "seg.csv"),
-                        image_text_results=str(tmp_path / "i2t.csv"), output=str(tmp_path / "all_annotated_v3.gpkg"),
-                        summary=str(tmp_path / "summary.csv"))  # fmt: skip
+                        image_text_results=str(tmp_path / "i2t.csv"), image_text_list=str(tmp_path / "new_plants.csv"),
+                        output=str(tmp_path / "all_annotated_v3.gpkg"), summary=str(tmp_path / "summary.csv"),
+                        unused_image_results=str(tmp_path / "unused.csv"))  # fmt: skip
     cfg["with_image_text"] = True
     return cfg, v2, moved_to, far, national, eu_new
 
 
 def test_plants_v3_applies_the_work_list_and_the_new_images(v3_world):
     cfg, v2, moved_to, far, national, eu_new = v3_world
-    plants, counts = p3.build(cfg)
-    p3.write(cfg, plants, counts)
+    plants, counts, unused = p3.build(cfg)
+    p3.write(cfg, plants, counts, unused)
 
     assert plants["idx"].tolist() == list(range(len(plants)))
     # 0 (no location) and 1 (removed) out; 6 and the national plant one; the split file plant added
@@ -413,7 +421,7 @@ def test_plants_v3_applies_the_work_list_and_the_new_images(v3_world):
     assert by[2]["geometry_v2"] == v2[2].wkt
     assert by[2]["size_source"] == "new_image" and by[2]["diameters"] == "[20]"
     assert by[2]["round_area"] == pytest.approx(math.pi * 100)
-    assert by[2]["category_name"] == "Industrial"
+    assert by[2]["category_name"] == "old"  # an old plant: its v2 category (image-to-text only for new plants)
 
     # plant 3 carried another plant's code: it stays, without the code; the file plant is added
     assert by[3].geometry.equals(v2[3]) and pd.isna(by[3]["uwwCode"]) and by[3]["size_source"] == "v2_image"
@@ -442,13 +450,35 @@ def test_plants_v3_without_image_text_keeps_the_v2_categories(v3_world):
     assert by[11]["diameters"] == "[10 10]" and pd.isna(by[11]["category_name"])
 
 
-def test_plants_v3_stops_when_the_images_belong_to_another_work_list(v3_world):
+def test_segmentation_results_go_only_to_the_plant_their_image_shows(v3_world):
+    """<n>.png is the ref.geojson feature whose idx is n, not the n-th feature. A result whose image is not
+    verified to show the plant (other plant_id at that idx, image away from the plant, unknown image) is set
+    apart with its reason, never given to a plant; nothing stops."""
     cfg = v3_world[0]
+    by_place = p3.build(cfg)[0].set_index("idx_v2")
+    assert by_place.loc[2, "diameters"] == "[20]" and by_place.loc[3, "size_source"] == "v2_image"
+
+    seg = pd.read_csv(cfg["paths"]["segmentation_results"])
+    seg.loc[3] = ["9.png", 5, "[99]", 0, "[0]", 4]  # no feature with idx 9
+    seg.to_csv(cfg["paths"]["segmentation_results"], index=False)
+    listing = pd.read_csv(cfg["paths"]["images_ref_list"])
+    listing.loc[0, "plant_id"] = "someone else"  # row 0 (plant 11): the work list has another plant there
+    listing.to_csv(cfg["paths"]["images_ref_list"], index=False)
     ref = gpd.read_file(cfg["paths"]["images_ref"])
-    ref.loc[1, "geometry"] = offset(ref.geometry[1].x, ref.geometry[1].y, east_m=50)
+    ref.loc[1, "geometry"] = offset(ref.geometry[1].x, ref.geometry[1].y, east_m=50)  # plant 2's image, 50 m off
     ref.to_file(cfg["paths"]["images_ref"], driver="GeoJSON")
-    with pytest.raises(ValueError, match="1 of 4 images are farther than 10 m from their plant"):
-        p3.build(cfg)
+
+    plants, counts, unused = p3.build(cfg)
+    by = plants.set_index("idx_v2")
+    assert by.loc[2, "size_source"] == "v2_image" and by.loc[11, "size_source"] == "none"
+    assert dict(zip(unused["img_name"], unused["reason"])) == {
+        "4.png": "image farther than 10 m from the plant", "0.png": "the work list has another plant at this idx",
+        "9.png": "no ref.geojson feature for this image"}  # fmt: skip
+    assert counts["segmentation results set apart (image not verified to show the plant)"] == 3
+
+    cfg["image_names"] = "ref_row"  # <n>.png the n-th feature: 3.png is beyond the 4 features ... 0.png plant 11
+    rows = p3.image_results(cfg, gpd.read_file(cfg["paths"]["work_list"]))[1]
+    assert "no ref.geojson feature for this image" in set(rows["reason"])
 
 
 def test_same_sites_use_geodesic_metres():

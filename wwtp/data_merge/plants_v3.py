@@ -11,12 +11,13 @@ Steps, from ``base_filepath`` (all_annotated_v2):
    where it is, without the EU file's columns, and the file plant becomes a plant of its own.
 4. The new plants of the work list (national, corrected EU file) are added.
 5. The results of the new images replace the tank detections (``detection_columns``, from the
-   segmentation CSV) and the site category (``category_columns``, from the image-to-text CSV, when
-   ``with_image_text``) of the work-list plants that have them. Segmentation names an image ``<row>.png``,
-   a row of the images' ``ref.geojson`` (whose ``idx`` is the plant's row in ``images_ref_list``, the list the
-   images were made from: images_ref.plant_idx_of_rows gives the work-list idx); image-to-text names it
-   ``bbox_<idx>.png``. A work-list plant without a result keeps its v2 values (``size_source`` v2_image,
-   or none). Without ``with_image_text`` every plant keeps its v2 category (new plants have none).
+   segmentation CSV) of the work-list plants that have them, and the site category (``category_columns``,
+   from the image-to-text CSV, when ``with_image_text``) of the new plants (``image_text_list``). Segmentation
+   names an image ``<n>.png``: the ref.geojson feature whose idx is n, that idx the plant's row in
+   ``images_ref_list`` (the list the images were made from). A result is used only when the work list has
+   that plant (same idx and plant_id) within ``max_image_offset_m`` of the image; the others are written to
+   ``unused_image_results`` with the reason. Image-to-text names an image ``bbox_<idx>.png``. A plant without
+   a result keeps its v2 values (``size_source`` v2_image, or none); old plants keep their v2 category.
 6. Plants closer than ``same_site_distance_m`` are one plant: the location of the member whose
    ``location_source`` comes first in ``location_priority``, and per column the first value in that order;
    the largest POP_SERVED; ``idx_v2`` and ``origin`` of the member with the lowest idx_v2 (a v2 plant).
@@ -27,7 +28,7 @@ Added columns: ``origin`` (v2, new_plant_national, new_plant_eu_file), ``locatio
 corrected_eu_file, national_plants), ``size_source`` (v2_image, new_image, none), ``new_image`` (the
 image of the new results), ``location_shift_m``, ``geometry_v2`` (WKT), ``idx_v2``, ``same_site_plants``
 (how many plants step 6 merged into this one).
-Writes ``paths.output`` and ``paths.summary`` (counts per step).
+Writes ``paths.output``, ``paths.summary`` (counts per step) and ``paths.unused_image_results``.
 """
 
 from __future__ import annotations
@@ -41,7 +42,6 @@ import pyogrio
 from pyproj import Geod
 from scipy.spatial import cKDTree
 
-from ..annotation_scripts.images_ref import check_images_ref, plant_idx_of_rows
 from ..annotation_scripts.merge_annotations import decode_gen_text, parse_idx_from_image_name
 from ..geo_utils import UnionFind, parse_diameters_to_round_area
 from ..starter import load_config
@@ -67,16 +67,57 @@ def metres(a, b):
 
 
 def image_results(cfg, work):
-    """Detections and categories of the new images, by work-list idx."""
+    """Detections and categories of the new images, by work-list idx, and the segmentation rows not used.
+
+    A segmentation row is used only when its image shows the plant it is given to: ``<n>.png`` is the
+    ref.geojson feature whose idx is n (``image_names`` ref_idx; ref_row: the n-th feature), that idx is a row
+    of ``images_ref_list`` (the list the images were made from: plant idx and plant_id), and the work list has
+    that idx with the same plant_id, within ``max_image_offset_m`` of the image's point. Any other row is set
+    apart with its reason, never given to a plant. Site categories (image-to-text, ``bbox_<idx>.png``) are taken
+    only for the plants of ``image_text_list`` (the new plants; the others keep their v2 category).
+    """
     paths = cfg["paths"]
-    ref = plant_idx_of_rows(gpd.read_file(paths["images_ref"]).to_crs(4326), paths["images_ref_list"])
-    check_images_ref(ref, work, float(cfg["max_image_offset_m"]), paths["images_ref"])
+    listing = pd.read_csv(paths["images_ref_list"], dtype={"plant_id": str})
+    ref = gpd.read_file(paths["images_ref"]).to_crs(4326)
+    ref_list_row = ref["idx"].astype(int).to_numpy()
 
     seg = pd.read_csv(paths["segmentation_results"])
-    row = pd.to_numeric(seg["img_name"].astype(str).str.split(".").str[0], errors="coerce")
-    if row.isna().any() or not row.isin(ref.index).all():
-        raise ValueError(f"{paths['segmentation_results']}: img_name must be <row>.png of a row of ref.geojson")
-    seg["idx"] = ref["idx"].to_numpy()[row.astype(int).to_numpy()]
+    n = pd.to_numeric(seg["img_name"].astype(str).str.split(".").str[0], errors="coerce")
+    if cfg["image_names"] == "ref_idx":
+        feature = pd.Series(np.arange(len(ref)), index=ref_list_row).reindex(n.to_numpy()).to_numpy()
+    else:
+        feature = n.where(n.between(0, len(ref) - 1)).to_numpy()
+    reason = pd.Series(None, index=seg.index, dtype=object)
+    reason[np.isnan(feature)] = "no ref.geojson feature for this image"
+    has = ~np.isnan(feature)
+    list_row = np.full(len(seg), -1)
+    list_row[has] = ref_list_row[feature[has].astype(int)]
+    in_list = has & (list_row >= 0) & (list_row < len(listing))
+    reason[has & ~in_list] = "ref.geojson idx outside images_ref_list"
+    seg["idx"] = pd.array([pd.NA] * len(seg), dtype="Int64")
+    seg.loc[in_list, "idx"] = listing["idx"].to_numpy()[list_row[in_list]]
+    seg["plant_id"] = None
+    seg.loc[in_list, "plant_id"] = listing["plant_id"].to_numpy()[list_row[in_list]]
+
+    plants = work.drop_duplicates("idx").set_index("idx")
+    known = in_list & seg["idx"].isin(plants.index).to_numpy()
+    reason[in_list & ~known] = "plant not in the work list"
+    same_id = known.copy()
+    same_id[known] = (plants["plant_id"].astype(str).reindex(seg.loc[known, "idx"]).to_numpy()
+                      == seg.loc[known, "plant_id"].astype(str).to_numpy())  # fmt: skip
+    reason[known & ~same_id] = "the work list has another plant at this idx"
+    near = same_id.copy()
+    if same_id.any():
+        at = plants.geometry.reindex(seg.loc[same_id, "idx"]).to_numpy()
+        pt = ref.geometry.to_numpy()[feature[same_id].astype(int)]
+        xy = np.array([[a.x, a.y, b.x, b.y] for a, b in zip(at, pt)], dtype=float).reshape(-1, 4)
+        dist = GEOD.inv(xy[:, 0], xy[:, 1], xy[:, 2], xy[:, 3])[2]
+        near[same_id] = dist <= float(cfg["max_image_offset_m"])
+    reason[same_id & ~near] = f"image farther than {cfg['max_image_offset_m']:g} m from the plant"
+    seg["reason"] = reason
+    unused = seg[~near].copy()
+    seg = seg[near].copy()
+    seg["idx"] = seg["idx"].astype(int)
     seg["new_image"] = seg["img_name"].astype(str)
     seg = seg[["idx", "new_image", *cfg["detection_columns"]]].drop_duplicates("idx")
 
@@ -84,14 +125,16 @@ def image_results(cfg, work):
     if cfg["with_image_text"]:
         text = pd.read_csv(paths["image_text_results"])
         text["idx"] = text["image"].apply(parse_idx_from_image_name)
-        text = text[text["idx"].notna() & text["idx"].isin(ref["idx"])].astype({"idx": int})
+        new_plants = pd.read_csv(paths["image_text_list"], usecols=["idx"])["idx"].astype(int)
+        text = text[text["idx"].notna() & text["idx"].isin(new_plants)].astype({"idx": int})
         text[cats] = pd.DataFrame([decode_gen_text(t) for t in text["gen_text"]], index=text.index, columns=cats)
         text = text[["idx", *cats]].drop_duplicates("idx")
     else:  # the image-to-text results do not exist yet
         text = pd.DataFrame({"idx": pd.Series(dtype=int), **{c: pd.Series(dtype=object) for c in cats}})
     results = seg.merge(text, on="idx", how="outer")
-    logger.info("new images: %d with segmentation results, %d with a site category", len(seg), len(text))
-    return results
+    logger.info("new images: %d segmentation results used, %d set apart %s; %d with a site category", len(seg),
+                len(unused), unused["reason"].value_counts().to_dict(), len(text))  # fmt: skip
+    return results, unused
 
 
 def update_sizes(df, results, cfg):
@@ -218,8 +261,10 @@ def build(cfg):
 
     plants = pd.concat([base.reset_index(drop=True), new], ignore_index=True)
     plants = gpd.GeoDataFrame(plants, geometry="geometry", crs=4326)
-    plants = update_sizes(plants, image_results(cfg, work), cfg)
+    results, unused = image_results(cfg, work)
+    plants = update_sizes(plants, results, cfg)
     counts["plants with a new image (segmentation results)"] = int((plants["size_source"] == "new_image").sum())
+    counts["segmentation results set apart (image not verified to show the plant)"] = len(unused)
 
     plants, n_groups, n_rows = merge_same_sites(plants.reset_index(drop=True), cfg)
     counts[f"same-site groups merged (closer than {cfg['same_site_distance_m']:g} m)"] = n_groups
@@ -229,21 +274,23 @@ def build(cfg):
     plants["idx"], plants["idx_v2"] = np.arange(len(plants)), plants["idx_v2"].astype("Int64")
     plants = plants[[*columns, *[c for c in ADDED if c not in columns], "geometry"]]
     counts["v3 plants"] = len(plants)
-    return gpd.GeoDataFrame(plants, geometry="geometry", crs=4326), counts
+    return gpd.GeoDataFrame(plants, geometry="geometry", crs=4326), counts, unused
 
 
-def write(cfg, plants, counts):
+def write(cfg, plants, counts, unused):
     with atomic_output(cfg["paths"]["output"]) as tmp:
         plants.to_file(tmp, driver="GPKG", engine="pyogrio")
     table = pd.DataFrame({"step": list(counts), "plants": list(counts.values())})
     with atomic_output(cfg["paths"]["summary"]) as tmp:
         table.to_csv(tmp, index=False)
+    with atomic_output(cfg["paths"]["unused_image_results"]) as tmp:
+        unused.to_csv(tmp, index=False)
 
 
 def main():
     cfg = load_config(script_name="plants_v3")
-    plants, counts = build(cfg)
-    write(cfg, plants, counts)
+    plants, counts, unused = build(cfg)
+    write(cfg, plants, counts, unused)
     for step, n in counts.items():
         logger.info("%s: %s", step, n)
 
