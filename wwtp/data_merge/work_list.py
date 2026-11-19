@@ -285,7 +285,7 @@ def write_new_plants(cfg, out):
     path = cfg["paths"]["new_plants"]
     new = new_plants(out)
     with atomic_output(path) as tmp:
-        new.to_file(tmp, driver="GPKG", layer="new_plants", engine="pyogrio")
+        new.to_file(tmp, driver="GPKG", layer=os.path.splitext(os.path.basename(path))[0], engine="pyogrio")
     logger.info("new plants: %d %s -> %s", len(new), new.groupby("origin")["ISO_2"].nunique().to_dict(), path)
 
 

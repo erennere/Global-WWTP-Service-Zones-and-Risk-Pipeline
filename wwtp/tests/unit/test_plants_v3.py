@@ -9,6 +9,7 @@ import zipfile
 import geopandas as gpd
 from geopandas.testing import assert_geodataframe_equal
 import pandas as pd
+import pyogrio
 import pytest
 from shapely.geometry import Point, box
 
@@ -253,7 +254,8 @@ def test_the_new_plants_alone_in_one_file(work_world, monkeypatch):
     cfg, _, _ = work_world
     out, removed, not_added = wl.build(cfg)
     wl.write(cfg, out, removed, not_added)
-    new = gpd.read_file(cfg["paths"]["new_plants"], layer="new_plants")
+    assert pyogrio.list_layers(cfg["paths"]["new_plants"])[:, 0].tolist() == ["new_plants"]  # one table, as the file
+    new = gpd.read_file(cfg["paths"]["new_plants"])
     assert new["plant_id"].tolist() == ["AU_GA_1", "1004", "DE3", "EL1"] and new["idx"].tolist() == [21, 22, 23, 24]
     assert "footprint_m2" not in new.columns  # empty for every new plant
     assert {"origin", "ISO_2", "OLD_WASTE_ID", "eu_file_uwwCode"} <= set(new.columns)
