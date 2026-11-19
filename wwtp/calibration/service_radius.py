@@ -330,6 +330,7 @@ def main():
         **to_people,
         "country_offsets": cfg["footprint_to_people"]["country_offsets"],
         "unsized_people_by_country": cfg["footprint_to_people"]["unsized_people_by_country"],
+        "no_image_people_by_country": cfg["footprint_to_people"]["no_image_people_by_country"],
     }
     for measure in ("reported", "footprint"):
         size = plant_size_people(

@@ -481,6 +481,44 @@ def test_segmentation_results_go_only_to_the_plant_their_image_shows(v3_world):
     assert "no ref.geojson feature for this image" in set(rows["reason"])
 
 
+def test_plants_the_images_were_not_made_for_are_marked_no_image(v3_world):
+    """A work-list plant added after the images were taken (the 230 Japanese plants of 18 Nov) has no
+    result: size_source no_image, so that its size is its country's median."""
+    cfg = v3_world[0]
+    work = gpd.read_file(cfg["paths"]["work_list"])
+    late = work[work["idx"] == 10].assign(idx=12, plant_id="JP_P22_late", OLD_WASTE_ID="JP_P22_late", ISO_2="JP")
+    late["geometry"] = [offset(140.0, 43.0)]
+    gpd.GeoDataFrame(pd.concat([work, late], ignore_index=True), crs=4326).to_file(cfg["paths"]["work_list"])
+    plants, counts, _ = p3.build(cfg)
+    by = plants.set_index("idx_v2")
+    assert by.loc[12, "size_source"] == "no_image" and by.loc[11, "size_source"] == "new_image"
+    assert by.loc[4, "size_source"] == "v2_image"  # imaged, no new result: keeps its v2 values
+    assert counts["plants never imaged (size_source no_image)"] == 1
+
+
+def test_the_check_before_the_run_builds_v3_in_memory_and_writes_nothing(v3_world, monkeypatch, capsys):
+    from wwtp.data_merge import v3_check
+
+    cfg = v3_world[0]
+    real = v3_check.load_config
+    monkeypatch.setattr(
+        v3_check,
+        "load_config",
+        lambda script_name: cfg if script_name == "plants_v3" else real(script_name=script_name),
+    )
+    v3_check._problems.clear()
+    v3_check.v3()
+    out = capsys.readouterr().out
+    assert not v3_check._problems and "linked to the plant their image shows: 3 of 3" in out and "v3 plants: 7" in out
+    assert not os.path.exists(cfg["paths"]["output"])  # nothing written
+
+    seg = pd.read_csv(cfg["paths"]["segmentation_results"])
+    seg.loc[0, "img_name"] = "9.png"
+    seg.to_csv(cfg["paths"]["segmentation_results"], index=False)
+    v3_check.v3()
+    assert any("set apart" in p for p in v3_check._problems)
+
+
 def test_same_sites_use_geodesic_metres():
     pts = gpd.GeoSeries([Point(0, 60), Point(0.0089, 60), Point(0.0091, 60)], crs=4326)  # 496 m, 508 m east
     assert p3.metres(pts.iloc[[0, 0]], pts.iloc[[1, 2]]) == pytest.approx([496.6, 507.8], abs=0.5)

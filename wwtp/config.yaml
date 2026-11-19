@@ -407,6 +407,12 @@ create_voronoi:
       'TN': 6682, 'TR': 6374, 'TW': 5657, 'UA': 7279, 'US': 1182, 'UZ': 9596, 'VN': 11091, 'ZA': 2286,
       'ZW': 2943
     }
+    # Plants never imaged (plants_v3 size_source no_image: the 230 Japanese plants of prefectures 01 and 02,
+    # added after the images were taken) take their country's median instead of the value above (Eren,
+    # 19 Nov 2026). JP: median reported treated population of Japan's register plants (MLIT P22, FY2012;
+    # 2,093 plants of the work list). Under size_measure reported a plant's own reported size still comes
+    # first (229 of the 230 have one).
+    no_image_people_by_country: {'JP': 4684}
   # Factor on every plant size of a country (reported or estimated), per size_measure:
   #   k = connected people (connected_share x people of the 2022 raster) / sum of its plant sizes,
   #   kept within 0.1 and 10; countries without an entry: 1.

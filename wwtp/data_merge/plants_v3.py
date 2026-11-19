@@ -25,7 +25,8 @@ Steps, from ``base_filepath`` (all_annotated_v2):
    work-list number, which follows v2's).
 
 Added columns: ``origin`` (v2, new_plant_national, new_plant_eu_file), ``location_source`` (v2,
-corrected_eu_file, national_plants), ``size_source`` (v2_image, new_image, none), ``new_image`` (the
+corrected_eu_file, national_plants), ``size_source`` (v2_image, new_image, none, no_image: a work-list plant
+the images were not made for), ``new_image`` (the
 image of the new results), ``location_shift_m``, ``geometry_v2`` (WKT), ``idx_v2``, ``same_site_plants``
 (how many plants step 6 merged into this one).
 Writes ``paths.output``, ``paths.summary`` (counts per step) and ``paths.unused_image_results``.
@@ -44,6 +45,7 @@ from scipy.spatial import cKDTree
 
 from ..annotation_scripts.merge_annotations import decode_gen_text, parse_idx_from_image_name
 from ..geo_utils import UnionFind, parse_diameters_to_round_area
+from ..service_areas.size import NO_IMAGE
 from ..starter import load_config
 from ..utils import atomic_output, configure_logging
 from .work_list import file_countries
@@ -264,6 +266,12 @@ def build(cfg):
     results, unused = image_results(cfg, work)
     plants = update_sizes(plants, results, cfg)
     counts["plants with a new image (segmentation results)"] = int((plants["size_source"] == "new_image").sum())
+    # work-list plants the images were not made for (added after them): size_source no_image, so that the
+    # plant size takes their country's median, not the low value of plants seen without tanks
+    imaged = pd.read_csv(paths["images_ref_list"], usecols=["idx"])["idx"].astype(int)
+    never = (plants["size_source"] == "none") & plants["wl_idx"].notna() & ~plants["wl_idx"].isin(imaged)
+    plants.loc[never, "size_source"] = NO_IMAGE
+    counts["plants never imaged (size_source no_image)"] = int(never.sum())
     counts["segmentation results set apart (image not verified to show the plant)"] = len(unused)
 
     plants, n_groups, n_rows = merge_same_sites(plants.reset_index(drop=True), cfg)

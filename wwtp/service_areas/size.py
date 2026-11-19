@@ -86,6 +86,8 @@ LAGOON_COLUMN = "lagoon_detected"
 
 
 SIZE_MEASURES = ("reported", "footprint")
+# plants_v3: the source of a plant's detections; NO_IMAGE for plants that were never imaged
+SIZE_SOURCE_COLUMN, NO_IMAGE = "size_source", "no_image"
 
 
 _WARNED_MISSING_SIZE_COLUMNS = set()  # warn once per process, not once per basin group
@@ -177,7 +179,8 @@ def plant_size_people(
         plant's country in ``country_offsets`` (0 for other countries).
         ``unsized_people`` for lagoon plants and plants without detections, whose
         footprint says nothing about their size; ``unsized_people_by_country``
-        replaces it in the countries it lists.
+        replaces it in the countries it lists; ``no_image_people_by_country`` for
+        plants never imaged (``size_source`` no_image) in the countries it lists.
     reported_size_columns, reported_size_skip
         Passed to ``reported_size_people`` (used with ``reported`` only).
     country_column : str
@@ -203,6 +206,12 @@ def plant_size_people(
         .fillna(float(footprint_to_people["unsized_people"]))
         .to_numpy(dtype=float)
     )
+    # Plants never imaged (plants_v3 size_source no_image: no tanks seen, nothing said about their size)
+    # take their country's median from no_image_people_by_country, not the low value of plants seen without tanks
+    if SIZE_SOURCE_COLUMN in df.columns:
+        no_image = (df[SIZE_SOURCE_COLUMN].astype(str) == NO_IMAGE).to_numpy()
+        median = country.map(footprint_to_people["no_image_people_by_country"]).to_numpy(dtype=float)
+        unsized = np.where(no_image & np.isfinite(median), median, unsized)
     people = np.where(
         sized,
         np.power(

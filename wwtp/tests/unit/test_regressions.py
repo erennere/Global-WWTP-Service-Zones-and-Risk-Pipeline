@@ -285,6 +285,23 @@ def test_plant_size_has_country_offsets_unsized_values_and_a_national_scale():
     assert doubled / radius == pytest.approx([2**0.35, 1, 2**0.35, 1, 2**0.35, 1])
 
 
+def test_plants_never_imaged_take_their_country_median():
+    """Plants the images were not made for (plants_v3 size_source no_image) take their country's median,
+    not the low value of plants seen without tanks; a reported size still comes first (Eren, 19 Nov)."""
+    plants = _plants([0, 1, 2, 3], 10_000, POP_SERVED=[None, None, 7_000, None])
+    plants["ISO_2"] = ["JP", "JP", "JP", "AA"]
+    plants["footprint_m2"] = [0, 0, 0, 0]
+    plants["size_source"] = ["none", "no_image", "no_image", "no_image"]
+    to_people = {**FOOTPRINT_TO_PEOPLE, "unsized_people_by_country": {"JP": 900.0},
+                 "no_image_people_by_country": {"JP": 4684.0}}  # fmt: skip
+    people = sa.plant_size_people(plants, **{**RADIUS_KW, "footprint_to_people": to_people})
+    assert people == pytest.approx([900, 4684, 7_000, 2014])  # AA has no median: the general value
+    footprint = sa.plant_size_people(
+        plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_measure": "footprint"}
+    )
+    assert footprint == pytest.approx([900, 4684, 4684, 2014])
+
+
 def test_radius_never_exceeds_max_buffer():
     assert sa.calculate_buffer(_plants([0], 1e9), None, **RADIUS_KW)[0] == 50000
 

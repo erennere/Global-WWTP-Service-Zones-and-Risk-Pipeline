@@ -87,13 +87,15 @@ class Workers(Strict):
 
 class FootprintToPeople(Strict):
     """people = 10 ** (intercept + country offset + slope * log10(footprint m2)); unsized plants get
-    unsized_people, or their country's value in unsized_people_by_country (ISO 3166 alpha-2 keys)."""
+    unsized_people, or their country's value in unsized_people_by_country (ISO 3166 alpha-2 keys); plants
+    never imaged their country's value in no_image_people_by_country."""
 
     intercept: float
     slope: PositiveFloat
     unsized_people: PositiveFloat
     country_offsets: dict[str, float]
     unsized_people_by_country: dict[str, PositiveFloat]
+    no_image_people_by_country: dict[str, PositiveFloat]
 
 
 class RadiusByConnection(Strict):
