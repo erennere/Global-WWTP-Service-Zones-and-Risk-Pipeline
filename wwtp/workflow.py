@@ -136,6 +136,11 @@ def size_measure_variants():
     ]
 
 
+def release_variant():
+    """The variant ``release_export`` exports: the configured one with the run parameters set in that section."""
+    return Variant.from_section(config("release_export"))
+
+
 def sweep_variants(weight_funcs=None):
     """The sensitivity grid of the ``sweep`` section.
 

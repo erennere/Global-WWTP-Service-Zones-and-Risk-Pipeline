@@ -22,6 +22,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
         sweep_layers                  only the service areas + population of the grid
     snakemake size_measure_layers   the configured variant's population layers with the other size
                                 measures of workflow.size_measure_layers (footprint, combined)
+    snakemake release_export    a population layer in the release format of HeiGIT_WWTP_LVL9_BFK0_8_LOG_MULT.gpkg
+                                (data/release/; which variant: section release_export, e.g. its size_measure)
     snakemake national_data     downloads the validation references and national plant registers (on
                                 the login node) and describes them, with every register plant's distance
                                 to ours (data/validation_data/national_data/register_plants.gpkg, results.zip)
@@ -77,7 +79,8 @@ PY = sys.executable
 DEFAULT = wf.default_variant()
 SWEEP = wf.sweep_variants()
 SIZE_LAYERS = wf.size_measure_variants()  # the configured variant with other size measures
-VARIANTS = list({v.tag: v for v in [DEFAULT, *SWEEP, *SIZE_LAYERS]}.values())  # the configured run is usually in the grid too
+RELEASE = wf.release_variant()  # the variant release_export exports
+VARIANTS = list({v.tag: v for v in [DEFAULT, *SWEEP, *SIZE_LAYERS, RELEASE]}.values())  # the configured run is usually in the grid too
 ONCE = wf.one_time_rules(config)  # one-time rules this run includes (default: none)
 
 
@@ -112,6 +115,7 @@ TARGETS = {
     "sweep": "whole sweep grid: service areas + population, validation and the recommended candidate",
     "sweep_layers": "only the service areas + population of the sweep grid",
     "size_measure_layers": "the configured variant's population layers with the size measures of workflow.size_measure_layers",
+    "release_export": "a population layer in the release format (HeiGIT_WWTP_...gpkg; variant: section release_export)",
     "national_data": "reference data downloaded (login node), national registers described",
     "work_list": "national plants + plants that need a new image: `snakemake work_list --config run_once=work_list`",
     "plants_v3": "plant list v3 from v2, the work list and the new images: `... plants_v3 --config run_once=plants_v3`",
@@ -361,6 +365,18 @@ for v in VARIANTS:
 rule size_measure_layers:
     """The configured variant's population layers with the size measures of workflow.size_measure_layers."""
     input: [wf.population_layer(v, a) for v in SIZE_LAYERS for a in wf.config("workflow")["size_measure_layers"]["approaches"]]
+
+
+RX = wf.config("release_export", RELEASE)
+rule release_export:
+    """The population layer of release_export's variant in the release format (two layers, columns in order)."""
+    input: wf.population_layer(RELEASE, str(RX["approach"]))
+    output: RX["paths"]["release_filepath"]
+    params: module="release_export", cli=RELEASE.cli(), **wf.sizing_params(RELEASE)
+    log: wf.log("release_export", RELEASE)
+    threads: threads("release_export")
+    resources: **res("release_export")
+    shell: STAGE
 
 
 rule sweep_layers:

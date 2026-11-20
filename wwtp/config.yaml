@@ -688,6 +688,58 @@ add_pop:
     pop_tif_dir: '{data_dir}/population/unzipped'
     pop_output_dir: '{data_dir}/pop_voronoi_layers/v{version}/lvl{level}/bf{buffer}/{weight_type}'
 
+# A population layer in the release format of HeiGIT_WWTP_LVL9_BFK0_8_LOG_MULT.gpkg (wwtp/release_export.py;
+# Snakemake target release_export): layers WWTP_SERVICE_AREAS (polygons, WKT_WWTP) and WWTP_LOCATIONS
+# (points, WKT_SERVICE_AREA), the columns below in this order. The variant is the configured one unless a run
+# parameter is set here (e.g. size_measure: 'combined_25'); the population layer of `approach` is read.
+release_export:
+  level: null
+  version: null
+  buffer: null
+  weight_method: null
+  weight_func: null
+  dynamic_buffering: null
+  size_measure: null
+  approach: 1
+  layers: {areas: 'WWTP_SERVICE_AREAS', points: 'WWTP_LOCATIONS'}
+  # The attribute columns of both layers (the points layer: without WKT_WWTP, WKT_SERVICE_AREA last), named
+  # after `renames`; SOURCE_DS is derived (source_ds), empty_columns are in the format but not computed
+  columns: [
+    'WASTE_ID', 'WKT_WWTP', 'ISO_2', 'HYBAS_ID', 'HW_WASTE_ID', 'SOURCE', 'ORG_ID', 'WWTP_NAME', 'COUNTRY',
+    'CNTRY_ISO', 'QUAL_LOC', 'STATUS', 'POP_SERVED', 'QUAL_POP', 'LEVEL', 'HYRIV_ID', 'RIVER_DIS', 'epsg',
+    'uwwState', 'repCode', 'aggCode', 'uwwCode', 'uwwName', 'uwwCapacity', 'uwwPrimaryTreatment',
+    'uwwSecondaryTreatment', 'uwwOtherTreatment', 'num_detection_circle', 'num_detection_rect', 'num_detections',
+    'diameters', 'round_area', 'rect_area', 'total_area', 'basin_area', 'weights', 'buffer_length',
+    'category_number', 'category_name', 'justification',
+    '2014_zonal_sum', '2014_zonal_std', '2015_zonal_sum', '2015_zonal_std', '2016_zonal_sum', '2016_zonal_std',
+    '2017_zonal_sum', '2017_zonal_std', '2018_zonal_sum', '2018_zonal_std', '2019_zonal_sum', '2019_zonal_std',
+    '2020_zonal_sum', '2020_zonal_std', '2021_zonal_sum', '2021_zonal_std', '2022_zonal_sum', '2022_zonal_std',
+    '2023_zonal_sum', '2023_zonal_std', '2024_zonal_sum', '2024_zonal_std',
+    'SOURCE_DS'
+  ]
+  renames: {OLD_WASTE_ID: 'HW_WASTE_ID', wwtp_area_rect_2: 'rect_area'}
+  # 2014: the 1 km product, not downloaded (download_pop.include_2014 false); empty, as in the first release
+  empty_columns: ['2014_zonal_sum', '2014_zonal_std']
+  # HW_WASTE_ID only where it is a HydroWASTE ID: v3's national register plants carry their register ID in
+  # OLD_WASTE_ID (AU_GA_996, JP_P22_...)
+  hw_id_pattern: '\d+(\.0+)?'
+  # In order, a later rule overriding an earlier one (UWW over HW, as in the first release); NAT: the
+  # national register plants of v3 (AU, CA, JP, NZ). Empty: neither (as before, new detections)
+  source_ds:
+    - {label: 'NAT', column: 'origin', equals: 'new_plant_national'}
+    - {label: 'HW', column: 'HW_WASTE_ID', equals: null}
+    - {label: 'UWW', column: 'uwwCode', equals: null}
+  # weights = sqrt(plant size), normalised within the basin: the weight the run used (weight_method size,
+  # whose layer holds 1/n), as the format's documentation describes the column
+  weights_from_size: true
+  sort_by: ['ISO_2', 'HYBAS_ID', 'SOURCE_DS']
+  paths:
+    data_dir: null
+    buffers_dir: null
+    voronoi_dir: null
+    pop_output_dir: null
+    release_filepath: '{data_dir}/release/HeiGIT_WWTP_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
+
 create_rasters:
   level: null
   version: null
@@ -1707,6 +1759,7 @@ workflow:
     combine_watersheds: {threads: 4, mem_mb: 32768, runtime: 1440}
     create_voronoi: {threads: 16, mem_mb: 196608, runtime: 2880}
     add_pop: {threads: 8, mem_mb: 196608, runtime: 1440}
+    release_export: {threads: 1, mem_mb: 32768, runtime: 120}
     create_rasters: {threads: 16, mem_mb: 196608, runtime: 2880}
     find_unserved_pop: {threads: 8, mem_mb: 32768, runtime: 2880}
     assign_rivers_to_basin: {threads: 16, mem_mb: 65536, runtime: 2880}

@@ -396,6 +396,45 @@ class AddPop(RunParams, YearRange):
     paths: Paths
 
 
+class SourceRule(Strict):
+    label: str
+    column: str
+    equals: str | None  # None: the column has a value
+
+
+class ReleaseLayers(Strict):
+    areas: str
+    points: str
+
+
+class ReleaseExport(RunParams):
+    """A population layer in the release format (two layers, the columns in order)."""
+
+    approach: Literal[0, 1, 2]
+    layers: ReleaseLayers
+    columns: list[str] = Field(min_length=1)
+    renames: dict[str, str]
+    empty_columns: list[str]
+    hw_id_pattern: str
+    source_ds: list[SourceRule] = Field(min_length=1)
+    weights_from_size: bool
+    sort_by: list[str] = Field(min_length=1)
+    paths: Paths
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        needed = {"WASTE_ID", "WKT_WWTP", "HW_WASTE_ID", "HYBAS_ID", "SOURCE_DS", "weights"}
+        missing = sorted(needed - set(self.columns))
+        if missing:
+            raise ValueError(f"columns must include {missing}")
+        unknown = sorted(set(self.empty_columns) - set(self.columns))
+        if unknown:
+            raise ValueError(f"empty_columns not in columns: {unknown}")
+        if self.weights_from_size and self.weight_method != "size":
+            raise ValueError("weights_from_size needs weight_method 'size' (sqrt(plant size) weights)")
+        return self
+
+
 class RasterAnnotations(Strict):
     max_workers: PositiveInt
     random_seed: int
@@ -1034,6 +1073,7 @@ SECTIONS: dict[str, type[Section]] = {
     "download_pop": DownloadPop,
     "create_voronoi": CreateVoronoi,
     "add_pop": AddPop,
+    "release_export": ReleaseExport,
     "create_rasters": CreateRasters,
     "find_unserved_pop": FindUnservedPop,
     "find_diff_pop": FindDiffPop,
