@@ -999,9 +999,17 @@ class ValidationFigures(Section):
         return self
 
 
+class SizeMeasureLayers(Strict):
+    """The configured variant with other size measures: their population layers of these approaches."""
+
+    size_measures: list[SizeMeasure]
+    approaches: list[Literal["0", "1", "2"]] = Field(min_length=1)
+
+
 class Workflow(Section):
     bing_annotate_shards: PositiveInt
     run_once: list[OneTimeStage]
+    size_measure_layers: SizeMeasureLayers
     resources: dict[str, JobResources]
     paths: Paths
 

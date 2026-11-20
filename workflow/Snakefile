@@ -20,6 +20,8 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 (JMP, Eurostat, OECD), and the recommended candidate
                                 (data/sensitivity/sweep_validation/summary.md)
         sweep_layers                  only the service areas + population of the grid
+    snakemake size_measure_layers   the configured variant's population layers with the other size
+                                measures of workflow.size_measure_layers (footprint, combined)
     snakemake national_data     downloads the validation references and national plant registers (on
                                 the login node) and describes them, with every register plant's distance
                                 to ours (data/validation_data/national_data/register_plants.gpkg, results.zip)
@@ -74,7 +76,8 @@ TMP = wf.use_durable_tmpdir()
 PY = sys.executable
 DEFAULT = wf.default_variant()
 SWEEP = wf.sweep_variants()
-VARIANTS = list({v.tag: v for v in [DEFAULT, *SWEEP]}.values())  # the configured run is usually in the grid too
+SIZE_LAYERS = wf.size_measure_variants()  # the configured variant with other size measures
+VARIANTS = list({v.tag: v for v in [DEFAULT, *SWEEP, *SIZE_LAYERS]}.values())  # the configured run is usually in the grid too
 ONCE = wf.one_time_rules(config)  # one-time rules this run includes (default: none)
 
 
@@ -108,6 +111,7 @@ TARGETS = {
     "figures": "configured variant's figures (and whatever of the analysis they need)",
     "sweep": "whole sweep grid: service areas + population, validation and the recommended candidate",
     "sweep_layers": "only the service areas + population of the sweep grid",
+    "size_measure_layers": "the configured variant's population layers with the size measures of workflow.size_measure_layers",
     "national_data": "reference data downloaded (login node), national registers described",
     "work_list": "national plants + plants that need a new image: `snakemake work_list --config run_once=work_list`",
     "plants_v3": "plant list v3 from v2, the work list and the new images: `... plants_v3 --config run_once=plants_v3`",
@@ -352,6 +356,11 @@ for v in VARIANTS:
         threads: threads("find_unconnected_industrial_areas")
         resources: **res("find_unconnected_industrial_areas")
         shell: STAGE
+
+
+rule size_measure_layers:
+    """The configured variant's population layers with the size measures of workflow.size_measure_layers."""
+    input: [wf.population_layer(v, a) for v in SIZE_LAYERS for a in wf.config("workflow")["size_measure_layers"]["approaches"]]
 
 
 rule sweep_layers:

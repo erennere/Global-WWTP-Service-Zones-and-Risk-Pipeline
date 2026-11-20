@@ -154,6 +154,7 @@ snakemake --profile workflow/profiles/slurm risk       # configured variant, the
 snakemake --profile workflow/profiles/slurm analysis   # service_areas + risk
 snakemake --profile workflow/profiles/slurm figures    # its figures (plus whatever of the analysis they still need)
 snakemake --profile workflow/profiles/slurm sweep      # whole sweep grid: service areas + population, validation and the recommended candidate
+snakemake --profile workflow/profiles/slurm size_measure_layers   # the configured variant with the size measures of workflow.size_measure_layers (footprint, combined): their population layers
 snakemake --profile workflow/profiles/slurm national_data   # downloads the validation references and national plant registers (login node) and describes them
 snakemake --profile workflow/profiles/slurm all        # analysis + figures + sweep
 snakemake --profile workflow/profiles/slurm fig1       # Figure 1 from its prepared inputs

@@ -36,6 +36,24 @@ def test_default_variant_is_the_configured_run_at_basin_level_6():
     assert v.tag == "v3_lvl6_bfrep_sz_mult"  # plant list v3 (correct_locations_w_OSM.version)
 
 
+def test_size_measure_layers_are_the_configured_variant_with_other_size_measures(monkeypatch):
+    """workflow.size_measure_layers: the configured run with each listed size measure, nothing else changed."""
+    default = wf.default_variant()
+    real = wf.config
+
+    def fake(section, *args):
+        cfg = real(section, *args)
+        if section == "workflow":
+            cfg = {**cfg, "size_measure_layers": {"size_measures": ["footprint", "combined_50"], "approaches": ["1"]}}
+        return cfg
+
+    monkeypatch.setattr(wf, "config", fake)
+    layers = wf.size_measure_variants()
+    assert [v.size_measure for v in layers] == ["footprint", "combined_50"]
+    assert [v.tag for v in layers] == [default.tag.replace("bfrep", "bffp"), default.tag.replace("bfrep", "bfcb50")]
+    assert all(v.level == default.level and v.weight_method == default.weight_method for v in layers)
+
+
 def test_every_stage_works_on_the_configured_plant_list():
     """A null version takes the first section's value: the stages run without --version (calibration,
     national_data) and add_pop on its own must read the same plant list as create_voronoi."""

@@ -167,7 +167,7 @@ def _parse_optional_bool(value, field_name):
 
 
 def _parse_optional_size_measure(value, field_name="size_measure"):
-    """Parse an optional size-measure override ('reported' or 'footprint')."""
+    """Parse an optional size-measure override (a key of SIZE_MEASURE_TOKENS)."""
     value = _normalize_optional_cli_value(value)
     if value is None:
         return None

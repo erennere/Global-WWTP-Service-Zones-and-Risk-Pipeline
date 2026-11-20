@@ -1630,6 +1630,12 @@ workflow:
   #   snakemake analysis --config run_once=annotations,download_pop   (targets before --config)
   # Their outputs must then exist (all_annotated_v2.gpkg, the download_pop stamp).
   run_once: []
+  # The configured variant with other size measures (target size_measure_layers): the population layers of
+  # these approaches, the configured variant's other settings unchanged. Reported, footprint and combined
+  # sizes side by side (Eren, 20 Nov 2026); the combined weight joins once the calibration has chosen it.
+  size_measure_layers:
+    size_measures: ['footprint']
+    approaches: ['1']
   resources:
     combine_locations: {threads: 4, mem_mb: 65536, runtime: 2880}
     annotation_grids: {threads: 16, mem_mb: 131072, runtime: 2880}

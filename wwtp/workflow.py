@@ -127,6 +127,15 @@ def default_variant():
     return Variant.from_section(config("create_voronoi"))
 
 
+def size_measure_variants():
+    """The configured variant with each size measure of ``workflow.size_measure_layers`` (dynamic radius)."""
+    default = default_variant()
+    return [
+        replace(default, dynamic_buffering=True, size_measure=measure)
+        for measure in config("workflow")["size_measure_layers"]["size_measures"]
+    ]
+
+
 def sweep_variants(weight_funcs=None):
     """The sensitivity grid of the ``sweep`` section.
 
