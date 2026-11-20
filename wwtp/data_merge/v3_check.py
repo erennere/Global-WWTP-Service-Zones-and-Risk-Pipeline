@@ -216,7 +216,8 @@ def v3():
     results, unused = p3.image_results(cfg, work)
     seg_rows = len(pd.read_csv(paths["segmentation_results"], usecols=["img_name"]))
     check("PROBLEM", len(unused) == 0,
-          f"segmentation results linked to the plant their image shows: {len(results)} of {seg_rows}"
+          f"segmentation results linked to the plant their image shows: {int(results['new_image'].notna().sum())} "
+          f"of {seg_rows}"
           + (f"; set apart {unused['reason'].value_counts().to_dict()}" if len(unused) else ""))  # fmt: skip
     tanks = int(((pd.to_numeric(results["num_detection_circle"], errors="coerce") > 0)
                  | (pd.to_numeric(results["num_detection_rect"], errors="coerce") > 0)).sum())  # fmt: skip
