@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import html
 import os
+import re
 import sys
 
 import numpy as np
@@ -43,6 +44,8 @@ MEASURES = {
     "combined_25": "for a plant with both a reported size and a tank estimate: reported<sup>0.75</sup> &times; "
     "estimate<sup>0.25</sup> (a weighted mean in log terms, the weight chosen on real sewer catchments in the US, "
     "GB, the Netherlands and Ireland); a plant with only one of the two uses that one",
+    "combined_25_spread": "the sizes of combined_25 (reported<sup>0.75</sup> &times; estimate<sup>0.25</sup> for a "
+    "plant with both, otherwise the one there is), with the radius rule that also follows the settled area",
 } | {
     f"combined_{w}": f"for a plant with both: reported<sup>{1 - int(w) / 100:g}</sup> &times; "
     f"estimate<sup>{int(w) / 100:g}</sup>; otherwise the one there is"
@@ -65,6 +68,11 @@ def build_html(path, measure):
     name = os.path.basename(path)
     df = pyogrio.read_dataframe(path, layer="WWTP_SERVICE_AREAS", read_geometry=False,
                                 columns=["ISO_2", "HYBAS_ID", "SOURCE_DS", "SOURCE_ID", "2024_zonal_sum"])  # fmt: skip
+    fields = pyogrio.read_info(path, layer="WWTP_SERVICE_AREAS")["fields"]
+    years = sorted(int(f[:4]) for f in fields if re.fullmatch(r"\d{4}_zonal_sum", f) and f != "2014_zonal_sum")
+    span = f"{years[0]}&ndash;{years[-1]}"
+    projected = (" The years after 2024 are WorldPop's projections, for the plants and service areas of this file."
+                 if years[-1] > 2024 else "")  # fmt: skip
     counts = df["SOURCE_DS"].value_counts()
     with_id = df.groupby("SOURCE_DS")["SOURCE_ID"].count()
     cfg = load_config("create_voronoi", size_measure=measure)
@@ -164,9 +172,9 @@ def build_html(path, measure):
          f"of a plant of 10,000 people in country c, grows with the share C<sub>c</sub> of its people connected "
          f"to treatment (JMP){spread_words}: r<sub>c</sub> = min({rule['max_km']:g} km, exp({rule['intercept']:.3f} "
          f"+ {rule['slope']:.3f} &middot; logit C<sub>c</sub>{spread_term}))."),
-        (code("<year>_zonal_sum") + " (2015&ndash;2024)", "People (WorldPop 100 m constrained, R2024B) within "
-         "the plant's service area in that year: the population estimate of the plant."),
-        (code("<year>_zonal_std") + " (2015&ndash;2024)", "Standard deviation of the 100 m population cells "
+        (code("<year>_zonal_sum") + f" ({span})", "People (WorldPop 100 m constrained, R2024B) within "
+         f"the plant's service area in that year: the population estimate of the plant.{projected}"),
+        (code("<year>_zonal_std") + f" ({span})", "Standard deviation of the 100 m population cells "
          "within the service area."),
         (code("2014_zonal_sum") + ", " + code("2014_zonal_std"), "Kept for the format; empty (the 2014 WorldPop "
          "product is a 1 km one, not comparable)."),

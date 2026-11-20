@@ -76,6 +76,42 @@ def test_download_file_and_unzip_dispatch(monkeypatch, tmp_path):
     assert result == str(tmp_path)
 
 
+def test_a_complete_earlier_download_is_kept_and_an_incomplete_one_fetched_again(monkeypatch, tmp_path):
+    calls = []
+
+    class _Resp:
+        def __init__(self, size):
+            self.headers = {"Content-Length": str(size)}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size=8192):
+            yield b"abcde"
+
+    class _Session:
+        def head(self, *args, **kwargs):
+            return _Resp(5)
+
+        def get(self, *args, **kwargs):
+            calls.append("get")
+            return _Resp(5)
+
+    monkeypatch.setattr(download_pop, "requests_session_with_retries", lambda *a, **k: _Session())
+    out = tmp_path / "x_pop_2030.tif"
+    out.write_bytes(b"abcde")  # the size the server gives: kept
+    assert download_pop.download_file("http://x", str(out)) is True and calls == []
+    out.write_bytes(b"ab")  # cut off: fetched again
+    assert download_pop.download_file("http://x", str(out)) is True and calls == ["get"]
+    assert out.read_bytes() == b"abcde"
+
+
 def test_get_urls_contains_multiple_years():
     urls = download_pop.get_urls()
     key = next(iter(urls.keys()))

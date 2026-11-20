@@ -87,7 +87,11 @@ LAGOON_COLUMN = "lagoon_detected"
 
 # reported, footprint, and the combined measures: reported ** (1 - w) * footprint estimate ** w for plants with
 # both, w = footprint_to_people.combined_footprint_weight[measure] (the calibration tests w 0.1 to 0.9)
-COMBINED_MEASURES = tuple(f"combined_{w}" for w in ("10", "20", "25", "30", "40", "50", "60", "70", "75", "80", "90"))
+COMBINED_MEASURES = (
+    *(f"combined_{w}" for w in ("10", "20", "25", "30", "40", "50", "60", "70", "75", "80", "90")),
+    # the sizes of combined_25 with its spread rule (radius_calibration): a layer of its own, to compare
+    "combined_25_spread",
+)
 SIZE_MEASURES = ("reported", "footprint", *COMBINED_MEASURES)
 # plants_v3: the source of a plant's detections; NO_IMAGE for plants that were never imaged
 SIZE_SOURCE_COLUMN, NO_IMAGE = "size_source", "no_image"

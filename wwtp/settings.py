@@ -47,7 +47,7 @@ WeightFunc = Literal["", "mult", "add"]
 # weights: footprint_to_people.combined_footprint_weight (service_areas.size.COMBINED_MEASURES)
 CombinedMeasure = Literal[
     "combined_10", "combined_20", "combined_25", "combined_30", "combined_40", "combined_50",
-    "combined_60", "combined_70", "combined_75", "combined_80", "combined_90",
+    "combined_60", "combined_70", "combined_75", "combined_80", "combined_90", "combined_25_spread",
 ]  # fmt: skip
 SizeMeasure = Literal["reported", "footprint", CombinedMeasure]
 Paths = dict[str, str]  # resolved path templates; every key must have a value by now

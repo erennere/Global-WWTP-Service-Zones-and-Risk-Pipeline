@@ -199,7 +199,7 @@ def get_urls(
     Returns a dictionary mapping country codes to lists of download URLs.
 
     The 2014 layer is the 1 km unconstrained product, not the 100 m
-    constrained R2024B series used for 2015-2024, so it is only requested
+    constrained R2024B series used for 2015-2030, so it is only requested
     when ``include_2014`` is true.
     """
     alpha_3_to_2, alpha_2_to_3, alpha_3_to_names, alpha_2_to_names = get_iso_codes()
@@ -227,10 +227,27 @@ def get_urls(
     return country_urls
 
 
+def already_downloaded(session, url, output_path):
+    """True when ``output_path`` exists with the size the server gives for ``url`` (a complete earlier
+    download, so a run with more years fetches only the new ones). Unknown size: False."""
+    if not os.path.exists(output_path):
+        return False
+    try:
+        head = session.head(url, allow_redirects=True, timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS)
+        head.raise_for_status()
+    except requests.RequestException:
+        return False
+    size = head.headers["Content-Length"] if "Content-Length" in head.headers else None
+    return size is not None and int(size) == os.path.getsize(output_path)
+
+
 def download_file(url, output_path):
-    """Stream a remote file to disk using an adaptive chunk size."""
+    """Stream a remote file to disk using an adaptive chunk size (a complete earlier download is kept)."""
     try:
         session = requests_session_with_retries()
+        if already_downloaded(session, url, output_path):
+            print(f"Already there: {output_path}")
+            return True
         with session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS) as response:
             response.raise_for_status()
 
@@ -540,7 +557,10 @@ def process_single_country(country_urls, country, res=30, data_dir="../data/popu
         # One mosaic per year: the downloads hold one raster per year, and
         # mosaicking them together summed 2014-2024 into a single layer.
         for year, files in sorted(group_rasters_by_year(result).items(), key=lambda kv: (kv[0] is None, kv[0] or 0)):
-            mosaic_large_rasters(files, merged_output_path(data_dir, country, year))
+            merged = merged_output_path(data_dir, country, year)
+            if os.path.exists(merged) and os.path.getmtime(merged) >= max(os.path.getmtime(f) for f in files):
+                continue  # mosaicked from these files already
+            mosaic_large_rasters(files, merged)
     else:
         filepaths = []
         for index, csv_filepath in enumerate(result):

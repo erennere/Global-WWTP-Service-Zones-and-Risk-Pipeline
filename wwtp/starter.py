@@ -42,8 +42,8 @@ _OVERRIDE_FIELDS = (
 )
 # Path token for the service-radius mode when dynamic_buffering is on.
 SIZE_MEASURE_TOKENS = {"reported": "rep", "footprint": "fp"} | {
-    m: f"cb{m.split('_')[1]}" for m in settings.CombinedMeasure.__args__
-}  # combined_25 -> cb25
+    m: "cb" + m.removeprefix("combined_").replace("_spread", "s") for m in settings.CombinedMeasure.__args__
+}  # combined_25 -> cb25, combined_25_spread -> cb25s
 _OVERRIDE_FLAG_TO_FIELD = {
     "--level": "level",
     "--version": "version",

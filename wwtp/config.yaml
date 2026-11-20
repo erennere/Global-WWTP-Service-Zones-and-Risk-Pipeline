@@ -308,7 +308,8 @@ NEW_04_EXPORTGEOTIFF:
 
 download_pop:
   start_year: 2015
-  end_year: 2024
+  # 2025-2030: WorldPop's projections of the same R2024B product (Eren, 20 Nov 2026)
+  end_year: 2030
   worldpop_2014_url_template: 'https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2014/{country_upper}/{country_lower}_ppp_2014_1km_Aggregated.tif'
   worldpop_yearly_url_template: 'https://data.worldpop.org/GIS/Population/Global_2015_2030/R2024B/{year}/{country_upper}/v1/100m/constrained/{country_lower}_pop_{year}_CN_100m_R2024B_v1.tif'
   # 2014 is the 1 km unconstrained product, not comparable with the 100 m
@@ -459,7 +460,7 @@ create_voronoi:
     combined_footprint_weight: {
       combined_10: 0.1, combined_20: 0.2, combined_25: 0.25, combined_30: 0.3, combined_40: 0.4,
       combined_50: 0.5, combined_60: 0.6, combined_70: 0.7, combined_75: 0.75, combined_80: 0.8,
-      combined_90: 0.9
+      combined_90: 0.9, combined_25_spread: 0.25
     }
   # Factor on every plant size of a country (reported or estimated), per size_measure:
   #   k = connected people (connected_share x people of the 2022 raster) / sum of its plant sizes,
@@ -737,6 +738,26 @@ create_voronoi:
       'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 2.49, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
       'ZA': 2.71, 'ZW': 0.47
     }
+    # combined_25_spread: the sizes of combined_25, so its scale
+    combined_25_spread: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.77, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.54, 'BF': 0.53, 'BG': 1.09, 'BH': 10.00, 'BR': 2.39, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 0.95, 'CI': 10.00, 'CL': 10.00, 'CN': 1.29,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.15, 'CZ': 1.09, 'DE': 0.92, 'DK': 1.08,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.11, 'EG': 3.80, 'ES': 0.86, 'ET': 1.81, 'FI': 0.84,
+      'FJ': 4.31, 'FR': 1.01, 'GB': 1.43, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.13, 'HR': 0.71,
+      'HU': 0.91, 'IE': 0.73, 'IL': 4.18, 'IN': 0.39, 'IQ': 2.86, 'IR': 3.55, 'IT': 0.78, 'JM': 4.35,
+      'JO': 6.50, 'JP': 1.60, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.30, 'LU': 1.18, 'LV': 1.90, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 0.86, 'MU': 4.00, 'MX': 3.19, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.09, 'NO': 0.67, 'NP': 0.10, 'NZ': 5.35, 'OM': 2.80, 'PA': 10.00, 'PE': 1.34, 'PG': 10.00,
+      'PH': 6.44, 'PL': 0.92, 'PT': 0.86, 'PY': 1.07, 'QA': 7.43, 'RO': 1.29, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.08, 'SG': 10.00, 'SI': 10.00, 'SK': 1.22, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.22, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 1.67, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 1.87, 'ZW': 0.47
+    }
   radius_calibration:
     reported:
       radius_exponent: 0.3
@@ -799,6 +820,13 @@ create_voronoi:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
       by_connection: {intercept: 1.084, slope: 0.232, spread_slope: 0.261, max_km: 40.0}
+    # combined_25 with the spread rule of the same calibration (cap 8 km, limits 0.1-10; not the choice:
+    # per plant x1.40 against x1.37, worse in the US and IE catchments), to compare with combined_25
+    # (Eren, 20 Nov 2026). Leaving one region out: JMP 6.2 pp (combined_25 6.5), SDG 6.3.1 10.3 (10.9).
+    combined_25_spread:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.077, slope: 0.212, spread_slope: 0.220, max_km: 8.0}
   # The radius at 10,000 people by country (by_connection; without it radius_at_10k_people_km everywhere):
   #   r10k_km = min(max_km, exp(intercept + slope * logit(C) + spread_slope * log(S))), C = connected_share
   #   and S = settled_area of the plant's country (spread_slope 0: no S term); countries without
@@ -944,6 +972,9 @@ release_export:
     '2017_zonal_sum', '2017_zonal_std', '2018_zonal_sum', '2018_zonal_std', '2019_zonal_sum', '2019_zonal_std',
     '2020_zonal_sum', '2020_zonal_std', '2021_zonal_sum', '2021_zonal_std', '2022_zonal_sum', '2022_zonal_std',
     '2023_zonal_sum', '2023_zonal_std', '2024_zonal_sum', '2024_zonal_std',
+    # 2025-2030: WorldPop's projections (download_pop.end_year 2030), after the years of the first release
+    '2025_zonal_sum', '2025_zonal_std', '2026_zonal_sum', '2026_zonal_std', '2027_zonal_sum', '2027_zonal_std',
+    '2028_zonal_sum', '2028_zonal_std', '2029_zonal_sum', '2029_zonal_std', '2030_zonal_sum', '2030_zonal_std',
     'SOURCE_DS', 'SOURCE_ID'
   ]
   renames: {wwtp_area_rect_2: 'rect_area'}
@@ -1759,7 +1790,7 @@ plants_v3:
 # footprint_to_people, size_scale and radius_calibration.*.by_connection; nothing is written to config.
 connection_radius:
   version: null
-  year: 2022                  # WorldPop raster year (download_pop keeps 2015-2024)
+  year: 2022                  # WorldPop raster year (download_pop keeps 2015-2030)
   aggregate_cells: 10         # 100 m cells summed to 1 km
   candidate_plants: 64
   # combined_10 to combined_90 (and combined_25, the configured layer); combined_75 is left out: between
@@ -2015,7 +2046,7 @@ workflow:
   # these approaches, the configured variant's other settings unchanged. Reported, footprint and combined
   # sizes side by side (Eren, 20 Nov 2026); combined_25: the weight the calibration found best.
   size_measure_layers:
-    size_measures: ['reported', 'footprint', 'combined_25']
+    size_measures: ['reported', 'footprint', 'combined_25', 'combined_25_spread']
     approaches: ['1']
   resources:
     combine_locations: {threads: 4, mem_mb: 65536, runtime: 2880}
@@ -2028,7 +2059,7 @@ workflow:
     download_pop: {threads: 16, mem_mb: 65536, runtime: 5760}
     combine_watersheds: {threads: 4, mem_mb: 32768, runtime: 1440}
     create_voronoi: {threads: 16, mem_mb: 196608, runtime: 2880}
-    add_pop: {threads: 8, mem_mb: 196608, runtime: 1440}
+    add_pop: {threads: 8, mem_mb: 196608, runtime: 2880}  # 16 years (2015-2030)
     release_export: {threads: 1, mem_mb: 32768, runtime: 120}
     create_rasters: {threads: 16, mem_mb: 196608, runtime: 2880}
     find_unserved_pop: {threads: 8, mem_mb: 32768, runtime: 2880}
