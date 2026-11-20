@@ -48,7 +48,7 @@ MEASURES = {
     f"estimate<sup>{int(w) / 100:g}</sup>; otherwise the one there is"
     for w in ("10", "20", "30", "40", "50", "60", "70", "75", "80", "90")
 }
-SCALE_LIMITS = {"footprint": "1/3 and 3"}  # the others: 0.1 and 10 (config.yaml, size_scale)
+SCALE_LIMITS = {"footprint": "0.2 and 5"}  # the others: 0.1 and 10 (config.yaml, size_scale)
 
 
 def code(name):

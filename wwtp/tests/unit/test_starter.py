@@ -320,9 +320,10 @@ def test_load_config_derives_calculate_buffer_kwargs_with_expected_keys(write_te
         "radius_at_10k_people_km": 4.0,
         "radius_by_connection": {"intercept": 1.4, "slope": 0.2, "spread_slope": 0.1, "max_km": 5.0},
         "connected_share": cfg["connected_share"],
-        "settled_area": {"NL": 3.6},
+        "settled_area": cfg["settled_area"],
     }
     assert cfg["connected_share"]["NL"] == 0.97 and cfg["country_output_column"] == "ISO_2"
+    assert cfg["settled_area"]["NL"] == 3.6
 
 
 def test_fixed_buffering_needs_no_radius_calibration(write_test_config):

@@ -451,7 +451,11 @@ create_voronoi:
     # footprint x1.58; w 0.25 better than reported and than w 0.5 in 98 % of the samples. By catchment
     # set w 0.25 against reported: GB 1.41/1.45, IE 1.35/1.37, NL CBS 1.23/1.31, NL units 1.26/1.35, but
     # US 1.49/1.44. National error (JMP, SDG 6.3.1) of all three as reported's (8.4-8.7 pp).
-    # w 0.1 to 0.9 in steps of 0.1 for the calibration with the spread term (Eren, 20 Nov 2026).
+    # w 0.1 to 0.9 in steps of 0.1 for the calibration with the spread term (Eren, 20 Nov 2026). Per plant,
+    # each with its chosen rule (US, GB, NL, IE catchments): w 0.1 x1.372, 0.2 x1.375, 0.25 x1.371, 0.3
+    # x1.377, 0.4 x1.389, 0.5 to 0.9 x1.40 to x1.50, reported x1.393, footprint x1.603. w 0.25 better than
+    # w 0.1, 0.2, 0.3 in 60-74 % of 500 paired bootstrap samples (a tie), than 0.4 in 96 %, than reported
+    # in 99 %; national error (JMP, SDG 6.3.1) falls from 8.7 pp (w <= 0.3) to 7.8 pp (w 0.9).
     combined_footprint_weight: {
       combined_10: 0.1, combined_20: 0.2, combined_25: 0.25, combined_30: 0.3, combined_40: 0.4,
       combined_50: 0.5, combined_60: 0.6, combined_70: 0.7, combined_75: 0.75, combined_80: 0.8,
@@ -470,6 +474,8 @@ create_voronoi:
   # one SDG region out, and SDG 6.3.1) among the settings not worse per plant than the fixed radius in
   # >= 95 % of 1,000 bootstrap samples of the US, GB, NL and IE catchments. reported: 0.1-10 (chosen
   # with every reference country left out too); footprint: 1/3-3. notes/plant_check_2026-11-13.md.
+  # Calibration with the spread term (evening of 20 Nov 2026; reported, footprint, combined_10 to _90):
+  # reported and combined_* 0.1-10, footprint 0.2-5. combined_75 keeps the values of the run before.
   size_scale:
     # combined_*: the calibration run of 20 Nov 2026 (chosen limits 0.1-10, as reported)
     combined_25: {
@@ -530,42 +536,42 @@ create_voronoi:
       'ZA': 2.70, 'ZW': 0.47
     }
     reported: {
-      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.59, 'AU': 1.12, 'AZ': 10.00, 'BA': 3.88,
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.59, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
       'BD': 0.10, 'BE': 1.19, 'BF': 0.53, 'BG': 0.85, 'BH': 10.00, 'BR': 1.56, 'BT': 0.76, 'BW': 0.10,
       'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 0.79, 'CI': 10.00, 'CL': 10.00, 'CN': 1.19,
-      'CO': 2.48, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 0.87, 'CZ': 0.86, 'DE': 0.73, 'DK': 0.79,
-      'DO': 9.43, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.00, 'EG': 3.80, 'ES': 0.66, 'ET': 1.80, 'FI': 0.77,
-      'FJ': 4.30, 'FR': 0.73, 'GB': 0.95, 'GE': 10.00, 'GH': 2.19, 'GM': 0.33, 'GR': 0.70, 'HR': 0.66,
-      'HU': 0.75, 'IE': 0.67, 'IL': 4.20, 'IN': 0.33, 'IQ': 2.86, 'IR': 3.56, 'IT': 0.64, 'JM': 4.35,
-      'JO': 6.50, 'JP': 1.20, 'KE': 1.91, 'KG': 4.09, 'KH': 6.12, 'KN': 0.33, 'KR': 10.00, 'KW': 10.00,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 0.87, 'CZ': 0.86, 'DE': 0.73, 'DK': 0.79,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.00, 'EG': 3.80, 'ES': 0.66, 'ET': 1.81, 'FI': 0.77,
+      'FJ': 4.31, 'FR': 0.73, 'GB': 0.95, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 0.70, 'HR': 0.67,
+      'HU': 0.75, 'IE': 0.67, 'IL': 4.18, 'IN': 0.34, 'IQ': 2.86, 'IR': 3.55, 'IT': 0.64, 'JM': 4.35,
+      'JO': 6.50, 'JP': 1.19, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
       'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 0.97, 'LU': 0.96, 'LV': 1.29, 'LY': 2.58,
-      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.27, 'MM': 0.61,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
       'MN': 6.35, 'MT': 0.59, 'MU': 4.00, 'MX': 2.22, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
-      'NL': 0.93, 'NO': 0.53, 'NP': 0.10, 'NZ': 1.39, 'OM': 2.80, 'PA': 10.00, 'PE': 1.15, 'PG': 10.00,
-      'PH': 6.43, 'PL': 0.71, 'PT': 0.70, 'PY': 1.07, 'QA': 7.43, 'RO': 1.02, 'RS': 1.67, 'RU': 1.84,
-      'SA': 7.07, 'SE': 0.80, 'SG': 10.00, 'SI': 10.00, 'SK': 0.96, 'SL': 5.57, 'SN': 4.13, 'SV': 3.49,
-      'SZ': 0.99, 'TD': 5.24, 'TG': 1.59, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.23, 'TT': 9.29,
-      'TZ': 5.02, 'UA': 2.25, 'UG': 0.51, 'US': 1.16, 'UZ': 1.94, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
-      'ZA': 1.25, 'ZW': 0.48
+      'NL': 0.93, 'NO': 0.53, 'NP': 0.10, 'NZ': 3.37, 'OM': 2.80, 'PA': 10.00, 'PE': 1.15, 'PG': 10.00,
+      'PH': 6.44, 'PL': 0.71, 'PT': 0.70, 'PY': 1.07, 'QA': 7.43, 'RO': 1.02, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 0.80, 'SG': 10.00, 'SI': 10.00, 'SK': 0.96, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.22, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 1.16, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 1.25, 'ZW': 0.47
     }
     footprint: {
-      'AE': 3.00, 'AF': 2.88, 'AL': 1.98, 'AM': 0.33, 'AT': 1.94, 'AU': 1.05, 'AZ': 3.00, 'BA': 3.00,
-      'BD': 0.33, 'BE': 2.33, 'BF': 0.53, 'BG': 2.72, 'BH': 3.00, 'BR': 3.00, 'BT': 0.76, 'BW': 0.33,
-      'BY': 0.54, 'BZ': 0.33, 'CA': 0.46, 'CD': 3.00, 'CH': 1.79, 'CI': 3.00, 'CL': 3.00, 'CN': 1.42,
-      'CO': 2.46, 'CR': 1.14, 'CU': 3.00, 'CV': 0.33, 'CY': 3.00, 'CZ': 1.87, 'DE': 1.75, 'DK': 2.14,
-      'DO': 3.00, 'DZ': 3.00, 'EC': 3.00, 'EE': 2.81, 'EG': 3.00, 'ES': 1.97, 'ET': 1.75, 'FI': 1.00,
-      'FJ': 3.00, 'FR': 2.19, 'GB': 2.84, 'GE': 3.00, 'GH': 2.03, 'GM': 0.33, 'GR': 2.02, 'HR': 0.95,
-      'HU': 1.31, 'IE': 2.62, 'IL': 3.00, 'IN': 0.46, 'IQ': 2.81, 'IR': 3.00, 'IT': 1.25, 'JM': 3.00,
-      'JO': 3.00, 'JP': 3.00, 'KE': 1.86, 'KG': 3.00, 'KH': 3.00, 'KN': 0.33, 'KR': 3.00, 'KW': 3.00,
-      'KZ': 2.24, 'LA': 0.33, 'LB': 3.00, 'LS': 0.33, 'LT': 2.92, 'LU': 1.74, 'LV': 3.00, 'LY': 2.49,
-      'MA': 2.58, 'MC': 3.00, 'MD': 0.70, 'ME': 1.08, 'MG': 3.00, 'MK': 0.77, 'ML': 3.00, 'MM': 0.60,
-      'MN': 3.00, 'MT': 3.00, 'MU': 3.00, 'MX': 3.00, 'MY': 2.19, 'MZ': 3.00, 'NE': 1.46, 'NG': 3.00,
-      'NL': 1.79, 'NO': 1.99, 'NP': 0.33, 'NZ': 3.00, 'OM': 2.71, 'PA': 3.00, 'PE': 3.00, 'PG': 3.00,
-      'PH': 3.00, 'PL': 1.81, 'PT': 1.96, 'PY': 1.07, 'QA': 3.00, 'RO': 1.75, 'RS': 1.66, 'RU': 1.83,
-      'SA': 3.00, 'SE': 1.93, 'SG': 3.00, 'SI': 3.00, 'SK': 2.33, 'SL': 3.00, 'SN': 3.00, 'SV': 3.00,
-      'SZ': 0.99, 'TD': 3.00, 'TG': 1.22, 'TH': 0.33, 'TN': 3.00, 'TO': 0.33, 'TR': 3.00, 'TT': 3.00,
-      'TZ': 3.00, 'UA': 2.25, 'UG': 0.49, 'US': 3.00, 'UZ': 1.94, 'VE': 3.00, 'VN': 1.61, 'YE': 3.00,
-      'ZA': 3.00, 'ZW': 0.47
+      'AE': 5.00, 'AF': 2.88, 'AL': 1.98, 'AM': 0.20, 'AT': 1.94, 'AU': 1.05, 'AZ': 5.00, 'BA': 3.69,
+      'BD': 0.20, 'BE': 2.33, 'BF': 0.53, 'BG': 2.72, 'BH': 5.00, 'BR': 4.16, 'BT': 0.76, 'BW': 0.20,
+      'BY': 0.54, 'BZ': 0.20, 'CA': 0.46, 'CD': 5.00, 'CH': 1.79, 'CI': 5.00, 'CL': 5.00, 'CN': 1.42,
+      'CO': 2.46, 'CR': 1.14, 'CU': 5.00, 'CV': 0.20, 'CY': 4.58, 'CZ': 1.87, 'DE': 1.75, 'DK': 2.14,
+      'DO': 5.00, 'DZ': 5.00, 'EC': 5.00, 'EE': 2.81, 'EG': 3.80, 'ES': 1.97, 'ET': 1.75, 'FI': 1.00,
+      'FJ': 3.96, 'FR': 2.19, 'GB': 2.84, 'GE': 5.00, 'GH': 2.03, 'GM': 0.33, 'GR': 2.02, 'HR': 0.95,
+      'HU': 1.31, 'IE': 2.62, 'IL': 4.18, 'IN': 0.46, 'IQ': 2.81, 'IR': 3.55, 'IT': 1.25, 'JM': 3.99,
+      'JO': 5.00, 'JP': 4.44, 'KE': 1.86, 'KG': 3.95, 'KH': 5.00, 'KN': 0.20, 'KR': 5.00, 'KW': 5.00,
+      'KZ': 2.24, 'LA': 0.20, 'LB': 5.00, 'LS': 0.20, 'LT': 2.92, 'LU': 1.74, 'LV': 3.63, 'LY': 2.49,
+      'MA': 2.58, 'MC': 5.00, 'MD': 0.70, 'ME': 1.08, 'MG': 5.00, 'MK': 0.77, 'ML': 5.00, 'MM': 0.60,
+      'MN': 5.00, 'MT': 5.00, 'MU': 4.00, 'MX': 4.90, 'MY': 2.19, 'MZ': 5.00, 'NE': 1.46, 'NG': 5.00,
+      'NL': 1.79, 'NO': 1.99, 'NP': 0.20, 'NZ': 5.00, 'OM': 2.71, 'PA': 5.00, 'PE': 5.00, 'PG': 5.00,
+      'PH': 5.00, 'PL': 1.81, 'PT': 1.96, 'PY': 1.07, 'QA': 5.00, 'RO': 1.75, 'RS': 1.66, 'RU': 1.83,
+      'SA': 5.00, 'SE': 1.93, 'SG': 5.00, 'SI': 5.00, 'SK': 2.33, 'SL': 3.22, 'SN': 3.90, 'SV': 3.35,
+      'SZ': 0.99, 'TD': 4.15, 'TG': 1.22, 'TH': 0.20, 'TN': 5.00, 'TO': 0.20, 'TR': 5.00, 'TT': 5.00,
+      'TZ': 4.52, 'UA': 2.25, 'UG': 0.49, 'US': 3.62, 'UZ': 1.94, 'VE': 5.00, 'VN': 1.61, 'YE': 5.00,
+      'ZA': 3.47, 'ZW': 0.47
     }
   # Service radius (dynamic_buffering: true), per size_measure:
   #   radius_km = radius_at_10k_people_km * (people / 10000) ** radius_exponent,
@@ -579,63 +585,220 @@ create_voronoi:
   # per class, 74 % of plants within a factor 2, total 0.99. GB catchments: not
   # used.
   # Regenerate with: python -m wwtp.calibration.service_radius --help
+    combined_10: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.67, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.34, 'BF': 0.53, 'BG': 0.95, 'BH': 10.00, 'BR': 1.90, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 0.86, 'CI': 10.00, 'CL': 10.00, 'CN': 1.23,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 0.98, 'CZ': 0.95, 'DE': 0.81, 'DK': 0.91,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.04, 'EG': 3.80, 'ES': 0.74, 'ET': 1.81, 'FI': 0.80,
+      'FJ': 4.31, 'FR': 0.85, 'GB': 1.14, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 0.87, 'HR': 0.69,
+      'HU': 0.81, 'IE': 0.70, 'IL': 4.18, 'IN': 0.36, 'IQ': 2.86, 'IR': 3.55, 'IT': 0.70, 'JM': 4.35,
+      'JO': 6.50, 'JP': 1.37, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.10, 'LU': 1.06, 'LV': 1.52, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 0.70, 'MU': 4.00, 'MX': 2.61, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.00, 'NO': 0.59, 'NP': 0.10, 'NZ': 4.16, 'OM': 2.80, 'PA': 10.00, 'PE': 1.23, 'PG': 10.00,
+      'PH': 6.44, 'PL': 0.80, 'PT': 0.77, 'PY': 1.07, 'QA': 7.43, 'RO': 1.12, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 0.91, 'SG': 10.00, 'SI': 10.00, 'SK': 1.07, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.22, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 1.37, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 1.49, 'ZW': 0.47
+    }
+    combined_20: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.74, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.48, 'BF': 0.53, 'BG': 1.04, 'BH': 10.00, 'BR': 2.23, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 0.92, 'CI': 10.00, 'CL': 10.00, 'CN': 1.27,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.09, 'CZ': 1.05, 'DE': 0.88, 'DK': 1.02,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.09, 'EG': 3.80, 'ES': 0.82, 'ET': 1.81, 'FI': 0.83,
+      'FJ': 4.31, 'FR': 0.96, 'GB': 1.33, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.04, 'HR': 0.70,
+      'HU': 0.88, 'IE': 0.72, 'IL': 4.18, 'IN': 0.38, 'IQ': 2.86, 'IR': 3.55, 'IT': 0.75, 'JM': 4.35,
+      'JO': 6.50, 'JP': 1.53, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.23, 'LU': 1.14, 'LV': 1.77, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 0.81, 'MU': 4.00, 'MX': 3.00, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.06, 'NO': 0.64, 'NP': 0.10, 'NZ': 4.96, 'OM': 2.80, 'PA': 10.00, 'PE': 1.31, 'PG': 10.00,
+      'PH': 6.44, 'PL': 0.88, 'PT': 0.83, 'PY': 1.07, 'QA': 7.43, 'RO': 1.23, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.02, 'SG': 10.00, 'SI': 10.00, 'SK': 1.17, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.22, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 1.57, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 1.74, 'ZW': 0.47
+    }
+    combined_30: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.80, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.59, 'BF': 0.53, 'BG': 1.13, 'BH': 10.00, 'BR': 2.54, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 0.98, 'CI': 10.00, 'CL': 10.00, 'CN': 1.31,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.20, 'CZ': 1.13, 'DE': 0.95, 'DK': 1.14,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.13, 'EG': 3.80, 'ES': 0.89, 'ET': 1.81, 'FI': 0.85,
+      'FJ': 4.31, 'FR': 1.06, 'GB': 1.53, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.22, 'HR': 0.71,
+      'HU': 0.94, 'IE': 0.74, 'IL': 4.18, 'IN': 0.40, 'IQ': 2.86, 'IR': 3.55, 'IT': 0.81, 'JM': 4.35,
+      'JO': 6.50, 'JP': 1.67, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.36, 'LU': 1.22, 'LV': 2.03, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 0.91, 'MU': 4.00, 'MX': 3.37, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.13, 'NO': 0.69, 'NP': 0.10, 'NZ': 5.72, 'OM': 2.80, 'PA': 10.00, 'PE': 1.37, 'PG': 10.00,
+      'PH': 6.44, 'PL': 0.95, 'PT': 0.89, 'PY': 1.07, 'QA': 7.43, 'RO': 1.34, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.13, 'SG': 10.00, 'SI': 10.00, 'SK': 1.27, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.22, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 1.76, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 1.98, 'ZW': 0.47
+    }
+    combined_40: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.86, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.69, 'BF': 0.53, 'BG': 1.21, 'BH': 10.00, 'BR': 2.82, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 1.03, 'CI': 10.00, 'CL': 10.00, 'CN': 1.33,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.31, 'CZ': 1.21, 'DE': 1.01, 'DK': 1.26,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.16, 'EG': 3.80, 'ES': 0.96, 'ET': 1.81, 'FI': 0.87,
+      'FJ': 4.31, 'FR': 1.14, 'GB': 1.73, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.38, 'HR': 0.72,
+      'HU': 0.99, 'IE': 0.75, 'IL': 4.18, 'IN': 0.41, 'IQ': 2.85, 'IR': 3.55, 'IT': 0.86, 'JM': 4.35,
+      'JO': 6.50, 'JP': 1.79, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.48, 'LU': 1.29, 'LV': 2.29, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 1.00, 'MU': 4.00, 'MX': 3.72, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.19, 'NO': 0.72, 'NP': 0.10, 'NZ': 6.38, 'OM': 2.80, 'PA': 10.00, 'PE': 1.42, 'PG': 10.00,
+      'PH': 6.44, 'PL': 1.00, 'PT': 0.95, 'PY': 1.07, 'QA': 7.43, 'RO': 1.44, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.23, 'SG': 10.00, 'SI': 10.00, 'SK': 1.37, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.21, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 1.94, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 2.21, 'ZW': 0.47
+    }
+    combined_60: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.95, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.85, 'BF': 0.53, 'BG': 1.34, 'BH': 10.00, 'BR': 3.20, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 1.11, 'CI': 10.00, 'CL': 10.00, 'CN': 1.36,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.51, 'CZ': 1.34, 'DE': 1.12, 'DK': 1.49,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.21, 'EG': 3.80, 'ES': 1.08, 'ET': 1.81, 'FI': 0.88,
+      'FJ': 4.31, 'FR': 1.28, 'GB': 2.11, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.64, 'HR': 0.71,
+      'HU': 1.08, 'IE': 0.77, 'IL': 4.18, 'IN': 0.43, 'IQ': 2.85, 'IR': 3.55, 'IT': 0.94, 'JM': 4.35,
+      'JO': 6.50, 'JP': 1.97, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.70, 'LU': 1.39, 'LV': 2.78, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 1.13, 'MU': 4.00, 'MX': 4.26, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.29, 'NO': 0.75, 'NP': 0.10, 'NZ': 7.33, 'OM': 2.80, 'PA': 10.00, 'PE': 1.50, 'PG': 10.00,
+      'PH': 6.44, 'PL': 1.09, 'PT': 1.04, 'PY': 1.07, 'QA': 7.43, 'RO': 1.62, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.39, 'SG': 10.00, 'SI': 10.00, 'SK': 1.54, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.21, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 2.24, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 2.56, 'ZW': 0.47
+    }
+    combined_70: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.99, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.92, 'BF': 0.53, 'BG': 1.40, 'BH': 10.00, 'BR': 3.30, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 1.15, 'CI': 10.00, 'CL': 10.00, 'CN': 1.37,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.60, 'CZ': 1.38, 'DE': 1.16, 'DK': 1.59,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.23, 'EG': 3.80, 'ES': 1.13, 'ET': 1.81, 'FI': 0.87,
+      'FJ': 4.31, 'FR': 1.33, 'GB': 2.29, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.74, 'HR': 0.70,
+      'HU': 1.11, 'IE': 0.78, 'IL': 4.18, 'IN': 0.44, 'IQ': 2.85, 'IR': 3.55, 'IT': 0.97, 'JM': 4.35,
+      'JO': 6.50, 'JP': 2.02, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.79, 'LU': 1.42, 'LV': 2.99, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 1.18, 'MU': 4.00, 'MX': 4.43, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.34, 'NO': 0.75, 'NP': 0.10, 'NZ': 7.60, 'OM': 2.80, 'PA': 10.00, 'PE': 1.53, 'PG': 10.00,
+      'PH': 6.44, 'PL': 1.11, 'PT': 1.07, 'PY': 1.07, 'QA': 7.43, 'RO': 1.69, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.45, 'SG': 10.00, 'SI': 10.00, 'SK': 1.61, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.21, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 2.35, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 2.67, 'ZW': 0.47
+    }
+    combined_80: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 1.02, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 1.97, 'BF': 0.53, 'BG': 1.44, 'BH': 10.00, 'BR': 3.34, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 1.17, 'CI': 10.00, 'CL': 10.00, 'CN': 1.37,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.67, 'CZ': 1.42, 'DE': 1.19, 'DK': 1.68,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.24, 'EG': 3.80, 'ES': 1.16, 'ET': 1.81, 'FI': 0.85,
+      'FJ': 4.31, 'FR': 1.36, 'GB': 2.45, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.82, 'HR': 0.67,
+      'HU': 1.13, 'IE': 0.78, 'IL': 4.18, 'IN': 0.44, 'IQ': 2.84, 'IR': 3.55, 'IT': 0.99, 'JM': 4.35,
+      'JO': 6.50, 'JP': 2.04, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.86, 'LU': 1.44, 'LV': 3.17, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 1.22, 'MU': 4.00, 'MX': 4.52, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.37, 'NO': 0.75, 'NP': 0.10, 'NZ': 7.74, 'OM': 2.80, 'PA': 10.00, 'PE': 1.55, 'PG': 10.00,
+      'PH': 6.44, 'PL': 1.13, 'PT': 1.10, 'PY': 1.07, 'QA': 7.43, 'RO': 1.74, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.49, 'SG': 10.00, 'SI': 10.00, 'SK': 1.66, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.20, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 2.44, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 2.72, 'ZW': 0.47
+    }
+    combined_90: {
+      'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 1.04, 'AU': 1.05, 'AZ': 10.00, 'BA': 3.89,
+      'BD': 0.10, 'BE': 2.02, 'BF': 0.53, 'BG': 1.48, 'BH': 10.00, 'BR': 3.32, 'BT': 0.76, 'BW': 0.10,
+      'BY': 0.54, 'BZ': 0.16, 'CA': 0.46, 'CD': 6.90, 'CH': 1.19, 'CI': 10.00, 'CL': 10.00, 'CN': 1.37,
+      'CO': 2.46, 'CR': 1.30, 'CU': 6.53, 'CV': 0.11, 'CY': 1.72, 'CZ': 1.44, 'DE': 1.22, 'DK': 1.75,
+      'DO': 9.44, 'DZ': 6.61, 'EC': 10.00, 'EE': 1.24, 'EG': 3.80, 'ES': 1.19, 'ET': 1.81, 'FI': 0.81,
+      'FJ': 4.31, 'FR': 1.39, 'GB': 2.59, 'GE': 10.00, 'GH': 2.20, 'GM': 0.33, 'GR': 1.87, 'HR': 0.63,
+      'HU': 1.13, 'IE': 0.78, 'IL': 4.18, 'IN': 0.44, 'IQ': 2.83, 'IR': 3.55, 'IT': 1.01, 'JM': 4.35,
+      'JO': 6.50, 'JP': 2.03, 'KE': 1.91, 'KG': 4.09, 'KH': 6.13, 'KN': 0.34, 'KR': 10.00, 'KW': 10.00,
+      'KZ': 2.24, 'LA': 0.12, 'LB': 6.38, 'LS': 0.10, 'LT': 1.92, 'LU': 1.45, 'LV': 3.30, 'LY': 2.58,
+      'MA': 2.58, 'MC': 0.55, 'MD': 0.72, 'ME': 1.11, 'MG': 10.00, 'MK': 0.79, 'ML': 6.29, 'MM': 0.61,
+      'MN': 6.35, 'MT': 1.25, 'MU': 4.00, 'MX': 4.52, 'MY': 2.19, 'MZ': 6.45, 'NE': 1.54, 'NG': 10.00,
+      'NL': 1.41, 'NO': 0.73, 'NP': 0.10, 'NZ': 7.77, 'OM': 2.80, 'PA': 10.00, 'PE': 1.57, 'PG': 10.00,
+      'PH': 6.44, 'PL': 1.14, 'PT': 1.12, 'PY': 1.07, 'QA': 7.43, 'RO': 1.77, 'RS': 1.67, 'RU': 1.83,
+      'SA': 7.07, 'SE': 1.51, 'SG': 10.00, 'SI': 10.00, 'SK': 1.70, 'SL': 5.67, 'SN': 4.13, 'SV': 3.49,
+      'SZ': 0.99, 'TD': 5.27, 'TG': 1.60, 'TH': 0.10, 'TN': 5.64, 'TO': 0.10, 'TR': 5.19, 'TT': 9.32,
+      'TZ': 5.03, 'UA': 2.25, 'UG': 0.51, 'US': 2.49, 'UZ': 1.93, 'VE': 10.00, 'VN': 1.61, 'YE': 10.00,
+      'ZA': 2.71, 'ZW': 0.47
+    }
   radius_calibration:
     reported:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.471, slope: 0.209, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.470, slope: 0.209, spread_slope: 0.000, max_km: 8.0}
     footprint:
       radius_exponent: 0.5
       radius_at_10k_people_km: 4.25
-      by_connection: {intercept: 1.325, slope: 0.203, spread_slope: 0.0, max_km: 40.0}
-    # combined_*: the exponent of reported (sizes in people, mostly reported ones); by_connection from the
-    # calibration run of 20 Nov 2026 (plant_choice.csv: combined_25 cap 8 km as reported, the others none)
+      by_connection: {intercept: 0.663, slope: 0.206, spread_slope: 0.324, max_km: 8.0}
+    # combined_*: the exponent of reported (sizes in people, mostly reported ones). by_connection of all
+    # measures but combined_75: the calibration with the spread term (evening of 20 Nov 2026,
+    # plant_choice.csv). With the spread term the national error falls for every measure (reported, cap
+    # 8: JMP 6.4 -> 5.9 pp, SDG 6.3.1 10.9 -> 10.1, OECD 11.4 -> 10.8), but per plant it is worse in the
+    # US and Irish catchments (reported x1.44 -> x1.49 and x1.37 -> x1.44; GB and NL unchanged): its larger
+    # radii in spread-out countries put more people into catchments that already hold too many. So the
+    # choice (not worse per plant than the fixed radius in 95 % of the samples) keeps it out of reported
+    # and combined_10 to _40, and takes it for footprint and combined_50 to _90.
     combined_25:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.000, max_km: 8.0}
     combined_50:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.511, slope: 0.216, spread_slope: 0.0, max_km: 40.0}
+      by_connection: {intercept: 1.067, slope: 0.211, spread_slope: 0.224, max_km: 8.0}
     combined_75:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
       by_connection: {intercept: 1.517, slope: 0.217, spread_slope: 0.0, max_km: 40.0}
-    # w 0.1 to 0.9 (Eren, 20 Nov 2026): placeholders, the rule of combined_25, until the calibration with
-    # the spread term (they have no size_scale yet either, so they cannot run before it)
+    # w 0.1 to 0.9 (Eren, 20 Nov 2026)
     combined_10:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.464, slope: 0.208, spread_slope: 0.000, max_km: 8.0}
     combined_20:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.000, max_km: 8.0}
     combined_30:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.456, slope: 0.205, spread_slope: 0.000, max_km: 8.0}
     combined_40:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.512, slope: 0.217, spread_slope: 0.000, max_km: 40.0}
     combined_60:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.041, slope: 0.225, spread_slope: 0.273, max_km: 40.0}
     combined_70:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.042, slope: 0.226, spread_slope: 0.274, max_km: 40.0}
     combined_80:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.079, slope: 0.230, spread_slope: 0.260, max_km: 40.0}
     combined_90:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+      by_connection: {intercept: 1.084, slope: 0.232, spread_slope: 0.261, max_km: 40.0}
   # The radius at 10,000 people by country (by_connection; without it radius_at_10k_people_km everywhere):
   #   r10k_km = min(max_km, exp(intercept + slope * logit(C) + spread_slope * log(S))), C = connected_share
   #   and S = settled_area of the plant's country (spread_slope 0: no S term); countries without
@@ -680,7 +843,27 @@ create_voronoi:
   # connection_radius.year, cell areas from their latitude; connection_radius curves, countries.csv
   # settled_km2_per_1000). Read only by rules whose spread_slope is not 0; empty until the calibration with the
   # spread term has run.
-  settled_area: {}
+  settled_area: {
+    'AE': 2.24, 'AF': 3.35, 'AG': 4.92, 'AL': 6.23, 'AM': 3.37, 'AO': 9.29, 'AR': 14.4, 'AT': 7.25, 'AU': 22.6,
+    'AZ': 3.17, 'BA': 10.3, 'BB': 1.69, 'BD': 0.769, 'BE': 2.45, 'BF': 9.75, 'BG': 7.25, 'BH': 0.557, 'BI': 1.85,
+    'BN': 4.09, 'BO': 18.8, 'BR': 14, 'BS': 8.33, 'BT': 13.2, 'BW': 39.2, 'BY': 9.29, 'BZ': 17.3, 'CA': 14.7,
+    'CD': 5.75, 'CH': 3.51, 'CI': 6.91, 'CL': 8.9, 'CM': 6.06, 'CN': 1.99, 'CO': 6.84, 'CR': 6.79, 'CU': 5.64,
+    'CV': 5.62, 'CY': 5.37, 'CZ': 5.35, 'DE': 3.48, 'DK': 6.97, 'DO': 3.08, 'DZ': 6.29, 'EC': 7.15, 'EE': 20.3,
+    'EG': 0.793, 'ES': 6.34, 'ET': 5.19, 'FI': 24.7, 'FJ': 9.66, 'FM': 5.36, 'FR': 6.91, 'GA': 5.57, 'GB': 2.8,
+    'GE': 7.22, 'GH': 5.08, 'GM': 3.14, 'GN': 9.84, 'GQ': 2.54, 'GR': 9.28, 'GT': 4.25, 'HN': 7.02, 'HR': 9.73,
+    'HT': 2.21, 'HU': 5.28, 'ID': 2.79, 'IE': 12.3, 'IL': 1.34, 'IN': 1.74, 'IQ': 2.34, 'IR': 2.74, 'IS': 23.7,
+    'IT': 4.22, 'JM': 3.26, 'JO': 1.36, 'JP': 1.93, 'KE': 4.59, 'KG': 5.2, 'KH': 6.26, 'KN': 5.81, 'KP': 1.3,
+    'KR': 1.71, 'KW': 1.29, 'KZ': 8.81, 'LA': 14.5, 'LB': 1.46, 'LC': 3.14, 'LK': 2.27, 'LR': 7.22, 'LS': 10,
+    'LT': 15.8, 'LU': 3.7, 'LV': 21.5, 'LY': 7.63, 'MA': 2.54, 'MC': 0.176, 'MD': 6.09, 'ME': 12.6, 'MF': 2.52,
+    'MG': 11.1, 'MH': 11.2, 'MK': 6.01, 'ML': 9.03, 'MM': 3.57, 'MN': 6.38, 'MT': 0.734, 'MU': 1.49, 'MV': 1.92,
+    'MX': 6.23, 'MY': 4.28, 'MZ': 11.6, 'NA': 44.2, 'NE': 10.1, 'NG': 3.14, 'NI': 11.8, 'NL': 1.91, 'NO': 13.5,
+    'NP': 2.93, 'NZ': 15, 'OM': 8.11, 'PA': 8.72, 'PE': 10.4, 'PG': 6.1, 'PH': 2.13, 'PK': 1.88, 'PL': 6.08,
+    'PT': 7.12, 'PW': 11.9, 'PY': 17.3, 'QA': 2.26, 'RO': 6.34, 'RS': 7.46, 'RU': 5.36, 'RW': 1.64, 'SA': 8.05,
+    'SC': 2.91, 'SD': 9.05, 'SE': 14.8, 'SG': 0.109, 'SI': 7.49, 'SK': 5.06, 'SL': 5.74, 'SN': 5.67, 'SS': 9.84,
+    'SV': 3.02, 'SY': 3.1, 'SZ': 11.4, 'TD': 12, 'TG': 5.45, 'TH': 5.61, 'TJ': 2.82, 'TM': 5.5, 'TN': 6.7,
+    'TO': 4.87, 'TR': 4.9, 'TT': 2.57, 'TW': 0.953, 'TZ': 8.32, 'UA': 5.21, 'UG': 3.6, 'US': 11.4, 'UY': 21.5,
+    'UZ': 2.83, 'VE': 8.7, 'VN': 2.52, 'YE': 1.8, 'ZA': 8.19, 'ZM': 15.7, 'ZW': 15.7
+  }
   scipy_true: false
   cv2_true: false
   city_voronoi: false
@@ -1832,7 +2015,7 @@ workflow:
   # these approaches, the configured variant's other settings unchanged. Reported, footprint and combined
   # sizes side by side (Eren, 20 Nov 2026); combined_25: the weight the calibration found best.
   size_measure_layers:
-    size_measures: ['footprint', 'combined_25']
+    size_measures: ['reported', 'footprint', 'combined_25']
     approaches: ['1']
   resources:
     combine_locations: {threads: 4, mem_mb: 65536, runtime: 2880}
