@@ -105,7 +105,7 @@ snakemake --profile workflow/profiles/slurm annotation_context --config run_once
 snakemake --profile workflow/profiles/slurm annotation_overlay --config run_once=annotation_overlay
 snakemake --profile workflow/profiles/slurm plants_v3 --config run_once=plants_v3
 ```
-Then set `create_voronoi.version` to `'3'` (the analysis reads `all_annotated_v3.gpkg`).
+Then set `correct_locations_w_OSM.version` to `'3'` (the first section, so every stage inherits it; the analysis and the calibration read `all_annotated_v3.gpkg`).
 
 The log is `{data_dir}/workflow/logs/combine_locations.log`.
 
@@ -139,7 +139,7 @@ Delete the final merged GeoPackage and rerun the launcher to force a full rebuil
 | `work_list.reference_offset_m` | `1` | A reference plant moved farther goes back to its reference position |
 | `plants_v3.wrong_code_shift_m` | `50000` | A longer EU-file move: the plant had another plant's code |
 | `plants_v3.location_priority` | EU file, national, v2 | Location of a merged same-site plant |
-| `plants_v3.with_image_text` | `false` | Read the new images' site categories (image-to-text CSV) |
+| `plants_v3.with_image_text` | `true` | Read the new images' site categories (image-to-text CSV) |
 
 ## Known Issues / TODOs
 - No explicit `TODO` or `FIXME` markers were found in this module.

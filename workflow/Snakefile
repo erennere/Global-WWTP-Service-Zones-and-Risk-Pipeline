@@ -29,7 +29,7 @@ A run does only the part it names; `snakemake` alone lists the targets and runs 
                                 the national plants, the corrected EU file's plants that v2 lacks
     snakemake plants_v3 --config run_once=plants_v3
                                 the plant list v3 (data/all_annotated_v3.gpkg): v2 with the work list and
-                                the results of the new images; then set create_voronoi.version to '3'
+                                the results of the new images; then set correct_locations_w_OSM.version to '3'
     snakemake all               analysis + figures + sweep
     snakemake fig1              Figure 1 from its prepared inputs (see workflow/rules/fig1.smk)
     snakemake annotations --config run_once=annotations    grids, OSM context, annotated images, merged labels

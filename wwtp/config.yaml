@@ -4,7 +4,13 @@
 # A later concrete value overrides only that script.
 # CLI overrides take precedence over all resolved config values.
 correct_locations_w_OSM:
-  version: '2'
+  # The plant list every stage works on (all_annotated_v{version}.gpkg) and the v{version} of their output
+  # paths. Set here, on the first section: a version set on a later section changes only that section (a
+  # null takes the first section's value), so create_voronoi.version '3' alone left add_pop, national_data
+  # and the calibration (connection_radius) on v2. '3': plants_v3's list (Eren, 20 Nov 2026). The stages
+  # that built v2 (combine_locations, merge_seg_results, final_data_merge, merge_annotations) are not
+  # for v3, whose list plants_v3 builds from all_annotated_v2 (its paths name v2 themselves).
+  version: '3'
   rad: 5000
   # Explicit values (not null) because this is the first config section, so
   # there is no earlier canonical section to inherit from. create_voronoi's
@@ -1277,7 +1283,7 @@ work_list:
 
 # Plant list v3 (wwtp/data_merge/plants_v3.py): all_annotated_v2 with the work list applied (removed,
 # moved and new plants) and the results of the new images (tank detections, site category); same sites
-# merged, every plant renumbered. Set create_voronoi's version to '3' to run the analysis on it.
+# merged, every plant renumbered. The analysis runs on it with correct_locations_w_OSM.version '3'.
 plants_v3:
   same_site_distance_m: null         # work_list's
   code_countries: null
@@ -1287,8 +1293,8 @@ plants_v3:
   detection_columns: ['num_detection_circle', 'diameters', 'num_detection_rect', 'wwtp_area_rect']
   category_columns: ['category_number', 'category_name', 'justification']
   # The new images' site categories (image-to-text, paths.image_text_results): false while they do not
-  # exist; plants then keep their v2 category (new plants none)
-  with_image_text: false
+  # exist; plants then keep their v2 category (new plants none). True since 20 Nov 2026 (the 5,384 new plants).
+  with_image_text: true
   # Which segmentation image is which ref.geojson feature: ref_idx = <n>.png is the feature whose idx is n
   # (Sukanya's numbering: v2's merge_seg_results joined img_name to idx; the new plants' images checked by eye)
   image_names: ref_idx
@@ -1301,12 +1307,14 @@ plants_v3:
     removed_plants: null
     eu_file: null
     # The new images (512 x 512 px, zoom 17; Sukanya, 18 Nov 2026): ref.geojson (idx of the plant of image
-    # <row>.png) and the segmentation results; the image-to-text path is the first run's layout (a guess).
+    # <row>.png) and the segmentation results.
     images_ref: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/Images_z17_512/ref.geojson'
     # what images_ref's idx counts rows of: the work list as Sukanya got it (17 Nov 2026, in git)
     images_ref_list: '{data_dir}/heigit_sizes/work_list_reference_2026-11-17.csv'
     segmentation_results: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/Images_z17_512/results/csv/segoutput.csv'
-    image_text_results: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/annotated/mm/inference/output/inference/csv_files/chunk_1/i2t_res1.csv'
+    # Image-to-text of the new plants' annotated 3072 px images (Sukanya; path from Eren, 20 Nov 2026):
+    # 5,384 rows, image bbox_<idx>.png = idx 59714-65097 of image_text_list, every row with a decision
+    image_text_results: '/mnt/sds-hd/sd17f001/sukanya/wtp_seg/2026_global_extra/annotated/mm/Images_z17_3072/outputmodel/inference/csv_files/chunk_1/i2t_res1.csv'
     # The plants whose site category comes from the new image-to-text results: the new plants (old plants
     # keep their v2 category)
     image_text_list: '{data_dir}/heigit_sizes/new_plants_reference_2026-11-19.csv'

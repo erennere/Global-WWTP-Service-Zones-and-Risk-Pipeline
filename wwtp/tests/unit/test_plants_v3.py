@@ -389,7 +389,7 @@ def v3_world(tmp_path):
     pd.DataFrame({"img_name": ["4.png", "3.png", "0.png"], "num_detection_circle": [1, 1, 2],
                   "diameters": ["[20]", "[10]", "[10 10]"], "num_detection_rect": [0, 0, 0],
                   "wwtp_area_rect": ["[0]"] * 3, "other": [1, 2, 3]}).to_csv(tmp_path / "seg.csv", index=False)  # fmt: skip
-    pd.DataFrame({"idx": [10, 11]}).to_csv(tmp_path / "new_plants.csv", index=False)
+    pd.DataFrame({"idx": [10, 11], "plant_id": ["NZ_OSM_1", "CH9"]}).to_csv(tmp_path / "new_plants.csv", index=False)
     text = "Analysis: a\n\nDecision: {}. {}\nJustification: j"
     pd.DataFrame({"image": ["bbox_2.png", "bbox_11.png", "bbox_99.png"],
                   "gen_text": [text.format(3, "Industrial"), text.format(2, "Residential"), text.format(1, "x")]}
@@ -517,6 +517,32 @@ def test_the_check_before_the_run_builds_v3_in_memory_and_writes_nothing(v3_worl
     seg.to_csv(cfg["paths"]["segmentation_results"], index=False)
     v3_check.v3()
     assert any("set apart" in p for p in v3_check._problems)
+
+
+def test_the_check_before_the_run_reads_the_image_to_text_results(v3_world, monkeypatch, capsys):
+    """Every image-to-text row is matched to its new plant (bbox_<idx>.png), the work list must have the
+    same plant at that idx, and decisions whose name is not their number's usual one are reported."""
+    from wwtp.data_merge import v3_check
+
+    cfg = v3_world[0]
+    text = "Analysis: a\n\nDecision: {}. {}\nJustification: j"
+    pd.DataFrame({"image": ["bbox_10.png", "bbox_11.png", "bbox_99.png", "bbox_2.png"],
+                  "gen_text": [text.format(6, "Mixed-Use"), text.format(5, "Residential"),
+                               text.format(5, "Residential"), text.format(5, "Rural")]}
+                 ).to_csv(cfg["paths"]["image_text_results"], index=False)  # fmt: skip
+    work = gpd.read_file(cfg["paths"]["work_list"])
+    v3_check._problems.clear()
+    v3_check.image_text(cfg["paths"], work)
+    out = capsys.readouterr().out
+    assert not v3_check._problems
+    assert "new plants with a site category: 2 of 2" in out and "rows of new plants (image_text_list): 2 of 4" in out
+    assert "usual name (the number is used): 1" in out
+
+    listing = pd.read_csv(cfg["paths"]["image_text_list"])
+    listing.loc[0, "plant_id"] = "someone else"  # the images were made for another plant at idx 10
+    listing.to_csv(cfg["paths"]["image_text_list"], index=False)
+    v3_check.image_text(cfg["paths"], work)
+    assert any("same plant_id: 1 of 2" in p for p in v3_check._problems)
 
 
 def test_same_sites_use_geodesic_metres():

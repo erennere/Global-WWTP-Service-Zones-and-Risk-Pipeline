@@ -8,8 +8,9 @@ that is removed again), and prints one line per check: ``OK``, ``NOTE`` (works, 
 Overlay: the images' ref.geojson against the list they were made from (plant_id and place per row), every
 ``<n>.png`` there and its size, every image's plant in the work list, the OSM tile found for every image
 (by place), the OSM features of a sample of images, the output folders writable.
-plants_v3: its input files, every segmentation result linked to the plant its image shows, and the whole
-build in memory (counts of every step, plants never imaged).
+plants_v3: its input files, every segmentation result linked to the plant its image shows, the image-to-text
+results (``with_image_text``: every row a new plant of the work list, every new plant with a site category),
+and the whole build in memory (counts of every step, plants never imaged).
 """
 
 from __future__ import annotations
@@ -160,6 +161,40 @@ def overlay():
     check("PROBLEM", writable(paths["match_report_dir"]), f"match report folder writable: {paths['match_report_dir']}")
 
 
+def image_text(paths, work):
+    """The image-to-text results: every row's plant (``bbox_<idx>.png``) a new plant of image_text_list and
+    of the work list (same plant_id), every new plant with a parsed decision, number and name agreeing."""
+    text = pd.read_csv(paths["image_text_results"])
+    text["idx"] = text["image"].apply(p3.parse_idx_from_image_name)
+    listing = pd.read_csv(paths["image_text_list"], usecols=["idx", "plant_id"], dtype={"plant_id": str})
+    listing["idx"] = listing["idx"].astype(int)
+    named = text["idx"].notna()
+    check("PROBLEM", bool(named.all()), f"image-to-text: {len(text)} rows, {int(named.sum())} named bbox_<idx>.png")
+    text = text[named].astype({"idx": int})
+    check("PROBLEM", text["idx"].is_unique, f"image-to-text: one row per plant ({text['idx'].nunique()} plants)")
+    listed = text["idx"].isin(listing["idx"])
+    check("NOTE", bool(listed.all()), f"image-to-text rows of new plants (image_text_list): {int(listed.sum())} of "
+          f"{len(text)} (the others are not used)")  # fmt: skip
+    plant_id = work.drop_duplicates("idx").set_index("idx")["plant_id"].astype(str)
+    lst = listing.set_index("idx")["plant_id"]
+    in_work = lst.index.isin(plant_id.index)
+    same = in_work.copy()
+    same[in_work] = plant_id.reindex(lst.index[in_work]).to_numpy() == lst[in_work].to_numpy()
+    check("PROBLEM", bool(same.all()), f"new plants of image_text_list in the work list with the same plant_id: "
+          f"{int(same.sum())} of {len(lst)} (a category goes to the work list's plant at that idx)")  # fmt: skip
+    cats = pd.DataFrame([p3.decode_gen_text(t) for t in text["gen_text"]], index=text.index,
+                        columns=["number", "name", "justification"])  # fmt: skip
+    decided = cats["number"].notna()
+    covered = listing["idx"].isin(text.loc[decided, "idx"])
+    check("NOTE", bool(covered.all()), f"new plants with a site category: {int(covered.sum())} of {len(listing)}; "
+          f"rows without a parsed decision: {int((~decided).sum())}")  # fmt: skip
+    say("OK", f"site categories: {cats.loc[decided, 'number'].astype(int).value_counts().sort_index().to_dict()}")
+    usual = cats[decided].groupby("number")["name"].agg(lambda s: s.mode().iloc[0])
+    odd = cats[decided & (cats["name"] != cats["number"].map(usual))]
+    check("NOTE", odd.empty, f"decisions whose name is not their number's usual name (the number is used): {len(odd)}"
+          + (f" {odd.groupby(['number', 'name']).size().to_dict()}" if len(odd) else ""))  # fmt: skip
+
+
 def v3():
     cfg = load_config(script_name="plants_v3")
     paths = cfg["paths"]
@@ -186,6 +221,8 @@ def v3():
     tanks = int(((pd.to_numeric(results["num_detection_circle"], errors="coerce") > 0)
                  | (pd.to_numeric(results["num_detection_rect"], errors="coerce") > 0)).sum())  # fmt: skip
     say("OK", f"of them with tanks: {tanks}")
+    if cfg["with_image_text"]:
+        image_text(paths, work)
 
     plants, counts, unused = p3.build(cfg)
     print("        the whole build, in memory (nothing written):")

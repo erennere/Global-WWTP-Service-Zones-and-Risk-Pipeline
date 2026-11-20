@@ -33,7 +33,19 @@ def test_default_variant_is_the_configured_run_at_basin_level_6():
         True,
         "reported",
     )
-    assert v.tag == "v2_lvl6_bfrep_sz_mult"
+    assert v.tag == "v3_lvl6_bfrep_sz_mult"  # plant list v3 (correct_locations_w_OSM.version)
+
+
+def test_every_stage_works_on_the_configured_plant_list():
+    """A null version takes the first section's value: the stages run without --version (calibration,
+    national_data) and add_pop on its own must read the same plant list as create_voronoi."""
+    v = wf.default_variant()
+    annotated = starter.load_config("create_voronoi")["paths"]["annotated_all_filepath"]
+    for stage in ("add_pop", "national_data", "connection_radius", "find_unserved_pop"):
+        assert starter.load_config(stage)["version"] == v.version, stage
+    for stage in ("national_data", "connection_radius", "find_unserved_pop"):
+        assert starter.load_config(stage)["paths"]["annotated_all_filepath"] == annotated, stage
+    assert annotated == starter.load_config("plants_v3")["paths"]["output"]
 
 
 @pytest.mark.parametrize("variant", [wf.default_variant(), *wf.sweep_variants()[::17]], ids=lambda v: v.tag)
