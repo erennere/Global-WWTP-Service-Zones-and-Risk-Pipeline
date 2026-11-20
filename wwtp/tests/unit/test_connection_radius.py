@@ -380,6 +380,12 @@ def test_country_sizes_and_the_packed_results(tmp_path):
     assert t.loc["BB", "unsized_people"] == pytest.approx(np.quantile(bb_people, quantile))
     assert t.loc["BB", "unsized_from"] == "quantile"
     assert t.loc["AA", "config_offset"] == 0.45 and t.loc["BB", "config_unsized_people"] == 1234.0
+    # size_measure footprint: the substitute tank areas, at the same quantile, and the median
+    assert t.loc["BB", "footprint_quantile_m2"] == pytest.approx(np.quantile(bb["footprint_m2"], quantile))
+    assert t.loc["AA", "footprint_median_m2"] == pytest.approx(np.median(aa["footprint_m2"]))
+    assert np.isnan(t.loc["CC", "footprint_quantile_m2"])  # 5 plants with tanks: too few
+    every = plants.loc[plants["sized"], "footprint_m2"]
+    assert np.allclose(t["footprint_quantile_m2_all"], np.quantile(every, quantile))
 
     out = tmp_path / "out"
     out.mkdir()

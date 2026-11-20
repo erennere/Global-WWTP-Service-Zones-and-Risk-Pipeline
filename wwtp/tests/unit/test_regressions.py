@@ -201,6 +201,11 @@ FOOTPRINT_TO_PEOPLE = {
     "unsized_people": 2014.0,
     "country_offsets": {},
     "unsized_people_by_country": {},
+    "no_image_people_by_country": {},
+    "unsized_footprint_m2": 1000.0,
+    "unsized_footprint_m2_by_country": {},
+    "no_image_footprint_m2_by_country": {},
+    "combined_footprint_weight": {"combined_25": 0.25, "combined_50": 0.5, "combined_75": 0.75},
 }
 RADIUS_KW = dict(
     buffer=9000,
@@ -276,7 +281,10 @@ def test_plant_size_has_country_offsets_unsized_values_and_a_national_scale():
     footprint = sa.plant_size_people(
         plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_measure": "footprint", "size_scale": {"AA": 2}}
     )
-    assert footprint == pytest.approx([2 * fit * 10**0.5, fit, 180_000, 2014, 2 * fit * 10**0.5, fit])
+    substitute = 10 ** (1.369 + 0.738 * 3)  # no tanks: the general substitute tank area (1,000 m2)
+    assert footprint == pytest.approx(
+        [2 * fit * 10**0.5, fit, 2 * substitute * 10**0.5, substitute, 2 * fit * 10**0.5, fit]
+    )
     # a factor k on the sizes of a country is a factor k ** exponent on its radii
     radius = sa.calculate_buffer(plants, None, **{**RADIUS_KW, "footprint_to_people": to_people})
     doubled = sa.calculate_buffer(
@@ -299,7 +307,52 @@ def test_plants_never_imaged_take_their_country_median():
     footprint = sa.plant_size_people(
         plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_measure": "footprint"}
     )
-    assert footprint == pytest.approx([900, 4684, 4684, 2014])
+    general = 10 ** (1.369 + 0.738 * 3)  # footprint: the substitute tank area, no reported number
+    assert footprint == pytest.approx([general] * 4)
+
+
+def test_footprint_gives_plants_without_tanks_a_substitute_tank_area():
+    """size_measure footprint: a plant without a usable footprint (no tanks, lagoon) gets its country's low
+    quantile of tank areas, a plant never imaged its country's median tank area, both through the same
+    estimate with the country offset; elsewhere the general substitute. No reported number enters."""
+    plants = _plants([0, 1, 2, 3, 4], 10_000, POP_SERVED=[None, 5_000, None, None, None])
+    plants["ISO_2"] = ["JP", "JP", "JP", "AA", "JP"]
+    plants["footprint_m2"] = [0, 0, 0, 0, 10_000]
+    plants["lagoon_detected"] = [False, True, False, False, False]
+    plants["size_source"] = ["none", "none", "no_image", "none", "new_image"]
+    to_people = {**FOOTPRINT_TO_PEOPLE, "country_offsets": {"JP": 0.1}, "unsized_footprint_m2_by_country": {"JP": 500.0},
+                 "no_image_footprint_m2_by_country": {"JP": 2_000.0}}  # fmt: skip
+    people = sa.plant_size_people(
+        plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_measure": "footprint"}
+    )
+
+    def estimate(area, offset):
+        return 10 ** (1.369 + offset + 0.738 * np.log10(area))
+
+    assert people == pytest.approx(
+        [estimate(500, 0.1), estimate(500, 0.1), estimate(2_000, 0.1), estimate(1_000, 0), estimate(10_000, 0.1)]
+    )
+
+
+def test_combined_measures_weigh_the_reported_size_and_the_tank_estimate():
+    """combined_*: reported ** (1 - w) * estimate ** w for a plant with both; a plant with only one of the two
+    takes that one, a plant with neither its value under reported."""
+    plants = _plants([0, 1, 2, 3], 10_000, POP_SERVED=[100_000, None, 7_000, None])
+    plants["footprint_m2"] = [10_000, 10_000, 0, 0]
+    estimate = 10 ** (1.369 + 0.738 * 4)
+    for measure, w in (("combined_25", 0.25), ("combined_50", 0.5), ("combined_75", 0.75)):
+        people = sa.plant_size_people(plants, **{**RADIUS_KW, "size_measure": measure})
+        assert people == pytest.approx([100_000 ** (1 - w) * estimate**w, estimate, 7_000, 2014])
+    weights = {"combined_25": 0.0, "combined_50": 0.5, "combined_75": 1.0}
+    to_people = {**FOOTPRINT_TO_PEOPLE, "combined_footprint_weight": weights}
+    none = sa.plant_size_people(
+        plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_measure": "combined_25"}
+    )
+    full = sa.plant_size_people(
+        plants, **{**RADIUS_KW, "footprint_to_people": to_people, "size_measure": "combined_75"}
+    )
+    assert none == pytest.approx(sa.plant_size_people(plants, **RADIUS_KW))  # w 0: reported
+    assert full[0] == pytest.approx(estimate)  # w 1: the tank estimate where there is one
 
 
 def test_radius_never_exceeds_max_buffer():

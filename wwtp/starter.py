@@ -41,7 +41,8 @@ _OVERRIDE_FIELDS = (
     ("size_measure", 6, False),
 )
 # Path token for the service-radius mode when dynamic_buffering is on.
-SIZE_MEASURE_TOKENS = {"reported": "rep", "footprint": "fp"}
+SIZE_MEASURE_TOKENS = {"reported": "rep", "footprint": "fp", "combined_25": "cb25", "combined_50": "cb50",
+                       "combined_75": "cb75"}  # fmt: skip
 _OVERRIDE_FLAG_TO_FIELD = {
     "--level": "level",
     "--version": "version",

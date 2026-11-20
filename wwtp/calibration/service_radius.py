@@ -158,7 +158,11 @@ def fit_country_sizes(plants, to_people, min_plants):
         ``sized_quantile``, and ``unsized_from`` ('own', 'quantile' or ''). ``quantile`` is the median,
         over the countries with both, of the share of their sized plants whose estimate is at most their
         ``unsized_median``: where the measured median of the size-free plants sits among the sizes of
-        the plants with tanks.
+        the plants with tanks. Under size_measure footprint, the substitute tank areas (no reported number):
+        ``footprint_quantile_m2``, the tank area at ``quantile`` of its sized plants, and
+        ``footprint_median_m2``, their median (both NaN below ``min_plants``), and
+        ``footprint_quantile_m2_all``, the tank area at ``quantile`` of all sized plants (the same on
+        every row).
     """
     sized = plants["sized"].to_numpy(dtype=bool)
     reported = plants["reported"].to_numpy(dtype=float)
@@ -190,6 +194,10 @@ def fit_country_sizes(plants, to_people, min_plants):
     table["sized_quantile"] = sized_quantile
     for column in ("n_fit", "n_sized", "n_unsized_reported"):
         table[column] = table[column].fillna(0).astype(int)
+    areas = pd.Series(footprint, index=plants.index)[sized].groupby(country[sized])
+    table["footprint_quantile_m2"] = areas.quantile(quantile).where(n_sized >= min_plants)
+    table["footprint_median_m2"] = areas.median().where(n_sized >= min_plants)
+    table["footprint_quantile_m2_all"] = float(np.quantile(footprint[sized], quantile))
     table["unsized_people"] = table["unsized_median"].fillna(table["sized_quantile"])
     table["unsized_from"] = np.where(
         table["unsized_median"].notna(), "own", np.where(table["unsized_people"].notna(), "quantile", "")

@@ -333,7 +333,11 @@ create_voronoi:
   # Plant size in people, used by the service radius and by weight_method 'size':
   #   reported  - the first positive value in reported_size_columns, the
   #               footprint estimate where there is none
-  #   footprint - the footprint estimate for every plant (detections only)
+  #   footprint - the footprint estimate for every plant (detections only; plants without a usable
+  #               footprint a substitute tank area, footprint_to_people.unsized_footprint_m2*)
+  #   combined_25, combined_50, combined_75 - reported ** (1 - w) * footprint estimate ** w where a
+  #               plant has both (w 0.25, 0.5, 0.75: footprint_to_people.combined_footprint_weight),
+  #               the one there is elsewhere; to be calibrated and compared (Eren, 20 Nov 2026)
   # GB catchments (not used for calibration), service-area / real population for
   # catchments of <10k, 10k-100k, 100k-500k, >500k people:
   #   reported  1.40, 1.09, 1.00, 1.01 (typical plant error x1.59)
@@ -419,6 +423,30 @@ create_voronoi:
     # 2,093 plants of the work list). Under size_measure reported a plant's own reported size still comes
     # first (229 of the 230 have one).
     no_image_people_by_country: {'JP': 4684}
+    # Under size_measure footprint the plants without a usable footprint get a substitute tank area (m2), put
+    # through the estimate above, so that no reported number enters (Eren, 20 Nov 2026): the country's tank
+    # area at the 16.2 % quantile of its plants with tanks (the position of plants seen without tanks, as for
+    # unsized_people_by_country; at least 30 such plants; 61 countries), elsewhere the quantile over all plants
+    # with tanks; plants never imaged the country's median tank area. In countries whose
+    # unsized_people_by_country value is a percentile the two give the same people. From the plants table
+    # of the calibration run of 20 Nov 2026 (plant list v3; plant_size_countries.csv: footprint_quantile_m2,
+    # footprint_median_m2, footprint_quantile_m2_all).
+    unsized_footprint_m2: 1093
+    unsized_footprint_m2_by_country: {
+      'AR': 2069, 'AT': 881, 'AU': 1424, 'BE': 1480, 'BG': 1647, 'BR': 985, 'BY': 4006, 'CA': 2000, 'CH': 293,
+      'CL': 894, 'CN': 3729, 'CO': 769, 'CZ': 813, 'DE': 1976, 'DK': 2642, 'DZ': 2442, 'EE': 3431, 'EG': 3769,
+      'ES': 478, 'FI': 3507, 'FR': 685, 'GB': 2001, 'GR': 603, 'HR': 786, 'HU': 533, 'IE': 496, 'IL': 6644,
+      'IN': 1362, 'IQ': 1944, 'IR': 2167, 'IT': 460, 'JP': 584, 'KR': 1970, 'KZ': 4600, 'LT': 2223, 'LV': 1375,
+      'MA': 3308, 'MD': 3972, 'MX': 1528, 'MY': 1785, 'NL': 3897, 'NO': 732, 'NZ': 937, 'PK': 856, 'PL': 1044,
+      'PT': 424, 'RO': 3798, 'RU': 2545, 'SA': 2169, 'SE': 1082, 'SK': 880, 'TH': 10272, 'TN': 1917, 'TR': 1908,
+      'TW': 1029, 'UA': 2214, 'US': 890, 'UZ': 3499, 'VN': 4007, 'ZA': 975, 'ZW': 669
+    }
+    no_image_footprint_m2_by_country: {'JP': 2134}
+    # The combined size measures: for a plant with both a reported size and a usable footprint
+    # people = reported ** (1 - w) * estimate ** w (a weighted mean in log10), w per measure; a plant with
+    # only one of the two takes that one, a plant with neither its value under reported. Three weights
+    # for the calibration to compare on the real catchments (Eren, 20 Nov 2026).
+    combined_footprint_weight: {combined_25: 0.25, combined_50: 0.5, combined_75: 0.75}
   # Factor on every plant size of a country (reported or estimated), per size_measure:
   #   k = connected people (connected_share x people of the 2022 raster) / sum of its plant sizes,
   #   kept within 0.1 and 10; countries without an entry: 1.
@@ -433,6 +461,10 @@ create_voronoi:
   # >= 95 % of 1,000 bootstrap samples of the US, GB, NL and IE catchments. reported: 0.1-10 (chosen
   # with every reference country left out too); footprint: 1/3-3. notes/plant_check_2026-11-13.md.
   size_scale:
+    # combined_*: none until a calibration run that includes them (every country 1)
+    combined_25: {}
+    combined_50: {}
+    combined_75: {}
     reported: {
       'AE': 10.00, 'AF': 2.91, 'AL': 2.00, 'AM': 0.10, 'AT': 0.59, 'AU': 1.12, 'AZ': 10.00, 'BA': 3.88,
       'BD': 0.10, 'BE': 1.19, 'BF': 0.53, 'BG': 0.85, 'BH': 10.00, 'BR': 1.56, 'BT': 0.76, 'BW': 0.10,
@@ -492,6 +524,20 @@ create_voronoi:
       radius_exponent: 0.5
       radius_at_10k_people_km: 4.25
       by_connection: {intercept: 1.320, slope: 0.201, max_km: 40.0}
+    # combined_*: the exponent of reported (sizes in people, mostly reported ones). by_connection is reported's
+    # for now, a placeholder until a calibration run includes them (with size_scale, which they lack too)
+    combined_25:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.471, slope: 0.209, max_km: 8.0}
+    combined_50:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.471, slope: 0.209, max_km: 8.0}
+    combined_75:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.471, slope: 0.209, max_km: 8.0}
   # The radius at 10,000 people by country (by_connection; without it radius_at_10k_people_km everywhere):
   #   r10k_km = min(max_km, exp(intercept + slope * logit(C))), C = connected_share of the plant's
   #   country; countries without a value keep radius_at_10k_people_km.
@@ -1343,7 +1389,7 @@ connection_radius:
   year: 2022                  # WorldPop raster year (download_pop keeps 2015-2024)
   aggregate_cells: 10         # 100 m cells summed to 1 km
   candidate_plants: 64
-  size_measures: ['reported', 'footprint']
+  size_measures: ['reported', 'footprint', 'combined_25', 'combined_50', 'combined_75']
   radius_exponents: [0.3, 0.5]
   # radius_at_10k_people_km grid: count values, geometric from start to stop (km)
   radius_grid: {start: 0.5, stop: 40.0, count: 40}

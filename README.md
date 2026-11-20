@@ -94,7 +94,7 @@ Weight transformation functions are controlled by `create_voronoi.weight_method`
 To avoid disproportionately large Voronoi cells, especially in sparse areas, cells are clipped to a buffer around each location after creation.
 
 - Static buffering: disable dynamic buffering with `create_voronoi.dynamic_buffering: false`. The `--buffer` flag overrides the config value at runtime.
-- Dynamic buffering: enable with `create_voronoi.dynamic_buffering: true`. Each plant's radius grows with its size in people (`create_voronoi.size_measure`: `reported` or `footprint`; numbers in `create_voronoi.radius_calibration`). The size is the reported one or the footprint estimate (`footprint_to_people`, with a country offset and a country value for plants without a usable footprint), times the country's `size_scale`, which makes the sizes of a country add up to its connected people.
+- Dynamic buffering: enable with `create_voronoi.dynamic_buffering: true`. Each plant's radius grows with its size in people (`create_voronoi.size_measure`: `reported`, `footprint` or `combined_25`/`_50`/`_75`; numbers in `create_voronoi.radius_calibration`). The size is the reported one or the footprint estimate (`footprint_to_people`, with a country offset and a country value for plants without a usable footprint; under `footprint` a substitute tank area instead, the country's low quantile, so that no reported number enters), for the combined measures `reported ** (1 - w) * estimate ** w` where a plant has both (`footprint_to_people.combined_footprint_weight`), times the country's `size_scale`, which makes the sizes of a country add up to its connected people.
 
 The sweep analysis scripts support sensitivity analysis across combinations of model parameters. The configurable hooks that govern those runs are `create_voronoi.calculate_area_fn`, `create_voronoi.calculate_buffer_fn`, and `create_voronoi.prepare_data_fn`, which are resolved at runtime through `wwtp/pipelines.py`.
 
@@ -331,7 +331,7 @@ The defaults are a mix of portable relative paths and environment-specific clust
 | `create_voronoi.weight_method` | Controls weight transformation |
 | `create_voronoi.weight_func` | Controls multiplicative vs additive weighted distance |
 | `create_voronoi.dynamic_buffering` | Switches between static and dynamic clipping |
-| `create_voronoi.size_measure` | Plant size in people (`reported` or `footprint`) for the service radius and `size` weights |
+| `create_voronoi.size_measure` | Plant size in people (`reported`, `footprint`, or `combined_25`/`_50`/`_75`: both where a plant has both) for the service radius and `size` weights |
 | `create_rasters.zoom_level` | Controls raster/tile resolution used in the risk workflow |
 | `find_unserved_pop.figures.pop_threshold` | Controls thresholding of non-served population polygons |
 | `find_intersection_river.x_distance` | Controls maximum river-match distance for non-served polygons |

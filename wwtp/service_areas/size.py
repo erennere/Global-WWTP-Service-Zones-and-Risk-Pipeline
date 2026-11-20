@@ -85,7 +85,10 @@ def calculate_area(df, only_round=False):
 LAGOON_COLUMN = "lagoon_detected"
 
 
-SIZE_MEASURES = ("reported", "footprint")
+# reported, footprint, and the combined measures: reported ** (1 - w) * footprint estimate ** w for plants with
+# both, w = footprint_to_people.combined_footprint_weight[measure] (the calibration tests several w)
+SIZE_MEASURES = ("reported", "footprint", "combined_25", "combined_50", "combined_75")
+COMBINED_MEASURES = SIZE_MEASURES[2:]
 # plants_v3: the source of a plant's detections; NO_IMAGE for plants that were never imaged
 SIZE_SOURCE_COLUMN, NO_IMAGE = "size_source", "no_image"
 
@@ -169,20 +172,27 @@ def plant_size_people(
         Plant records with ``footprint_m2`` (from ``calculate_area``; falls back to
         ``total_area``), ``country_column`` and optionally ``lagoon_detected`` and
         the reported columns.
-    size_measure : {'reported', 'footprint'}
+    size_measure : str, one of ``SIZE_MEASURES``
         ``reported``: the reported size where there is one (see
         ``reported_size_people``), the footprint estimate elsewhere.
-        ``footprint``: the footprint estimate for every plant.
+        ``footprint``: the footprint estimate for every plant; plants without a usable
+        footprint get a substitute tank area (below), so no reported number enters.
+        ``combined_*``: ``10 ** ((1 - w) log10 reported + w log10 estimate)`` for plants with
+        both a reported size and a usable footprint, ``w`` =
+        ``combined_footprint_weight[size_measure]``; a plant with only one of the two takes that
+        one, a plant with neither the value it gets under ``reported``.
     footprint_to_people : dict
         The footprint estimate. ``intercept`` and ``slope`` of ``log10 people =
         intercept + offset + slope * log10 footprint_m2`` with ``offset`` the
         plant's country in ``country_offsets`` (0 for other countries).
-        ``unsized_people`` for lagoon plants and plants without detections, whose
-        footprint says nothing about their size; ``unsized_people_by_country``
-        replaces it in the countries it lists; ``no_image_people_by_country`` for
-        plants never imaged (``size_source`` no_image) in the countries it lists.
+        Plants without a usable footprint (lagoons, no detections), under ``reported`` and the
+        combined measures: ``unsized_people``, replaced by ``unsized_people_by_country`` in the
+        countries it lists, and for plants never imaged (``size_source`` no_image) by
+        ``no_image_people_by_country``. Under ``footprint`` they get a substitute tank area instead:
+        ``unsized_footprint_m2_by_country`` (else ``unsized_footprint_m2``), for plants never
+        imaged ``no_image_footprint_m2_by_country``, put through the same estimate.
     reported_size_columns, reported_size_skip
-        Passed to ``reported_size_people`` (used with ``reported`` only).
+        Passed to ``reported_size_people`` (not used with ``footprint``).
     country_column : str
         Column holding the plant's country (ISO 3166 alpha-2).
     size_scale : dict
@@ -201,30 +211,49 @@ def plant_size_people(
     footprint, sized = detected_footprint(df)
     country = df[country_column]
     offset = country.map(footprint_to_people["country_offsets"]).fillna(0.0).to_numpy(dtype=float)
-    unsized = (
-        country.map(footprint_to_people["unsized_people_by_country"])
-        .fillna(float(footprint_to_people["unsized_people"]))
-        .to_numpy(dtype=float)
-    )
-    # Plants never imaged (plants_v3 size_source no_image: no tanks seen, nothing said about their size)
-    # take their country's median from no_image_people_by_country, not the low value of plants seen without tanks
+    # plants_v3 size_source no_image: never imaged, so nothing is known about their tanks
     if SIZE_SOURCE_COLUMN in df.columns:
         no_image = (df[SIZE_SOURCE_COLUMN].astype(str) == NO_IMAGE).to_numpy()
+    else:
+        no_image = np.zeros(len(df), dtype=bool)
+
+    def estimate(area_m2):
+        return np.power(
+            10.0,
+            float(footprint_to_people["intercept"]) + offset + float(footprint_to_people["slope"]) * np.log10(area_m2),
+        )
+
+    if size_measure == "footprint":
+        # A substitute tank area where none is usable: the country's low quantile (plants seen without
+        # tanks), its median for plants never imaged; then the same estimate, so no reported number enters
+        substitute = (
+            country.map(footprint_to_people["unsized_footprint_m2_by_country"])
+            .fillna(float(footprint_to_people["unsized_footprint_m2"]))
+            .to_numpy(dtype=float)
+        )
+        median = country.map(footprint_to_people["no_image_footprint_m2_by_country"]).to_numpy(dtype=float)
+        substitute = np.where(no_image & np.isfinite(median), median, substitute)
+        people = estimate(np.where(sized, footprint, substitute))
+    else:
+        unsized = (
+            country.map(footprint_to_people["unsized_people_by_country"])
+            .fillna(float(footprint_to_people["unsized_people"]))
+            .to_numpy(dtype=float)
+        )
+        # Plants never imaged take their country's median from no_image_people_by_country, not the low value
+        # of plants seen without tanks
         median = country.map(footprint_to_people["no_image_people_by_country"]).to_numpy(dtype=float)
         unsized = np.where(no_image & np.isfinite(median), median, unsized)
-    people = np.where(
-        sized,
-        np.power(
-            10.0,
-            float(footprint_to_people["intercept"])
-            + offset
-            + float(footprint_to_people["slope"]) * np.log10(np.where(sized, footprint, 1.0)),
-        ),
-        unsized,
-    )
-    if size_measure == "reported":
+        people = np.where(sized, estimate(np.where(sized, footprint, 1.0)), unsized)
         reported = reported_size_people(df, reported_size_columns, reported_size_skip)
-        people = np.where(np.isfinite(reported), reported, people)
+        has = np.isfinite(reported)
+        if size_measure in COMBINED_MEASURES:
+            w = float(footprint_to_people["combined_footprint_weight"][size_measure])
+            both = has & sized
+            mixed = np.power(10.0, (1.0 - w) * np.log10(np.where(both, reported, 1.0)) + w * np.log10(people))
+            people = np.where(both, mixed, people)
+            has = has & ~sized
+        people = np.where(has, reported, people)
     return people * country.map(size_scale).fillna(1.0).to_numpy(dtype=float)
 
 

@@ -44,7 +44,8 @@ Level = Annotated[str, BeforeValidator(_digits), Field(pattern=r"^(0?[1-9]|1[0-2
 Version = Annotated[str, BeforeValidator(_digits), Field(pattern=r"^\w+$")]
 WeightMethod = Literal["linear", "square_root", "logarithmic", "sigmoid", "size"]
 WeightFunc = Literal["", "mult", "add"]
-SizeMeasure = Literal["reported", "footprint"]
+CombinedMeasure = Literal["combined_25", "combined_50", "combined_75"]  # weights: footprint_to_people
+SizeMeasure = Literal["reported", "footprint", "combined_25", "combined_50", "combined_75"]
 Paths = dict[str, str]  # resolved path templates; every key must have a value by now
 Fraction = Annotated[float, Field(ge=0, le=1)]
 
@@ -88,7 +89,9 @@ class Workers(Strict):
 class FootprintToPeople(Strict):
     """people = 10 ** (intercept + country offset + slope * log10(footprint m2)); unsized plants get
     unsized_people, or their country's value in unsized_people_by_country (ISO 3166 alpha-2 keys); plants
-    never imaged their country's value in no_image_people_by_country."""
+    never imaged their country's value in no_image_people_by_country. Under size_measure footprint unsized
+    plants get a substitute tank area instead (unsized_footprint_m2[_by_country], never imaged
+    no_image_footprint_m2_by_country). combined_*: reported ** (1 - w) * estimate ** w, w per measure."""
 
     intercept: float
     slope: PositiveFloat
@@ -96,6 +99,17 @@ class FootprintToPeople(Strict):
     country_offsets: dict[str, float]
     unsized_people_by_country: dict[str, PositiveFloat]
     no_image_people_by_country: dict[str, PositiveFloat]
+    unsized_footprint_m2: PositiveFloat
+    unsized_footprint_m2_by_country: dict[str, PositiveFloat]
+    no_image_footprint_m2_by_country: dict[str, PositiveFloat]
+    combined_footprint_weight: dict[CombinedMeasure, Fraction]
+
+    @model_validator(mode="after")
+    def _every_combined_measure_weighted(self):
+        missing = sorted(set(CombinedMeasure.__args__) - set(self.combined_footprint_weight))
+        if missing:
+            raise ValueError(f"combined_footprint_weight has no weight for {missing}")
+        return self
 
 
 class RadiusByConnection(Strict):
