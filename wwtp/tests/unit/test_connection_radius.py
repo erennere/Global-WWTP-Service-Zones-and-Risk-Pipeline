@@ -116,6 +116,11 @@ def test_curves_for_a_country_with_plants_and_a_raster(tmp_path, monkeypatch):
     assert nl["reported_coverage"] == pytest.approx(1.7e5 / nl["total_people"])
     assert nl["sum_size_reported"] == pytest.approx(1.756e5) and nl["sum_size_footprint"] == pytest.approx(1.556e5)
     assert countries.set_index("iso2").loc["BE", "status"] == "no raster"
+    # every block of 5 x 5 cells of 0.01 degrees has people: their areas from the latitude of their centres
+    lat = 52.0 - (np.arange(12) * 5 + 2.5) * 0.01
+    block = (0.05 * cr.EARTH_RADIUS_M / 1000 * math.pi / 180) ** 2
+    assert nl["settled_km2"] == pytest.approx(16 * block * np.cos(np.radians(lat)).sum(), rel=1e-9)
+    assert nl["settled_km2_per_1000"] == pytest.approx(nl["settled_km2"] / nl["total_people"] * 1000)
     assert len(curves) == 2 * 2 * 12
     assert pd.read_csv(tmp_path / "out" / "plants.csv")["size_footprint"].tolist() == plants["size_footprint"].tolist()
     for _, curve in curves.groupby(["size_measure", "radius_exponent"]):
@@ -276,20 +281,24 @@ def test_references_are_read_per_source_in_the_year_nearest_the_target(tmp_path)
     assert "AND" not in refs.index or np.isnan(refs.loc["AND", "sdg631_share"])  # no volume: no share
 
 
-def _capped_world(a, b, cap, size_error, exponent=0.3, n=40, seed=5):
-    """Countries that need r10k = min(cap, exp(a + b logit C)) once their plant sizes add up to their
-    connected people; the sizes at hand are off by the factor ``size_error(k)`` (1 = right)."""
+def _capped_world(a, b, cap, size_error, exponent=0.3, n=40, seed=5, spread=0.0, models=("connection",)):
+    """Countries that need r10k = min(cap, exp(a + b logit C + spread log S)) once their plant sizes add up to
+    their connected people (S: settled area, random per country); the sizes at hand are off by the factor
+    ``size_error(k)`` (1 = right)."""
     rng = np.random.default_rng(seed)
     radii = cr.radius_grid({"start": 0.5, "stop": 40.0, "count": 60})
     countries, curves, refs = [], [], []
     for k in range(n):
         iso2, iso3, share = f"Q{k:02d}", f"QQ{k:02d}", rng.uniform(0.05, 0.95)
+        settled = math.exp(rng.uniform(math.log(1.0), math.log(50.0)))  # km2 per 1,000 people
         error = size_error(k)  # sizes at hand = right sizes * error
-        needed = min(cap, math.exp(a + b * cr.logit(share))) / error**exponent  # too-large sizes need a smaller r10k
+        rule = math.exp(a + b * cr.logit(share) + spread * math.log(settled))
+        needed = min(cap, rule) / error**exponent  # too-large sizes need a smaller r10k
         r0 = -needed / math.log(1 - share)
         countries.append(
-            {"iso2": iso2, "iso3": iso3, "status": "ok", "total_people": 1e6, "sum_size_reported": share * 1e6 * error}
-        )
+            {"iso2": iso2, "iso3": iso3, "status": "ok", "total_people": 1e6, "sum_size_reported": share * 1e6 * error,
+             "settled_km2_per_1000": settled}
+        )  # fmt: skip
         # a second, not fitted reference: 5 pp above JMP in every country
         refs.append({"iso3": iso3, "jmp_share": share, "sdg631_share": share + 0.05, "region_sdg": f"region {k % 4}"})
         for r in radii:
@@ -305,6 +314,7 @@ def _capped_world(a, b, cap, size_error, exponent=0.3, n=40, seed=5):
     cfg = {
         "fit_reference": "jmp",
         "check_references": ["sdg631"],
+        "radius_models": list(models),
         "calibration_caps_km": [5.0, 40.0],
         "calibration_size_scale_limits": [{"min": 1.0, "max": 1.0}, {"min": 0.1, "max": 10.0}],
         "radius_grid": {"start": 0.5, "stop": 40.0, "count": 60},
@@ -329,6 +339,24 @@ def test_the_capped_rule_is_recovered_and_tested_by_leaving_regions_out():
     assert len(detail) == 2 * 2 * 40 and detail["r10k"].max() <= 40.0
     assert (detail["sdg631"] - detail["reference"]).to_numpy() == pytest.approx(0.05)
     assert detail["size_scale"].to_numpy() == pytest.approx(1.0)
+
+
+def test_the_spread_term_is_recovered_where_the_settled_area_matters():
+    """Countries whose needed r10k also grows with their settled area S: the spread model returns its
+    slope and predicts the left-out regions far better than the connected share alone."""
+    world = _capped_world(1.0, 0.2, 40.0, size_error=lambda k: 1.0, spread=0.4,
+                          models=("connection", "connection_spread"))  # fmt: skip
+    table, detail = cr.calibrate_by_region(*world)
+    t = table[(table["scale_min"] == 1.0) & (table["cap_km"] == 40.0)].set_index("radius_model")
+    assert t.loc["connection_spread", ["a", "b", "c"]].to_numpy(float) == pytest.approx([1.0, 0.2, 0.4], abs=0.02)
+    assert np.isnan(t.loc["connection", "c"]) and table.loc[table["cap_km"] == 0, "radius_model"].eq("one_radius").all()
+    assert t.loc["connection_spread", "mean_abs_error_pp"] < 0.3 * t.loc["connection", "mean_abs_error_pp"]
+    d = detail[
+        (detail["scale_min"] == 1.0) & (detail["cap_km"] == 40.0) & (detail["radius_model"] == "connection_spread")
+    ]
+    expected = np.exp(1.0 + 0.2 * cr.logit(d["reference"]) + 0.4 * np.log(d["settled_km2_per_1000"]))
+    assert d["r10k"].to_numpy() == pytest.approx(expected.to_numpy(), rel=0.05)
+    assert len(detail) == 2 * 2 * 2 * 40  # limits x caps x models x countries
 
 
 def test_the_size_scale_removes_country_errors_of_the_plant_sizes():

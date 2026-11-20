@@ -4,7 +4,10 @@ The radius rule ``radius_km = r10k * (people / 10,000) ** e`` was calibrated on 
 differs between countries (GB 3.0 km, US 3.75 km, NL 6.0 km; notes/service_radius_three_countries_
 2026-11-11.md) with how many people are connected and how complete our plant list is. This module
 tests one global formula ``r10k = exp(a + b * logit(x))``, with x the national connected share (or our
-own reported coverage), fitted on some countries and checked on the others.
+own reported coverage), fitted on some countries and checked on the others; ``calibrate`` also with a
+spread term, ``+ c * log(S)``, S the country's settled area (km2 of 1 km cells with people per 1,000
+people), so that of two countries with the same connected share the one whose people live more spread
+out gets the larger radius.
 
 Subcommands (``python -m wwtp.calibration.connection_radius <command>``; settings in config.yaml,
 section ``connection_radius``; Snakemake target ``calibration`` runs references, curves, calibrate,
@@ -12,9 +15,10 @@ plant_check and pack)::
 
     references  the national connection statistics (reference_urls), saved unparsed to
                 <output_dir>/references/ with manifest.json (URL, time, bytes, sha256)
-    curves      for every country with plants and a WorldPop raster of ``year``: its people, the sum of
-                its plant sizes, and the people inside service areas for every size measure, radius
-                exponent and r10k of the grid -> countries.csv, served_share_curves.csv; and the plants
+    curves      for every country with plants and a WorldPop raster of ``year``: its people, its settled
+                area (the area of its 1 km blocks with people, from their latitude), the sum of its plant
+                sizes, and the people inside service areas for every size measure, radius exponent and
+                r10k of the grid -> countries.csv, served_share_curves.csv; and the plants
                 with their country, footprint and sizes -> plants.csv. Sizes are those before the
                 national size scale (``create_voronoi.size_scale``), which ``calibrate`` derives.
     fit         the connected shares per country from the references (reference_table.csv) and the
@@ -23,9 +27,11 @@ plant_check and pack)::
                 - the country parts of the plant size (``footprint_to_people.country_offsets`` and
                   ``unsized_people_by_country``) -> plant_size_countries.csv, next to the config values;
                 - the national size scale, k = connected people / sum of plant sizes within the limits
-                  of ``calibration_size_scale_limits`` ([1, 1] = none), and the radius rule
-                  r10k = min(cap, exp(a + b logit(C))), a and b per pair of limits and cap, tested by
-                  leaving one SDG region out -> calibration_by_cap.csv, calibration_countries.csv
+                  of ``calibration_size_scale_limits`` ([1, 1] = none), and the radius rule of each
+                  of ``radius_models``: r10k = min(cap, exp(a + b logit(C))) ('connection') or
+                  min(cap, exp(a + b logit(C) + c log(S))) ('connection_spread'), the coefficients per
+                  pair of limits and cap, tested by leaving one SDG region out ->
+                  calibration_by_cap.csv, calibration_countries.csv
                 A factor k on every size of a country is a factor k ** e on its radii, so the curves
                 of ``curves`` serve every k.
     pack        the tables above, those of ``wwtp.calibration.plant_check`` (every configuration on the
@@ -43,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import logging
 import math
@@ -60,7 +67,7 @@ from scipy.spatial import cKDTree
 
 from ..add_pop import find_country_tif_files
 from ..geo_utils import read_located_plants
-from ..service_areas.size import connected_share_logit
+from ..service_areas.size import connected_share_logit, radius_at_10k_by_connection
 from ..service_areas import (
     calculate_area,
     detected_footprint,
@@ -140,6 +147,18 @@ def aggregate_cells(path, factor):
     return lon[c_idx], lat[r_idx], sums[r_idx, c_idx]
 
 
+def block_area_km2(path, factor, lat):
+    """Area (km2) of a block of ``factor`` x ``factor`` cells of the raster at ``path``, at latitude ``lat``.
+
+    A block cut by the raster's edge counts whole: such blocks lie at the edge of the country's raster,
+    where hardly anyone lives.
+    """
+    with rasterio.open(path) as src:
+        width_deg, height_deg = abs(src.transform.a) * factor, abs(src.transform.e) * factor
+    km_per_degree = EARTH_RADIUS_M / 1000.0 * math.pi / 180.0
+    return width_deg * height_deg * km_per_degree**2 * np.cos(np.radians(np.asarray(lat, dtype=float)))
+
+
 def load_plants(cfg):
     """Our plants (with a location): country, lon/lat, UWWTD code, CWNS ID, footprint and sizes per size measure.
 
@@ -212,7 +231,12 @@ def country_curves(iso2, raster, plants, settings):
     lon, lat, people = aggregate_cells(raster, settings["aggregate_cells"])
     cells = sphere_xyz(lon, lat)
     tree = cKDTree(sphere_xyz(plants["lon"], plants["lat"]))
-    summary = {"total_people": float(people.sum()), "n_cells": int(len(people))}
+    summary = {
+        "total_people": float(people.sum()),
+        "n_cells": int(len(people)),
+        # how spread out the people live: the area of the blocks with people
+        "settled_km2": float(block_area_km2(raster, settings["aggregate_cells"], lat).sum()),
+    }
     rows = []
     for measure in settings["size_measures"]:
         size = plants[f"size_{measure}"].to_numpy()
@@ -278,6 +302,10 @@ def compute_curves(cfg):
         if row["iso2"] in summaries:
             row.update(summaries[row["iso2"]])
             row["reported_coverage"] = row["reported_people"] / row["total_people"] if row["total_people"] else np.nan
+            # the spread term of the radius rule (create_voronoi.settled_area)
+            row["settled_km2_per_1000"] = (
+                row["settled_km2"] / row["total_people"] * 1000.0 if row["total_people"] else np.nan
+            )
     out_dir = cfg["paths"]["output_dir"]
     os.makedirs(out_dir, exist_ok=True)
     with atomic_output(os.path.join(out_dir, "countries.csv")) as tmp:
@@ -353,6 +381,30 @@ def fit_line(x, log_r):
     """Least squares log r10k = a + b x."""
     b, a = np.polyfit(np.asarray(x, dtype=float), np.asarray(log_r, dtype=float), 1)
     return float(a), float(b)
+
+
+def fit_linear(columns, log_r):
+    """Least squares log r10k = a + b x1 (+ c x2 ...): the coefficients [a, b, ...]."""
+    design = np.column_stack([np.ones(len(log_r)), *[np.asarray(c, dtype=float) for c in columns]])
+    return [float(v) for v in np.linalg.lstsq(design, np.asarray(log_r, dtype=float), rcond=None)[0]]
+
+
+def radius_rule(model, coefficients, cap):
+    """The rule of ``radius_at_10k_by_connection`` from fitted coefficients: [a, b] or [a, b, c]."""
+    return {
+        "intercept": coefficients[0],
+        "slope": coefficients[1],
+        "spread_slope": coefficients[2] if model == "connection_spread" else 0.0,
+        "max_km": cap,
+    }
+
+
+def model_predictors(model, share, settled):
+    """The predictors of a radius model: logit of the connected share, and the log settled area."""
+    x = [logit(share)]
+    if model == "connection_spread":
+        x.append(np.log(np.asarray(settled, dtype=float)))
+    return x
 
 
 def cross_validate(table, folds, seed):
@@ -569,10 +621,12 @@ def calibrate_by_region(cfg, countries, curves, references):
       = the ``fit_reference`` share C x the people of its raster; limits [1, 1] = no scale). With it
       every radius of the country grows by ``k ** e``: its served share at r10k is its curve at
       ``r10k * k ** e``, and the r10k it needs is the unscaled one / ``k ** e``.
-    - ``r10k = min(cap, exp(a + b * logit(C)))``: a and b on all countries (needed radii above the cap
-      count as the cap), and the error of the served share when each SDG region is predicted from a
-      fit on the other regions. ``cap`` 0 stands for one radius for all (the best on the other
-      regions), the baseline.
+    - for every model of ``radius_models``, ``r10k = min(cap, exp(a + b * logit(C)))`` ('connection') or
+      ``min(cap, exp(a + b * logit(C) + c * log(S)))`` ('connection_spread', S the country's settled
+      area, ``settled_km2_per_1000`` of ``curves``): the coefficients on all countries (needed radii above
+      the cap count as the cap), and the error of the served share when each SDG region is predicted
+      from a fit on the other regions. ``cap`` 0 (model 'one_radius') stands for one radius for all (the
+      best on the other regions), the baseline.
 
     Returns one row per combination and the per-country table of the fits.
     """
@@ -597,6 +651,7 @@ def calibrate_by_region(cfg, countries, curves, references):
                     "iso3": info["iso3"].iloc[0],
                     "region": refs.loc[info["iso3"].iloc[0], "region_sdg"],
                     "people": float(info["total_people"].iloc[0]),
+                    "settled": float(info["settled_km2_per_1000"].iloc[0]),
                     "sum_size": float(info[f"sum_size_{measure}"].iloc[0]),
                     "reference": target,
                     **{f"check_{c}": float(refs.loc[info["iso3"].iloc[0], f"{c}_share"]) for c in checks},
@@ -607,11 +662,11 @@ def calibrate_by_region(cfg, countries, curves, references):
                 }
             )
         t = pd.DataFrame(table)
-        x, ok, share, people = (
-            logit(t["reference"]),
+        ok, share, people, settled = (
             t["inside"].to_numpy(),
             t["reference"].to_numpy(),
             t["people"].to_numpy(),
+            t["settled"].to_numpy(),
         )
         raw_scale = share * people / t["sum_size"].to_numpy()
 
@@ -659,30 +714,40 @@ def calibrate_by_region(cfg, countries, curves, references):
                 test = (t["region"] == region).to_numpy()
                 best = min(grid, key=lambda r: np.mean(np.abs(served(np.full(len(t), r)) - share)[~test]))
                 single[test] = served(np.full(len(t), best))[test]
-            rows.append({**key, "cap_km": 0.0, "a": np.nan, "b": np.nan, **errors(single)})
-            for cap in cfg["calibration_caps_km"]:
+            rows.append(
+                {**key, "cap_km": 0.0, "radius_model": "one_radius", "a": np.nan, "b": np.nan, "c": np.nan}
+                | errors(single)
+            )
+            for model, cap in itertools.product(cfg["radius_models"], cfg["calibration_caps_km"]):
+                predictors = model_predictors(model, share, settled)
                 log_needed = np.log(np.minimum(needed, cap))
                 pred = np.zeros(len(t))
                 for region in t["region"].unique():
                     test = (t["region"] == region).to_numpy()
-                    a, b = fit_line(x[~test & ok], log_needed[~test & ok])
-                    pred[test] = served(np.minimum(np.exp(a + b * x), cap))[test]
-                a, b = fit_line(x[ok], log_needed[ok])
-                rows.append({**key, "cap_km": float(cap), "a": a, "b": b, **errors(pred)})
+                    coefficients = fit_linear([p[~test & ok] for p in predictors], log_needed[~test & ok])
+                    rule = radius_rule(model, coefficients, float(cap))
+                    pred[test] = served(radius_at_10k_by_connection(share, settled, rule))[test]
+                coefficients = fit_linear([p[ok] for p in predictors], log_needed[ok])
+                rule = radius_rule(model, coefficients, float(cap))
+                spread = rule["spread_slope"] if model == "connection_spread" else np.nan
+                fitted = {"radius_model": model, "a": rule["intercept"], "b": rule["slope"], "c": spread}
+                rows.append({**key, "cap_km": float(cap), **fitted, **errors(pred)})
                 detail.append(
                     pd.DataFrame(
                         {
                             **key,
                             "cap_km": float(cap),
+                            "radius_model": model,
                             "iso2": t["iso2"],
                             "iso3": t["iso3"],
                             "region": t["region"],
                             "reference": share,
                             **{c: t[f"check_{c}"] for c in checks},
+                            "settled_km2_per_1000": settled,
                             "size_scale_unlimited": raw_scale,
                             "size_scale": scale,
                             "needed_r10k": needed,
-                            "r10k": np.minimum(np.exp(a + b * x), cap),
+                            "r10k": radius_at_10k_by_connection(share, settled, rule),
                             "served_share_region_left_out": pred,
                         }
                     )

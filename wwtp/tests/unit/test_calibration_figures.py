@@ -22,7 +22,7 @@ COUNTRIES = {  # iso2: (iso3, SDG region, JMP share, people)
     "NL": ("NLD", "Europe and Northern America", 0.99, 1.7e7),
     "IE": ("IRL", "Europe and Northern America", 0.70, 5.0e6),
 }
-KEY = ["size_measure", "radius_exponent", "scale_min", "scale_max", "cap_km"]
+KEY = ["size_measure", "radius_exponent", "scale_min", "scale_max", "cap_km", "radius_model"]
 REFERENCES = {"us_sewersheds": "US", "gb_catchments": "GB", "nl_cbs": "NL", "ie_agglomerations": "IE"}
 
 
@@ -38,10 +38,11 @@ def _tables(rng):
         refs.append({"iso3": iso3, "region_sdg": region, "jmp_share": jmp, "sdg631_share": jmp * 0.9,
                      "eurostat_share": jmp if region.startswith("Europe") else np.nan, "oecd_share": np.nan})  # fmt: skip
     confs = pd.DataFrame(
-        [("reported", 0.3, 1.0, 1.0, np.nan, np.nan, np.nan)]
-        + [("reported", 0.3, lo, hi, cap, 1.2, 0.15) for lo, hi in ((1.0, 1.0), (0.1, 10.0)) for cap in (5.0, 40.0)],
-        columns=[*KEY, "a", "b"],
-    )
+        [("reported", 0.3, 1.0, 1.0, np.nan, "fixed", np.nan, np.nan, np.nan)]
+        + [("reported", 0.3, lo, hi, cap, "connection", 1.2, 0.15, np.nan)
+           for lo, hi in ((1.0, 1.0), (0.1, 10.0)) for cap in (5.0, 40.0)],
+        columns=[*KEY, "a", "b", "c"],
+    )  # fmt: skip
     confs.insert(0, "conf", np.arange(len(confs)))
     by_cap = confs[confs["cap_km"].notna()].assign(
         mean_abs_error_pp=[12.0, 10.0, 9.0, 8.0], people_weighted_abs_error_pp=[9.0, 8.0, 7.0, 6.0],
@@ -51,6 +52,7 @@ def _tables(rng):
     for r in by_cap.itertuples():
         for iso2, (_, _, jmp, _) in COUNTRIES.items():
             by_country.append({**{k: getattr(r, k) for k in KEY}, "iso2": iso2, "reference": jmp,
+                               "settled_km2_per_1000": 10 ** rng.uniform(0, 1.5),
                                "size_scale_unlimited": 10 ** rng.normal(0, 0.5), "needed_r10k": 1.0 + 3 * jmp,
                                "served_share_region_left_out": jmp + rng.normal(0, 0.05)})  # fmt: skip
     plants = pd.DataFrame(
@@ -84,8 +86,10 @@ def _tables(rng):
                 "scale_min": 0.1,
                 "scale_max": 10.0,
                 "cap_km": 5.0,
+                "radius_model": "connection",
                 "a": 1.2,
                 "b": 0.15,
+                "c": np.nan,
                 "plants_x": 1.38,
                 "share_worse": 0.4,
                 "national_error_pp": 11.0,
@@ -97,8 +101,10 @@ def _tables(rng):
                 "scale_min": 0.1,
                 "scale_max": 10.0,
                 "cap_km": 40.0,
+                "radius_model": "connection",
                 "a": 1.2,
                 "b": 0.15,
+                "c": np.nan,
                 "plants_x": 1.4,
                 "share_worse": 0.5,
                 "national_error_pp": 10.0,
@@ -128,7 +134,7 @@ def _tables(rng):
         "districts": pd.DataFrame(
             [
                 {
-                    **{k: v for k, v in zip(KEY, ("reported", 0.3, 0.1, 10.0, 5.0))},
+                    **{k: v for k, v in zip(KEY, ("reported", 0.3, 0.1, 10.0, 5.0, "connection"))},
                     "reference": "mx_iter_2020",
                     "n_districts": 2469,
                     "served_share": 0.46,
@@ -163,6 +169,24 @@ def test_render_writes_figures_and_numbers(tmp_path):
     assert numbers["ShareWorse"] == "40.0" and numbers["LeaveOneOutCapHigh"] == "40"
     assert numbers["LeaveOneOutSameLimits"] == "1" and "TypicalIeAgglomerationsChosen" in numbers
     assert all(re.fullmatch(r"[A-Za-z]+", k) for k in numbers)  # usable LaTeX macro names
+
+
+def test_a_chosen_spread_rule_is_drawn_and_quoted(tmp_path):
+    tables = _tables(np.random.default_rng(0))
+    for frame in tables.values():  # every rule of the tables is a spread rule, c = 0.2
+        if "radius_model" in frame.columns:
+            rules = frame["radius_model"] == "connection"
+            frame.loc[rules, "radius_model"] = "connection_spread"
+            if "c" in frame.columns:
+                frame.loc[rules, "c"] = 0.2
+    cfg = load_config(script_name="calibration_figures")
+    cfg["paths"]["output_dir"] = str(tmp_path)
+    cf.render(cfg, load_config(script_name="connection_radius"), load_config(script_name="create_voronoi"), tables)
+    numbers = dict(
+        re.findall(r"\\newcommand\{\\cal(\w+)\}\{([^}]*)\}", (tmp_path / "calibration_numbers.tex").read_text())
+    )
+    assert numbers["RuleModel"] == "connection spread" and numbers["RuleC"] == "0.200"
+    assert os.path.getsize(tmp_path / "ed_service_radius.pdf") > 1000
 
 
 def test_fixed_radius_choice_stops():

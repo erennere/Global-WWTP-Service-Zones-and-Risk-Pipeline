@@ -41,8 +41,9 @@ _OVERRIDE_FIELDS = (
     ("size_measure", 6, False),
 )
 # Path token for the service-radius mode when dynamic_buffering is on.
-SIZE_MEASURE_TOKENS = {"reported": "rep", "footprint": "fp", "combined_25": "cb25", "combined_50": "cb50",
-                       "combined_75": "cb75"}  # fmt: skip
+SIZE_MEASURE_TOKENS = {"reported": "rep", "footprint": "fp"} | {
+    m: f"cb{m.split('_')[1]}" for m in settings.CombinedMeasure.__args__
+}  # combined_25 -> cb25
 _OVERRIDE_FLAG_TO_FIELD = {
     "--level": "level",
     "--version": "version",
@@ -503,6 +504,7 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
         "reported_size_skip",
         "radius_calibration",
         "connected_share",
+        "settled_area",
         "size_scale",
         "country_output_column",
     }
@@ -534,6 +536,7 @@ def _derive_runtime_values(cfg: dict, default_distance_additive, default_distanc
                     # r10k by country where the calibration has a connection rule (else None)
                     "radius_by_connection": row["by_connection"],
                     "connected_share": dict(cfg["connected_share"]),
+                    "settled_area": dict(cfg["settled_area"]),
                 }
             )
         derived["calculate_buffer_kwargs"] = kwargs

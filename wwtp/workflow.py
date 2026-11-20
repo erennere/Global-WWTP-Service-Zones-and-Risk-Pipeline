@@ -334,6 +334,7 @@ def sizing_params(variant):
             "r10k": kwargs["radius_at_10k_people_km"],
             "by_connection": kwargs["radius_by_connection"],
             "connected_share": digest(kwargs["connected_share"]),
+            "settled_area": digest(kwargs["settled_area"]),
         }
         params["radius"] = json.dumps(signature, sort_keys=True)
     return params

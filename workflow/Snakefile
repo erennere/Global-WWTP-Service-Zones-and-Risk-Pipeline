@@ -721,8 +721,8 @@ rule connection_radius_references:
 CURVE_SETTINGS = ("year", "aggregate_cells", "candidate_plants", "size_measures", "radius_exponents", "radius_grid",
                   "max_buffer", "footprint_to_people", "reported_size_columns", "reported_size_skip")
 CALIBRATE_SETTINGS = ("footprint_to_people", "size_country_min_plants", "fit_reference", "reference_series",
-                      "reference_max_year_gap", "calibration_caps_km", "calibration_size_scale_limits",
-                      "check_references", "sdg631")
+                      "reference_max_year_gap", "radius_models", "calibration_caps_km",
+                      "calibration_size_scale_limits", "check_references", "sdg631")
 PLANT_CHECK_SETTINGS = ("year", "aggregate_cells", "candidate_plants", "plant_reference_kinds",
                         "plant_reference_polygons", "polygon_match_distance_m", "district_references",
                         "choice_national", "plant_bootstrap_samples", "plant_bootstrap_seed", "plant_confidence")

@@ -43,8 +43,10 @@ MEASURES = {
     "combined_25": "for a plant with both a reported size and a tank estimate: reported<sup>0.75</sup> &times; "
     "estimate<sup>0.25</sup> (a weighted mean in log terms, the weight chosen on real sewer catchments in the US, "
     "GB, the Netherlands and Ireland); a plant with only one of the two uses that one",
-    "combined_50": "for a plant with both: reported<sup>0.5</sup> &times; estimate<sup>0.5</sup>; otherwise the one there is",
-    "combined_75": "for a plant with both: reported<sup>0.25</sup> &times; estimate<sup>0.75</sup>; otherwise the one there is",
+} | {
+    f"combined_{w}": f"for a plant with both: reported<sup>{1 - int(w) / 100:g}</sup> &times; "
+    f"estimate<sup>{int(w) / 100:g}</sup>; otherwise the one there is"
+    for w in ("10", "20", "30", "40", "50", "60", "70", "75", "80", "90")
 }
 SCALE_LIMITS = {"footprint": "1/3 and 3"}  # the others: 0.1 and 10 (config.yaml, size_scale)
 
@@ -68,6 +70,11 @@ def build_html(path, measure):
     cfg = load_config("create_voronoi", size_measure=measure)
     rc = cfg["radius_calibration"][measure]
     rule = rc["by_connection"]
+    spread_words, spread_term = "", ""
+    if rule["spread_slope"] != 0:  # the radius also grows with how spread out the country's people live
+        spread_words = (" and with its settled area S<sub>c</sub>, the km&sup2; of 1 km cells with people per "
+                        "1,000 people (WorldPop)")  # fmt: skip
+        spread_term = f" + {rule['spread_slope']:.3f} &middot; log S<sub>c</sub>"
     f = cfg["footprint_to_people"]
     n, people = len(df), np.nansum(df["2024_zonal_sum"].to_numpy(dtype=float))
     today = datetime.date.today().isoformat()
@@ -155,8 +162,8 @@ def build_html(path, measure):
         (code("buffer_length"), f"The plant's maximum service radius (m): r<sub>c</sub> &times; (P / 10,000)"
          f"<sup>{rc['radius_exponent']:g}</sup>, at most {cfg['max_buffer'] / 1000:g} km. r<sub>c</sub>, the radius "
          f"of a plant of 10,000 people in country c, grows with the share C<sub>c</sub> of its people connected "
-         f"to treatment (JMP): r<sub>c</sub> = min({rule['max_km']:g} km, exp({rule['intercept']:.3f} + "
-         f"{rule['slope']:.3f} &middot; logit C<sub>c</sub>))."),
+         f"to treatment (JMP){spread_words}: r<sub>c</sub> = min({rule['max_km']:g} km, exp({rule['intercept']:.3f} "
+         f"+ {rule['slope']:.3f} &middot; logit C<sub>c</sub>{spread_term}))."),
         (code("<year>_zonal_sum") + " (2015&ndash;2024)", "People (WorldPop 100 m constrained, R2024B) within "
          "the plant's service area in that year: the population estimate of the plant."),
         (code("<year>_zonal_std") + " (2015&ndash;2024)", "Standard deviation of the 100 m population cells "

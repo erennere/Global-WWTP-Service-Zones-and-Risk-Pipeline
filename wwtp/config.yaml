@@ -451,7 +451,12 @@ create_voronoi:
     # footprint x1.58; w 0.25 better than reported and than w 0.5 in 98 % of the samples. By catchment
     # set w 0.25 against reported: GB 1.41/1.45, IE 1.35/1.37, NL CBS 1.23/1.31, NL units 1.26/1.35, but
     # US 1.49/1.44. National error (JMP, SDG 6.3.1) of all three as reported's (8.4-8.7 pp).
-    combined_footprint_weight: {combined_25: 0.25, combined_50: 0.5, combined_75: 0.75}
+    # w 0.1 to 0.9 in steps of 0.1 for the calibration with the spread term (Eren, 20 Nov 2026).
+    combined_footprint_weight: {
+      combined_10: 0.1, combined_20: 0.2, combined_25: 0.25, combined_30: 0.3, combined_40: 0.4,
+      combined_50: 0.5, combined_60: 0.6, combined_70: 0.7, combined_75: 0.75, combined_80: 0.8,
+      combined_90: 0.9
+    }
   # Factor on every plant size of a country (reported or estimated), per size_measure:
   #   k = connected people (connected_share x people of the 2022 raster) / sum of its plant sizes,
   #   kept within 0.1 and 10; countries without an entry: 1.
@@ -578,28 +583,63 @@ create_voronoi:
     reported:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.471, slope: 0.209, max_km: 8.0}
+      by_connection: {intercept: 1.471, slope: 0.209, spread_slope: 0.0, max_km: 8.0}
     footprint:
       radius_exponent: 0.5
       radius_at_10k_people_km: 4.25
-      by_connection: {intercept: 1.325, slope: 0.203, max_km: 40.0}
+      by_connection: {intercept: 1.325, slope: 0.203, spread_slope: 0.0, max_km: 40.0}
     # combined_*: the exponent of reported (sizes in people, mostly reported ones); by_connection from the
     # calibration run of 20 Nov 2026 (plant_choice.csv: combined_25 cap 8 km as reported, the others none)
     combined_25:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.458, slope: 0.205, max_km: 8.0}
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
     combined_50:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.511, slope: 0.216, max_km: 40.0}
+      by_connection: {intercept: 1.511, slope: 0.216, spread_slope: 0.0, max_km: 40.0}
     combined_75:
       radius_exponent: 0.3
       radius_at_10k_people_km: 3.75
-      by_connection: {intercept: 1.517, slope: 0.217, max_km: 40.0}
+      by_connection: {intercept: 1.517, slope: 0.217, spread_slope: 0.0, max_km: 40.0}
+    # w 0.1 to 0.9 (Eren, 20 Nov 2026): placeholders, the rule of combined_25, until the calibration with
+    # the spread term (they have no size_scale yet either, so they cannot run before it)
+    combined_10:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+    combined_20:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+    combined_30:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+    combined_40:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+    combined_60:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+    combined_70:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+    combined_80:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
+    combined_90:
+      radius_exponent: 0.3
+      radius_at_10k_people_km: 3.75
+      by_connection: {intercept: 1.458, slope: 0.205, spread_slope: 0.0, max_km: 8.0}
   # The radius at 10,000 people by country (by_connection; without it radius_at_10k_people_km everywhere):
-  #   r10k_km = min(max_km, exp(intercept + slope * logit(C))), C = connected_share of the plant's
-  #   country; countries without a value keep radius_at_10k_people_km.
+  #   r10k_km = min(max_km, exp(intercept + slope * logit(C) + spread_slope * log(S))), C = connected_share
+  #   and S = settled_area of the plant's country (spread_slope 0: no S term); countries without
+  #   those values keep radius_at_10k_people_km.
   # Calibrated on 130 countries (wwtp.calibration.connection_radius calibrate, run of 20 Nov 2026 on
   # plant list v3; 126 on 13 Nov, now with AU, JP, NZ, MC): the national share of people served, from
   # WorldPop 2022 and our plants, against JMP "safely managed via sewer". Leaving one SDG region out,
@@ -636,6 +676,11 @@ create_voronoi:
     'TR': 0.660, 'TT': 0.227, 'TV': 0.000, 'TZ': 0.005, 'UA': 0.472, 'UG': 0.002, 'US': 0.837, 'UZ': 0.106,
     'VE': 0.234, 'VN': 0.018, 'WS': 0.000, 'YE': 0.195, 'ZA': 0.481, 'ZW': 0.018
   }
+  # How spread out a country's people live: km2 of 1 km cells with people per 1,000 people (WorldPop of
+  # connection_radius.year, cell areas from their latitude; connection_radius curves, countries.csv
+  # settled_km2_per_1000). Read only by rules whose spread_slope is not 0; empty until the calibration with the
+  # spread term has run.
+  settled_area: {}
   scipy_true: false
   cv2_true: false
   city_voronoi: false
@@ -998,6 +1043,7 @@ find_unconnected_industrial_areas:
   footprint_to_people: null
   radius_calibration: null
   connected_share: null
+  settled_area: null
   size_scale: null
   industrial_min_cells: null
   # null = the same category list create_voronoi uses for remove_industrial,
@@ -1533,7 +1579,10 @@ connection_radius:
   year: 2022                  # WorldPop raster year (download_pop keeps 2015-2024)
   aggregate_cells: 10         # 100 m cells summed to 1 km
   candidate_plants: 64
-  size_measures: ['reported', 'footprint', 'combined_25', 'combined_50', 'combined_75']
+  # combined_10 to combined_90 (and combined_25, the configured layer); combined_75 is left out: between
+  # combined_70 and combined_80, and every measure adds to the run time of curves and plant_check
+  size_measures: ['reported', 'footprint', 'combined_10', 'combined_20', 'combined_25', 'combined_30', 'combined_40',
+                  'combined_50', 'combined_60', 'combined_70', 'combined_80', 'combined_90']
   radius_exponents: [0.3, 0.5]
   # radius_at_10k_people_km grid: count values, geometric from start to stop (km)
   radius_grid: {start: 0.5, stop: 40.0, count: 40}
@@ -1567,6 +1616,11 @@ connection_radius:
   fit_predictors: ['reference', 'reported_coverage']
   fit_folds: 5
   fit_seed: 0
+  # calibrate: the radius rules fitted, each with every cap and pair of size-scale limits, all of them
+  # checked by plant_check: 'connection' r10k = min(cap, exp(a + b logit(C))); 'connection_spread' adds
+  # c log(S), S the country's settled area (km2 of 1 km cells with people per 1,000 people), so that two
+  # countries with the same connected share but more spread-out people get a larger radius.
+  radius_models: ['connection', 'connection_spread']
   # calibrate: caps (km) of r10k = min(cap, exp(a + b logit(C))) to tabulate, each tested by leaving one
   # SDG region out with every pair of size-scale limits; the pair (limits, cap) is then chosen with the
   # plant-level check (create_voronoi.size_scale; notes/size_calibration_2026-11-12.md).
@@ -1817,8 +1871,9 @@ workflow:
     plants_v3: {threads: 1, mem_mb: 32768, runtime: 120}
     sweep_validation_references: {threads: 16, mem_mb: 65536, runtime: 720}
     sweep_validation: {threads: 16, mem_mb: 131072, runtime: 1440}
-    connection_radius_curves: {threads: 16, mem_mb: 196608, runtime: 2880}
-    connection_radius_plant_check: {threads: 16, mem_mb: 196608, runtime: 1440}
+    # 12 size measures since 20 Nov (5 before): about 2.4 times the work of the run of 20 Nov
+    connection_radius_curves: {threads: 16, mem_mb: 196608, runtime: 4320}
+    connection_radius_plant_check: {threads: 16, mem_mb: 196608, runtime: 2880}
   paths:
     data_dir: null
     log_dir: '{data_dir}/workflow/logs'

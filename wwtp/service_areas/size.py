@@ -86,9 +86,9 @@ LAGOON_COLUMN = "lagoon_detected"
 
 
 # reported, footprint, and the combined measures: reported ** (1 - w) * footprint estimate ** w for plants with
-# both, w = footprint_to_people.combined_footprint_weight[measure] (the calibration tests several w)
-SIZE_MEASURES = ("reported", "footprint", "combined_25", "combined_50", "combined_75")
-COMBINED_MEASURES = SIZE_MEASURES[2:]
+# both, w = footprint_to_people.combined_footprint_weight[measure] (the calibration tests w 0.1 to 0.9)
+COMBINED_MEASURES = tuple(f"combined_{w}" for w in ("10", "20", "25", "30", "40", "50", "60", "70", "75", "80", "90"))
+SIZE_MEASURES = ("reported", "footprint", *COMBINED_MEASURES)
 # plants_v3: the source of a plant's detections; NO_IMAGE for plants that were never imaged
 SIZE_SOURCE_COLUMN, NO_IMAGE = "size_source", "no_image"
 
@@ -263,10 +263,17 @@ def connected_share_logit(share):
     return np.log(share / (1 - share))
 
 
-def radius_at_10k_by_connection(share, rule):
-    """r10k (km) of a country: ``min(max_km, exp(intercept + slope * logit(connected share)))``."""
-    r10k = np.exp(float(rule["intercept"]) + float(rule["slope"]) * connected_share_logit(share))
-    return np.minimum(r10k, float(rule["max_km"]))
+def radius_at_10k_by_connection(share, settled_area, rule):
+    """r10k (km) of a country: ``min(max_km, exp(intercept + slope * logit(C) + spread_slope * log(S)))``.
+
+    C is the connected share; S the settled area, km2 of 1 km cells with people per 1,000 people (how
+    spread out the people live; ``connection_radius`` computes it from WorldPop). Without the spread term
+    (``spread_slope`` 0) ``settled_area`` is not read.
+    """
+    log_r = float(rule["intercept"]) + float(rule["slope"]) * connected_share_logit(share)
+    if rule["spread_slope"] != 0:
+        log_r = log_r + float(rule["spread_slope"]) * np.log(np.asarray(settled_area, dtype=float))
+    return np.minimum(np.exp(log_r), float(rule["max_km"]))
 
 
 def service_radius_m(size_people, radius_at_10k_people_km, exponent, max_m):
@@ -292,8 +299,8 @@ def calculate_buffer(df, weights, *args, **kwargs):
         ``buffer`` (m), ``dynamic_buffering``, ``max_buffer`` (m), and with
         dynamic buffering the arguments of ``plant_size_people`` and
         ``radius_exponent``, ``radius_at_10k_people_km``, ``radius_by_connection``
-        (or None) and ``connected_share`` (starter takes them from
-        ``radius_calibration`` for the size measure and ``connected_share``).
+        (or None), ``connected_share`` and ``settled_area`` (starter takes them from
+        ``radius_calibration`` for the size measure, ``connected_share`` and ``settled_area``).
 
     Returns
     -------
@@ -307,8 +314,9 @@ def calculate_buffer(df, weights, *args, **kwargs):
     exponent was chosen on US census population in EPA sourced sewersheds
     (``wwtp.calibration.service_radius``) and holds on the GB and NL
     catchments. The radius at 10,000 people follows the country's connected
-    share where ``radius_by_connection`` is set (calibrated on 126 countries,
-    ``wwtp.calibration.connection_radius calibrate``); other countries keep
+    share where ``radius_by_connection`` is set (calibrated on 130 countries,
+    ``wwtp.calibration.connection_radius calibrate``), and with its spread term also
+    the country's settled area; countries without those values keep
     ``radius_at_10k_people_km``.
     """
     max_buffer = kwargs["max_buffer"]
@@ -319,9 +327,14 @@ def calculate_buffer(df, weights, *args, **kwargs):
     r10k = np.full(len(df), float(kwargs["radius_at_10k_people_km"]))
     rule = kwargs["radius_by_connection"]
     if rule is not None:
-        share = df[kwargs["country_column"]].map(kwargs["connected_share"]).to_numpy(dtype=float)
-        known = np.isfinite(share)
-        r10k[known] = radius_at_10k_by_connection(share[known], rule)
+        country = df[kwargs["country_column"]]
+        share = country.map(kwargs["connected_share"]).to_numpy(dtype=float)
+        settled = country.map(kwargs["settled_area"]).to_numpy(dtype=float)
+        known = np.isfinite(share) & (np.isfinite(settled) if rule["spread_slope"] != 0 else True)
+        r10k[known] = radius_at_10k_by_connection(share[known], settled[known], rule)
+        if not known.all():
+            logger.info("%d of %d sites without the country values of the radius rule: r10k %.2f km",
+                        int((~known).sum()), len(df), float(kwargs["radius_at_10k_people_km"]))  # fmt: skip
     radius = service_radius_m(people, r10k, kwargs["radius_exponent"], max_buffer)
     logger.debug(
         "Service radius %.0f-%.0f m (median %.0f m) for %d sites",

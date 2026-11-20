@@ -219,6 +219,7 @@ RADIUS_KW = dict(
     radius_at_10k_people_km=3.75,
     radius_by_connection=None,
     connected_share={},
+    settled_area={},
     country_column="ISO_2",
     size_scale={},
 )
@@ -396,7 +397,7 @@ def test_radius_scale_follows_the_connected_share_of_the_country():
     plants["ISO_2"] = ["AA", "BB", "CC", "ZZ"]
     kw = {
         **RADIUS_KW,
-        "radius_by_connection": {"intercept": 1.456, "slope": 0.166, "max_km": 5.5},
+        "radius_by_connection": {"intercept": 1.456, "slope": 0.166, "spread_slope": 0.0, "max_km": 5.5},
         "connected_share": {"AA": 0.0, "BB": 0.5, "CC": 0.97},
     }
     radius = sa.calculate_buffer(plants, None, **kw)
@@ -406,6 +407,27 @@ def test_radius_scale_follows_the_connected_share_of_the_country():
     big["ISO_2"] = ["CC"]
     big["POP_SERVED"] = [40_000]
     assert sa.calculate_buffer(big, None, **kw)[0] == pytest.approx(5500 * 4**0.35, rel=1e-6)
+
+
+def test_the_spread_term_widens_the_radius_where_people_live_spread_out():
+    """r10k = min(max_km, exp(intercept + slope logit(C) + spread_slope log(S))): S per country; a country
+    without S keeps the fixed value, and with spread_slope 0 S is not read."""
+    plants = _plants([0, 10_000, 20_000], 1, POP_SERVED=[10_000] * 3)
+    plants["ISO_2"] = ["AA", "BB", "CC"]
+    rule = {"intercept": 1.0, "slope": 0.2, "spread_slope": 0.3, "max_km": 40.0}
+    kw = {
+        **RADIUS_KW,
+        "radius_by_connection": rule,
+        "connected_share": {"AA": 0.9, "BB": 0.9, "CC": 0.9},
+        "settled_area": {"AA": 2.0, "BB": 40.0},  # CC: none
+    }
+    radius = sa.calculate_buffer(plants, None, **kw)
+    logit = np.log(0.9 / 0.1)
+    expected = [np.exp(1.0 + 0.2 * logit + 0.3 * np.log(s)) * 1000 for s in (2.0, 40.0)]
+    assert radius[:2] == pytest.approx(expected, rel=1e-9) and radius[1] / radius[0] == pytest.approx(20**0.3)
+    assert radius[2] == pytest.approx(3750)  # no settled area: the fixed radius
+    flat = sa.calculate_buffer(plants, None, **{**kw, "radius_by_connection": {**rule, "spread_slope": 0.0}})
+    assert flat == pytest.approx([np.exp(1.0 + 0.2 * logit) * 1000] * 3, rel=1e-9)  # S not needed
 
 
 def test_size_weights_need_the_multiplicative_distance():

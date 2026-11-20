@@ -191,6 +191,7 @@ BUFFER_KWARGS = {
     "radius_at_10k_people_km": 3.75,
     "radius_by_connection": None,
     "connected_share": {},
+    "settled_area": {},
     "country_column": "ISO_2",
     "size_scale": {},
 }

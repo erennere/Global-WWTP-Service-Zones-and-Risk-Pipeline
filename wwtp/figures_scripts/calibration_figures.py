@@ -103,6 +103,7 @@ def same_configuration(frame, choice):
         & np.isclose(frame["scale_min"], choice["scale_min"])
         & np.isclose(frame["scale_max"], choice["scale_max"])
         & np.isclose(frame["cap_km"], choice["cap_km"])
+        & (frame["radius_model"] == choice["radius_model"])
     )
 
 
@@ -153,6 +154,7 @@ def national_shares(curves, choice, exponent, fixed_r10k, by_country):
                 "people": c["people"],
                 "fixed": share_at(c["radii"], c["shares"], fixed_r10k),
                 "rule": float(detail.loc[iso2, "served_share_region_left_out"]),
+                "settled_km2_per_1000": float(detail.loc[iso2, "settled_km2_per_1000"]),
                 "needed": float(detail.loc[iso2, "needed_r10k"]),
                 # as calibrate: a country whose unscaled curve never crosses its share is not fitted
                 "inside": needed_radius(c["radii"], c["shares"], c["jmp"])[1] == "ok",
@@ -388,8 +390,13 @@ def figure_service_radius(tables, voronoi, cfg, shares, curves, fixed_r10k):
                linewidths=0.5, zorder=3, label=f"not fitted: share not reached in {tried[0]:g}–{tried[-1]:g} km")  # fmt: skip
     xs = np.linspace(logit(0.0), logit(1.0), 200)
     cap = float(choice["cap_km"])
-    ax.plot(xs, np.minimum(cap, np.exp(choice["a"] + choice["b"] * xs)), color=colors["ink"], lw=1.0,
-            label="chosen rule")  # fmt: skip
+    log_r = choice["a"] + choice["b"] * xs
+    rule_label = "chosen rule"
+    if choice["radius_model"] == "connection_spread":  # the line at the median settled area of the countries
+        settled = float(np.median(shares["settled_km2_per_1000"]))
+        log_r = log_r + choice["c"] * np.log(settled)
+        rule_label = f"chosen rule at the median settled area ({settled:.2g} km$^2$ per 1,000 people)"
+    ax.plot(xs, np.minimum(cap, np.exp(log_r)), color=colors["ink"], lw=1.0, label=rule_label)
     ax.axhline(fixed_r10k, color=colors["muted"], lw=0.6, ls=(0, (3, 2)), label=f"fixed {fixed_r10k:g} km")
     ax.set_yscale("log")
     ax.set_ylim(0.4, 50)
@@ -510,7 +517,8 @@ def figure_catchments(tables, cal, cfg, fixed_national):
         panel_letter(ax, letters[col], cfg, y=1.13)  # level with the two title lines
 
     ax = fig.add_subplot(bottom[1:3])
-    for slot, ((lo_, hi_), g) in enumerate(confs.groupby(["scale_min", "scale_max"], sort=True)):
+    same_model = confs[confs["radius_model"] == pick["radius_model"]]  # the rules of the chosen model
+    for slot, ((lo_, hi_), g) in enumerate(same_model.groupby(["scale_min", "scale_max"], sort=True)):
         g = g.sort_values("cap_km")
         color = colors["series"][slot]
         label = "no national scale" if lo_ == 1 and hi_ == 1 else f"scale limits {lo_:.2g}–{hi_:g}"
@@ -640,6 +648,8 @@ def write_numbers(tables, voronoi, cal, cfg, shares, errors, fixed_national, pla
         "Cap": f"{float(choice['cap_km']):g}",
         "RuleA": f"{float(choice['a']):.3f}",
         "RuleB": f"{float(choice['b']):.3f}",
+        "RuleModel": str(choice["radius_model"]).replace("_", " "),
+        "RuleC": f"{float(choice['c']):.3f}" if choice["radius_model"] == "connection_spread" else "",
         "ErrFixedJmp": f"{errors['jmp']['fixed']:.1f}",
         "ErrFixedJmpWeighted": f"{jmp_weighted_fixed * 100:.1f}",
         "ErrRuleJmp": f"{float(row['mean_abs_error_pp']):.1f}",

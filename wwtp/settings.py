@@ -44,8 +44,12 @@ Level = Annotated[str, BeforeValidator(_digits), Field(pattern=r"^(0?[1-9]|1[0-2
 Version = Annotated[str, BeforeValidator(_digits), Field(pattern=r"^\w+$")]
 WeightMethod = Literal["linear", "square_root", "logarithmic", "sigmoid", "size"]
 WeightFunc = Literal["", "mult", "add"]
-CombinedMeasure = Literal["combined_25", "combined_50", "combined_75"]  # weights: footprint_to_people
-SizeMeasure = Literal["reported", "footprint", "combined_25", "combined_50", "combined_75"]
+# weights: footprint_to_people.combined_footprint_weight (service_areas.size.COMBINED_MEASURES)
+CombinedMeasure = Literal[
+    "combined_10", "combined_20", "combined_25", "combined_30", "combined_40", "combined_50",
+    "combined_60", "combined_70", "combined_75", "combined_80", "combined_90",
+]  # fmt: skip
+SizeMeasure = Literal["reported", "footprint", CombinedMeasure]
 Paths = dict[str, str]  # resolved path templates; every key must have a value by now
 Fraction = Annotated[float, Field(ge=0, le=1)]
 
@@ -113,10 +117,15 @@ class FootprintToPeople(Strict):
 
 
 class RadiusByConnection(Strict):
-    """r10k_km = min(max_km, exp(intercept + slope * logit(connected share of the plant's country)))."""
+    """r10k_km = min(max_km, exp(intercept + slope * logit(C) + spread_slope * log(S))).
+
+    C: connected share of the plant's country (``connected_share``); S: its settled area, km2 of 1 km
+    cells with people per 1,000 people (``settled_area``). ``spread_slope`` 0: no spread term (S not read).
+    """
 
     intercept: float
     slope: float
+    spread_slope: float
     max_km: PositiveFloat
 
 
@@ -157,6 +166,7 @@ class ServiceAreaParams(RunParams):
     footprint_to_people: FootprintToPeople
     radius_calibration: dict[SizeMeasure, RadiusCalibration]
     connected_share: dict[str, Fraction]
+    settled_area: dict[str, PositiveFloat]  # km2 of 1 km cells with people per 1,000 people, by country
     size_scale: dict[SizeMeasure, dict[str, PositiveFloat]]
     scipy_true: bool
     cv2_true: bool
@@ -176,6 +186,13 @@ class ServiceAreaParams(RunParams):
                 f"size_measure {self.size_measure!r} has no radius_calibration entry; choose one of "
                 f"{sorted(self.radius_calibration)} or add it with wwtp.calibration.service_radius"
             )
+        spread = [
+            m
+            for m, c in self.radius_calibration.items()
+            if c.by_connection is not None and c.by_connection.spread_slope != 0
+        ]
+        if spread and not self.settled_area:
+            raise ValueError(f"radius_calibration {spread} use a spread term but settled_area is empty")
         return self
 
 
@@ -921,6 +938,8 @@ class ConnectionRadius(Section):
     reference_max_year_gap: int = Field(ge=0)
     fit_reference: ReferenceSource
     fit_predictors: list[Literal["reference", "reported_coverage"]] = Field(min_length=1)
+    # calibrate: radius rules to fit; 'connection_spread' adds spread_slope * log(settled area)
+    radius_models: list[Literal["connection", "connection_spread"]] = Field(min_length=1)
     fit_folds: Annotated[int, Field(ge=2)]
     fit_seed: int
     calibration_caps_km: list[PositiveFloat] = Field(min_length=1)

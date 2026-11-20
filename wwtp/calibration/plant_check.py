@@ -29,15 +29,17 @@ with the smallest distance / sqrt(people) among its ``candidate_plants`` nearest
 lies inside that plant's circle ``min(r10k * (k * people / 10,000) ** e, max_buffer)``. Per
 configuration: the fixed radius (``radius_at_10k_people_km``, no scale) and every row of
 ``calibration_by_cap.csv`` at the size measure's exponent (``create_voronoi.radius_calibration``):
-``k`` = the country's scale within the row's limits, ``r10k = min(cap, exp(a + b logit C))``. Error per
-reference: class-balanced error of people per unit (``service_radius.class_balanced_error``) and total.
+``k`` = the country's scale within the row's limits, ``r10k = min(cap, exp(a + b logit C))`` or, for the
+rows of the model 'connection_spread', ``min(cap, exp(a + b logit C + c log S))`` with S the country's
+settled area (``countries.csv``). Error per reference: class-balanced error of people per unit
+(``service_radius.class_balanced_error``) and total.
 
 **District check** (``district_references``): census localities as points (Mexico's ITER), each served
 when inside the circle of the plant it goes to; per municipality the served share against the share of
 dwellings with drainage (an upper bound: drainage includes septic tanks). Reported, not used in the
 choice.
 
-**Choice** per size measure: among the rows whose plant error (mean over the reference countries of the
+**Choice** per size measure, over both radius models: among the rows whose plant error (mean over the reference countries of the
 mean over their references, log10) is not worse than the fixed radius's - paired bootstrap over the
 units, a row is excluded when it is worse in at least ``plant_confidence`` of ``plant_bootstrap_samples``
 samples - the one with the smallest national error, the mean of ``choice_national`` (``jmp``: leaving
@@ -67,7 +69,8 @@ from ..pop_validation_scripts.national_data import _spatial_layers, source_path
 from ..sensitivity_analysis_scripts.sweep_validation import match_gb, match_nl, zonal_people
 from ..starter import load_config
 from ..utils import atomic_output, configure_logging
-from .connection_radius import aggregate_cells, logit, raster_for_year, sphere_xyz, weighted_nearest
+from ..service_areas.size import radius_at_10k_by_connection
+from .connection_radius import aggregate_cells, radius_rule, raster_for_year, sphere_xyz, weighted_nearest
 from .service_radius import SIZE_CLASSES, _abs_log_error, class_balanced_error
 
 logger = logging.getLogger(__name__)
@@ -216,8 +219,10 @@ def configurations(calibration, exponents, fixed_r10k):
                 "scale_min": 1.0,
                 "scale_max": 1.0,
                 "cap_km": np.nan,
+                "radius_model": "fixed",
                 "a": np.nan,
                 "b": np.nan,
+                "c": np.nan,
                 "fixed_r10k_km": float(fixed_r10k[measure]),
             }
         )
@@ -234,8 +239,10 @@ def configurations(calibration, exponents, fixed_r10k):
                     "scale_min": float(r.scale_min),
                     "scale_max": float(r.scale_max),
                     "cap_km": float(r.cap_km),
+                    "radius_model": r.radius_model,
                     "a": float(r.a),
                     "b": float(r.b),
+                    "c": float(r.c),
                     "fixed_r10k_km": np.nan,
                 }
             )
@@ -244,12 +251,13 @@ def configurations(calibration, exponents, fixed_r10k):
     return out
 
 
-def country_setting(conf, share, connected_people, sum_size):
-    """(k, r10k_km) of a country under one configuration."""
+def country_setting(conf, share, settled, connected_people, sum_size):
+    """(k, r10k_km) of a country under one configuration (``settled``: its settled area, the spread term)."""
     if np.isfinite(conf["fixed_r10k_km"]):
         return 1.0, float(conf["fixed_r10k_km"])
     k = float(np.clip(connected_people / sum_size, conf["scale_min"], conf["scale_max"]))
-    return k, float(min(conf["cap_km"], np.exp(conf["a"] + conf["b"] * logit(share))))
+    rule = radius_rule(conf["radius_model"], [conf["a"], conf["b"], conf["c"]], conf["cap_km"])
+    return k, float(radius_at_10k_by_connection(share, settled, rule))
 
 
 def served_by_plant(winner, dist, people, size, k, exponent, r10k_km, max_buffer_m):
@@ -300,7 +308,8 @@ def check(cfg, plants, countries, references, calibration, units, matches, expon
     def setting(conf, iso2):
         c = info.loc[iso2]
         s = float(share[c["iso3"]])
-        return country_setting(conf, s, s * float(c["total_people"]), float(c[f"sum_size_{conf['size_measure']}"]))
+        people, size = float(c["total_people"]), float(c[f"sum_size_{conf['size_measure']}"])
+        return country_setting(conf, s, float(c["settled_km2_per_1000"]), s * people, size)
 
     for iso2, ref_units in units.groupby("iso2"):
         mine = plants[plants["iso2"] == iso2].reset_index()  # 'index' = SITE_UID (row of plants.csv)
@@ -382,7 +391,7 @@ def check(cfg, plants, countries, references, calibration, units, matches, expon
     return pd.DataFrame(rows), pd.DataFrame(district_rows), unit_preds
 
 
-KEY = ["size_measure", "radius_exponent", "scale_min", "scale_max", "cap_km"]
+KEY = ["size_measure", "radius_exponent", "scale_min", "scale_max", "cap_km", "radius_model"]
 
 
 def plant_error(rows, leave_out=None):
@@ -468,8 +477,10 @@ def choose(rows, calibration, national, boot=None, ref_country=None, confidence=
                             "scale_min": pick["scale_min"],
                             "scale_max": pick["scale_max"],
                             "cap_km": pick["cap_km"],
+                            "radius_model": pick["radius_model"],
                             "a": pick["a"],
                             "b": pick["b"],
+                            "c": pick["c"],
                             "plants_x": 10 ** float(pick["plant_error"]),
                             "share_worse": pick["share_worse"],
                             "national_error_pp": pick["national_error_pp"],

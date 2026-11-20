@@ -88,12 +88,18 @@ def _world(tmp_path, monkeypatch):
         "year": 2022, "aggregate_cells": 1, "candidate_plants": 8, "max_buffer": 50000.0, "fit_reference": "jmp",
         "district_references": {}, "paths": {"pop_tif_dir": str(tmp_path)},
     }  # fmt: skip
-    countries = pd.DataFrame({"iso2": ["NL"], "iso3": ["NLD"], "total_people": [1e6], "sum_size_reported": [4.5e5]})
+    countries = pd.DataFrame(
+        {"iso2": ["NL"], "iso3": ["NLD"], "total_people": [1e6], "sum_size_reported": [4.5e5],
+         "settled_km2_per_1000": [4.0]}
+    )  # fmt: skip
     references = pd.DataFrame({"iso3": ["NLD"], "jmp_share": [0.9]})  # connected 9e5: k = 2 within 0.1-10
+    # exp(9): the cap is the radius; the spread rule: exp(log 2.5 + 0.5 log 4) = 5 km, below its cap
     calibration = pd.DataFrame(
-        {"size_measure": "reported", "radius_exponent": 0.3, "scale_min": [1.0, 0.1, 0.1], "scale_max": [1.0, 10.0, 10.0],
-         "cap_km": [3.0, 5.0, 40.0], "a": [9.0, 9.0, 9.0], "b": [0.0, 0.0, 0.0],  # exp(9): the cap is the radius
-         "mean_abs_error_pp": [10.0, 8.0, 9.0], "sdg631_mean_abs_error_pp": [10.0, 8.0, 7.0]}
+        {"size_measure": "reported", "radius_exponent": 0.3, "scale_min": [1.0, 0.1, 0.1, 0.1],
+         "scale_max": [1.0, 10.0, 10.0, 10.0], "cap_km": [3.0, 5.0, 40.0, 40.0],
+         "radius_model": ["connection"] * 3 + ["connection_spread"], "a": [9.0, 9.0, 9.0, np.log(2.5)],
+         "b": [0.0, 0.0, 0.0, 0.0], "c": [np.nan, np.nan, np.nan, 0.5],
+         "mean_abs_error_pp": [10.0, 8.0, 9.0, 8.5], "sdg631_mean_abs_error_pp": [10.0, 8.0, 7.0, 8.5]}
     )  # fmt: skip
     cells_lon, cells_lat, people = aggregate_cells(str(tmp_path / "nl.tif"), 1)
     winner, dist = weighted_nearest(
@@ -111,26 +117,35 @@ def test_the_configuration_that_made_the_references_has_no_plant_error(tmp_path,
     rows, districts, unit_preds = pc.check(
         cfg, plants, countries, references, calibration, units, matches, {"reported": 0.3}, {"reported": 3.75}
     )
-    assert len(rows) == 4 and districts.empty  # fixed radius + three rows of calibrate
-    made = rows[rows["cap_km"] == 5.0].iloc[0]
+    assert len(rows) == 5 and districts.empty  # fixed radius + four rows of calibrate
+    connection = rows[rows["radius_model"] == "connection"]
+    made = connection[connection["cap_km"] == 5.0].iloc[0]
     assert made["k"] == pytest.approx(2.0) and made["r10k_km"] == pytest.approx(5.0)
     assert made["class_balanced_error"] == pytest.approx(0.0) and made["total_ratio"] == pytest.approx(1.0)
+    spread = rows[rows["radius_model"] == "connection_spread"].iloc[0]  # the same radius from the settled area
+    assert spread["r10k_km"] == pytest.approx(5.0) and spread["class_balanced_error"] == pytest.approx(0.0)
     fixed = rows[rows["cap_km"].isna()].iloc[0]
     assert fixed["k"] == 1.0 and fixed["r10k_km"] == 3.75 and fixed["class_balanced_error"] > 0
-    assert rows[rows["cap_km"] == 3.0]["total_ratio"].iloc[0] < 1 < rows[rows["cap_km"] == 40.0]["total_ratio"].iloc[0]
+    assert fixed["radius_model"] == "fixed"
+    assert connection[connection["cap_km"] == 3.0]["total_ratio"].iloc[0] < 1
+    assert connection[connection["cap_km"] == 40.0]["total_ratio"].iloc[0] > 1
     choice, _ = pc.choose(rows, calibration, ["jmp", "sdg631"])
     choice = choice.set_index("left_out")
-    # national: cap 3 -> 10, cap 5 -> 8, cap 40 -> 8 (9 and 7); cap 40 serves too much, so cap 5
+    # national: cap 3 -> 10, cap 5 -> 8, cap 40 -> 8 (9 and 7), spread 8.5; cap 40 serves too much, so cap 5
     assert choice.loc["", "cap_km"] == 5.0 and choice.loc["", "national_error_pp"] == pytest.approx(8.0)
-    # the same with the paired bootstrap: the configuration that made the references is never worse
-    assert len(unit_preds) == 4 * len(units) and set(unit_preds["conf"]) == {0, 1, 2, 3}
-    boot = pc.bootstrap_errors(units, unit_preds, 4, 200, 0)
-    assert boot[0].shape == (200, 4, 1) and np.all(boot[0][:, 2, 0] == 0.0)
+    assert choice.loc["", "radius_model"] == "connection"
+    # the same with the paired bootstrap: the configurations that made the references are never worse
+    assert len(unit_preds) == 5 * len(units) and set(unit_preds["conf"]) == {0, 1, 2, 3, 4}
+    boot = pc.bootstrap_errors(units, unit_preds, 5, 200, 0)
+    assert boot[0].shape == (200, 5, 1) and np.all(boot[0][:, [2, 4], 0] == 0.0)
     choice, table = pc.choose(rows, calibration, ["jmp", "sdg631"], boot, {"nl_units": "NL"}, 0.95)
     assert choice.set_index("left_out").loc["", "cap_km"] == 5.0
-    assert table.set_index("cap_km").loc[5.0, "share_worse"] == 0.0 and bool(
-        table.set_index("cap_km").loc[5.0, "allowed"]
-    )
+    made = table[(table["cap_km"] == 5.0) & (table["radius_model"] == "connection")].iloc[0]
+    assert made["share_worse"] == 0.0 and bool(made["allowed"])
+    # with the better national error the spread rule is chosen, with its slope
+    better = calibration.assign(mean_abs_error_pp=[10.0, 8.0, 9.0, 6.0], sdg631_mean_abs_error_pp=[10.0, 8.0, 7.0, 6.0])
+    choice = pc.choose(rows, better, ["jmp", "sdg631"], boot, {"nl_units": "NL"}, 0.95)[0].set_index("left_out")
+    assert choice.loc["", "radius_model"] == "connection_spread" and choice.loc["", "c"] == pytest.approx(0.5)
 
 
 def test_the_choice_takes_the_best_national_error_the_plants_allow():
@@ -142,13 +157,14 @@ def test_the_choice_takes_the_best_national_error_the_plants_allow():
         8.0: (0.30, 0.05),  # better on average than fixed, worse in GB
     }
     rows = pd.DataFrame(
-        [{**key, "conf": n, "cap_km": cap, "iso2": c, "reference": c.lower(), "class_balanced_error": e[i]}
+        [{**key, "conf": n, "cap_km": cap, "radius_model": "connection" if cap == cap else "fixed", "iso2": c,
+          "reference": c.lower(), "class_balanced_error": e[i]}
          for n, (cap, e) in enumerate(err.items()) for i, c in enumerate(("GB", "NL"))]
     )  # fmt: skip
     rows.loc[rows["cap_km"].isna(), ["scale_min", "scale_max"]] = 1.0
     calibration = pd.DataFrame(
-        {**key, "cap_km": [4.0, 6.0, 8.0], "a": 1.0, "b": 0.2, "mean_abs_error_pp": [9.0, 8.0, 5.0],
-         "sdg631_mean_abs_error_pp": [9.0, 8.0, 5.0]}
+        {**key, "cap_km": [4.0, 6.0, 8.0], "radius_model": "connection", "a": 1.0, "b": 0.2, "c": np.nan,
+         "mean_abs_error_pp": [9.0, 8.0, 5.0], "sdg631_mean_abs_error_pp": [9.0, 8.0, 5.0]}
     )  # fmt: skip
     choice = pc.choose(rows, calibration, ["jmp", "sdg631"])[0].set_index("left_out")
     assert choice.loc["", "cap_km"] == 8.0  # mean plant error 0.175 <= 0.20, best national
