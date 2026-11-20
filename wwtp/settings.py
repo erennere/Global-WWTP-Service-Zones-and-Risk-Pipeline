@@ -397,9 +397,14 @@ class AddPop(RunParams, YearRange):
 
 
 class SourceRule(Strict):
+    """One dataset of SOURCE_DS / SOURCE_ID (release_export.sources)."""
+
     label: str
-    column: str
-    equals: str | None  # None: the column has a value
+    where: dict[str, str]
+    present: list[str] = Field(min_length=1)
+    id_columns: list[str]
+    id_pattern: str | None
+    id_width: PositiveInt | None
 
 
 class ReleaseLayers(Strict):
@@ -415,15 +420,17 @@ class ReleaseExport(RunParams):
     columns: list[str] = Field(min_length=1)
     renames: dict[str, str]
     empty_columns: list[str]
+    missing_text: list[str]
+    hw_id_columns: list[str] = Field(min_length=1)
     hw_id_pattern: str
-    source_ds: list[SourceRule] = Field(min_length=1)
+    sources: list[SourceRule] = Field(min_length=1)
     weights_from_size: bool
     sort_by: list[str] = Field(min_length=1)
     paths: Paths
 
     @model_validator(mode="after")
     def _consistent(self):
-        needed = {"WASTE_ID", "WKT_WWTP", "HW_WASTE_ID", "HYBAS_ID", "SOURCE_DS", "weights"}
+        needed = {"WASTE_ID", "WKT_WWTP", "HW_WASTE_ID", "HYBAS_ID", "SOURCE_DS", "SOURCE_ID", "weights"}
         missing = sorted(needed - set(self.columns))
         if missing:
             raise ValueError(f"columns must include {missing}")

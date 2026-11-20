@@ -10,18 +10,24 @@ that share their attribute columns (``columns``, in that order; ``renames`` from
 - ``layers.points``: one point per plant (from ``WKT_WWTP``), with ``WKT_SERVICE_AREA`` (the polygon as WKT)
   instead.
 
-As the first release (Desktop/log/column_trim.ipynb, Sep 2026), and three changes for plant list v3:
+As the first release (Desktop/log/column_trim.ipynb, Sep 2026), with these changes for plant list v3:
 
-- ``HW_WASTE_ID`` (from ``OLD_WASTE_ID``) only where it is a HydroWASTE ID (``hw_id_pattern``): the national
-  register plants of v3 carry their register ID there (``AU_GA_996``, ``JP_P22_...``).
-- ``SOURCE_DS`` by ``source_ds``, in order, a later rule overriding an earlier one: as before HW where
-  ``HW_WASTE_ID``, UWW where ``uwwCode``, and now NAT for the national register plants.
+- Every plant can be traced to the dataset its record comes from and its ID there (Eren, 20 Nov 2026):
+  ``SOURCE_DS`` names the dataset and the new column ``SOURCE_ID`` the plant's ID in it (``sources``: rules
+  in order, a later one overriding an earlier one, UWW over HW as in the first release): UWWTD (uwwCode),
+  HydroWASTE (WASTE_ID), US EPA CWNS (CWNS ID), Canada WSER (facility ID), the national registers of
+  Australia, Japan and New Zealand (register ID), Thailand (no ID kept), the detections of the location
+  model (their image).
+- ``HW_WASTE_ID`` is the plant's HydroWASTE ID wherever one is known (``hw_id_columns``, ``hw_id_pattern``):
+  from ``OLD_WASTE_ID`` (where national register plants carry their register ID instead) or the HydroWASTE
+  ID the US file records (``HW_unique_ID``).
 - ``weights`` (``weights_from_size``): the Voronoi weight the run used, sqrt(plant size in people), normalised
   within the plant's basin (``HYBAS_ID``), as the format's documentation describes the column. The layer's
   own ``weights`` hold 1/n for weight_method size. The sizes are recomputed with the variant's settings, and
   the run's radii (``buffer_length``) recomputed from them must match, or the export stops.
 
-``empty_columns`` are part of the format but not computed (2014 population: download_pop.include_2014 false).
+Text that stands for a missing value (``missing_text``: '<NA>', left by an earlier stage in uwwCode, WWTP_NAME
+and 184 other columns, also in the first release) is a missing value. ``empty_columns`` are part of the format but not computed (2014 population: download_pop.include_2014 false).
 Plants without a service area are left out; rows are sorted by ``sort_by`` and ``WASTE_ID`` renumbered 0..n-1.
 """
 
@@ -29,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 
 import geopandas as gpd
 import numpy as np
@@ -43,14 +50,52 @@ from .utils import atomic_output, configure_logging
 logger = logging.getLogger(__name__)
 
 
-def source_labels(df, rules):
-    """``SOURCE_DS`` per row: the label of the last rule a row meets (column present, or equal to ``equals``)."""
+def first_value(df, columns):
+    """Per row the first of ``columns`` with a value, as text (NaN where none)."""
+    out = pd.Series(np.nan, index=df.index, dtype=object)
+    for column in columns:
+        values = df[column]
+        out = out.where(out.notna(), values.where(values.notna()).astype(object))
+    return out.where(out.isna(), out.astype(str))
+
+
+def clean_ids(ids, width):
+    """IDs as written in their dataset: integers stored as floats ('25391.0') without '.0', digits padded."""
+    ids = ids.where(ids.isna(), ids.astype(str).str.replace(r"^(\d+)\.0+$", r"\1", regex=True))
+    if width is not None:
+        digits = ids.notna() & ids.astype(str).str.fullmatch(r"\d+")
+        ids = ids.where(~digits, ids.astype(str).str.zfill(int(width)))
+    return ids
+
+
+def sources(df, rules):
+    """``SOURCE_DS`` and ``SOURCE_ID`` per row: the last rule a row meets (every ``where`` column equal to its
+    value, one of ``present`` with a value, the ID matching ``id_pattern``), the ID its first ``id_columns`` (the
+    pattern's group where it has one: the dataset's own ID inside a prefixed one, JP_P22_<TreeCode>)."""
     labels = pd.Series(pd.NA, index=df.index, dtype=object)
+    ids = pd.Series(pd.NA, index=df.index, dtype=object)
     for rule in rules:
-        values = df[rule["column"]]
-        met = values.notna() if rule["equals"] is None else values.astype(str).eq(str(rule["equals"]))
+        met = df[list(rule["present"])].notna().any(axis=1)
+        for column, value in rule["where"].items():
+            met &= df[column].astype(str).eq(str(value))
+        rule_ids = clean_ids(first_value(df, rule["id_columns"]), rule["id_width"]) if rule["id_columns"] else None
+        if rule["id_pattern"] is not None:
+            met &= rule_ids.notna() & rule_ids.astype(str).str.fullmatch(rule["id_pattern"])
+            if re.compile(rule["id_pattern"]).groups:  # the dataset's own ID inside our prefixed one
+                rule_ids = rule_ids.astype(str).str.extract(f"^(?:{rule['id_pattern']})$", expand=False)
         labels[met.to_numpy()] = rule["label"]
-    return labels
+        ids[met.to_numpy()] = rule_ids[met].to_numpy() if rule_ids is not None else pd.NA
+    return labels, ids
+
+
+def hw_ids(df, columns, pattern):
+    """The HydroWASTE ID: the first of ``columns`` holding one (``pattern``), as written there."""
+    out = pd.Series(np.nan, index=df.index, dtype=object)
+    for column in columns:
+        values = df[column]
+        valid = values.notna() & values.astype(str).str.fullmatch(pattern)
+        out = out.where(out.notna(), values.where(valid).astype(object))
+    return out
 
 
 def basin_weights(sizes, basins):
@@ -66,23 +111,28 @@ def build(gdf, cfg, sizes=None):
     """
     columns, renames = list(cfg["columns"]), dict(cfg["renames"])
     source_of = {**{c: c for c in columns}, **{new: old for old, new in renames.items()}}
-    derived = {"SOURCE_DS", *cfg["empty_columns"]}
-    missing = [source_of[c] for c in columns if c not in derived and source_of[c] not in gdf.columns]
+    derived = {"SOURCE_DS", "SOURCE_ID", "HW_WASTE_ID", *cfg["empty_columns"]}
+    needed = [source_of[c] for c in columns if c not in derived] + list(cfg["hw_id_columns"])
+    needed += [c for rule in cfg["sources"] for c in [*rule["present"], *rule["id_columns"], *rule["where"]]]
+    missing = sorted({c for c in needed if c not in gdf.columns and c not in derived})
     if missing:
         raise KeyError(f"the population layer has no {missing}")
     keep = (gdf.geometry.notna() & ~gdf.geometry.is_empty).to_numpy()
-    gdf = gdf[keep]
+    gdf = gdf[keep].copy()
+    # text written for a missing value by an earlier stage ('<NA>': all_merged_v2 has it in 186 columns)
+    for column in gdf.columns.drop(gdf.geometry.name):
+        if not pd.api.types.is_numeric_dtype(gdf[column]):
+            gdf[column] = gdf[column].mask(gdf[column].isin(cfg["missing_text"]))
     out = pd.DataFrame(index=gdf.index)
     for column in columns:
         if column in cfg["empty_columns"]:
             out[column] = np.nan
-        elif column != "SOURCE_DS":
+        elif column not in derived:
             out[column] = gdf[source_of[column]].to_numpy()
-    hw = out["HW_WASTE_ID"].notna() & out["HW_WASTE_ID"].astype(str).str.fullmatch(cfg["hw_id_pattern"])
-    out["HW_WASTE_ID"] = out["HW_WASTE_ID"].where(hw)
-    # the rules read the export's columns (HW_WASTE_ID as cleaned) and the layer's others (origin)
+    out["HW_WASTE_ID"] = hw_ids(gdf, cfg["hw_id_columns"], cfg["hw_id_pattern"]).to_numpy()
+    # the rules read the export's columns (HW_WASTE_ID as found) and the layer's others (OLD_WASTE_ID, CWNS, ...)
     others = gdf.drop(columns=[gdf.geometry.name, *[c for c in out.columns if c in gdf.columns]])
-    out["SOURCE_DS"] = source_labels(pd.concat([others, out], axis=1), cfg["source_ds"])
+    out["SOURCE_DS"], out["SOURCE_ID"] = sources(pd.concat([others, out], axis=1), cfg["sources"])
     if cfg["weights_from_size"]:
         out["weights"] = basin_weights(np.asarray(sizes, dtype=float)[keep], out["HYBAS_ID"])
     areas = gpd.GeoDataFrame(out[columns], geometry=gdf.geometry.to_numpy(), crs=gdf.crs)
@@ -132,7 +182,8 @@ def main():
     )
     areas, points = build(gdf, cfg, sizes)
     write(areas, points, cfg, target)
-    logger.info("%d plants; SOURCE_DS %s", len(areas), areas["SOURCE_DS"].value_counts(dropna=False).to_dict())
+    counts = areas.groupby(areas["SOURCE_DS"].fillna("none"))["SOURCE_ID"].agg(["size", "count"])
+    logger.info("%d plants; per SOURCE_DS plants and plants with a SOURCE_ID:\n%s", len(areas), counts.to_string())
 
 
 if __name__ == "__main__":
