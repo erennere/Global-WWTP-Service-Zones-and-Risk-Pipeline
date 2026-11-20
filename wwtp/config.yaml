@@ -955,7 +955,9 @@ release_export:
   weight_method: null
   weight_func: null
   dynamic_buffering: null
-  size_measure: null
+  # the released layer: combined_25 with the spread rule, the best of the four globally (validation of the
+  # 20 Nov run: country totals and plants; Eren, 20 Nov 2026)
+  size_measure: 'combined_25_spread'
   approach: 1
   layers: {areas: 'WWTP_SERVICE_AREAS', points: 'WWTP_LOCATIONS'}
   # The attribute columns of both layers (the points layer: without WKT_WWTP, WKT_SERVICE_AREA last), named
