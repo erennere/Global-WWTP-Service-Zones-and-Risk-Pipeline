@@ -49,3 +49,6 @@ notes/literal_candidates*.txt
 
 # Per-machine config overlay (wwtp/starter.py: LOCAL_OVERLAY_FILENAME)
 wwtp/config.local.yaml
+
+# Snakemake run metadata (dry runs from the repository root)
+.snakemake/
