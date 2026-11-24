@@ -29,7 +29,7 @@ from shapely.geometry import box, Polygon, Point
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import MIN_PLANTS, TAG, enough_plants  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import MIN_PLANTS, TAG, enough_plants, pfaf_lookup  # noqa: E402  (config.yaml, section figure1)
 
 INK, INK2 = "#1a1a1a", "#5a5a5a"
 NODATA, HATCH_EDGE = "#dedede", "#9a9a9a"
@@ -58,7 +58,7 @@ def add_args(ap):
     g.add_argument("--countries", default=None, help="country units gpkg (default: derived from --plants)")
     g.add_argument("--ne-data", default=None, help="folder with ne_50m_land.geojson (default: data/)")
     g.add_argument(
-        "--hybas-dir", default=None, help="basin levels: hybas_lev09_v1c_attributes.csv, hybas_lev0X_v1c.gpkg"
+        "--hybas-dir", default=None, help="basin levels: hybas_lev<NN>_*attributes.csv (the plants' HYBAS_ID level), hybas_lev0X_v1c.gpkg"
     )
     g.add_argument("--glyph", default="ringpie", choices=["ringpie", "core"])
     g.add_argument("--inset", default="europe", choices=["europe", "none"])
@@ -177,8 +177,7 @@ class Tanks:
         else:
             lev = len(str(int(u.PFAF_ID.iloc[0])))
             assert a.hybas_dir, "basin units need --hybas-dir (as 02b_aggregate_basins.py)"
-            att9 = pd.read_csv(f"{a.hybas_dir}/hybas_lev09_v1c_attributes.csv")
-            pfaf9 = dict(zip(att9.HYBAS_ID.astype("int64"), att9.PFAF_ID.astype("int64")))
+            pfaf9 = pfaf_lookup(a.hybas_dir)  # HYBAS_ID of any level -> PFAF_ID (as 02b)
             hb = pd.to_numeric(hp.HYBAS_ID, errors="coerce")
             route = hb.map(lambda v: pfaf9.get(int(v)) if pd.notna(v) else None)
             route = route.map(lambda v: int(str(int(v))[:lev]) if pd.notna(v) else np.nan)

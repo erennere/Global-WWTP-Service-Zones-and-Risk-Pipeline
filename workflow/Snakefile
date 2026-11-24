@@ -121,6 +121,7 @@ TARGETS = {
     "plants_v3": "plant list v3 from v2, the work list and the new images: `... plants_v3 --config run_once=plants_v3`",
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
+    "fig1_non_served_release": "non-served urban areas of release_export's variant, as the points Figure 1 c reads (CSV to send back)",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
     "annotation_context": "annotation without images: `snakemake annotation_context --config run_once=annotation_context`",
     "annotation_overlay": "text overlay once the images are there: `... annotation_overlay --config run_once=annotation_overlay`",
@@ -522,47 +523,52 @@ rule validation_figures:
 # --------------------------------------------------------------------------- #
 # Non-served population and downstream risk, configured variant               #
 # --------------------------------------------------------------------------- #
+# create_rasters and find_unserved_pop also run for release_export's variant when it is another one:
+# Figure 1 c shows the urban population the released layer does not serve (target fig1_non_served_release).
+for v in {x.tag: x for x in (DEFAULT, RELEASE)}.values():
+    SHARDS = wf.raster_shards(v)
+    FIG = wf.population_layer(v, wf.figure_approach(v))
+    for i in range(SHARDS if SHARDS > 1 else 0):
+        rule:
+            name: f"create_rasters__{v.tag}__shard{i}"
+            input: FIG, wf.watershed(v.level), wf.stamp("download_pop")
+            output: wf.raster_shard_files(v, i)
+            params:
+                module="pop_at_risk_river_calculations.create_rasters",
+                cli=["--job-index", str(i), "--total-jobs", str(SHARDS), *v.cli()],
+            log: wf.log(f"create_rasters_shard{i}", v)
+            threads: threads("create_rasters")
+            resources: **res("create_rasters")
+            shell: STAGE
+
+    rule:
+        name: f"create_rasters__{v.tag}"
+        input: [f for i in range(SHARDS) for f in wf.raster_shard_files(v, i)] if SHARDS > 1 else \
+            [FIG, wf.watershed(v.level), wf.stamp("download_pop")]
+        output: wf.raster_stats(v)
+        params:
+            module="pop_at_risk_river_calculations.create_rasters",
+            cli=(["--merge-shards", str(SHARDS)] if SHARDS > 1 else []) + v.cli(),
+        log: wf.log("create_rasters", v)
+        threads: threads("create_rasters")
+        resources: **res("create_rasters")
+        shell: STAGE
+
+    rule:
+        name: f"find_unserved_pop__{v.tag}"
+        input: wf.raster_stats(v)[1], ANNOTATED
+        output: wf.config("find_unserved_pop", v)["paths"]["non_served_above_threshold_outpath"]
+        params: module="pop_at_risk_river_calculations.find_unserved_pop", cli=v.cli()
+        log: wf.log("find_unserved_pop", v)
+        threads: threads("find_unserved_pop")
+        resources: **res("find_unserved_pop")
+        shell: STAGE
+
 v = DEFAULT
 SHARDS = wf.raster_shards(v)
 FIG = wf.population_layer(v, wf.figure_approach(v))
 RISK = {s: wf.config(s, v)["paths"] for s in ("find_unserved_pop", "assign_rivers_to_basin", "find_intersection_river",
                                               "find_pop_in_danger_pop", "find_unconnected_industrial_areas")}
-
-for i in range(SHARDS if SHARDS > 1 else 0):
-    rule:
-        name: f"create_rasters__{v.tag}__shard{i}"
-        input: FIG, wf.watershed(v.level), wf.stamp("download_pop")
-        output: wf.raster_shard_files(v, i)
-        params:
-            module="pop_at_risk_river_calculations.create_rasters",
-            cli=["--job-index", str(i), "--total-jobs", str(SHARDS), *v.cli()],
-        log: wf.log(f"create_rasters_shard{i}", v)
-        threads: threads("create_rasters")
-        resources: **res("create_rasters")
-        shell: STAGE
-
-rule:
-    name: f"create_rasters__{v.tag}"
-    input: [f for i in range(SHARDS) for f in wf.raster_shard_files(v, i)] if SHARDS > 1 else \
-        [FIG, wf.watershed(v.level), wf.stamp("download_pop")]
-    output: wf.raster_stats(v)
-    params:
-        module="pop_at_risk_river_calculations.create_rasters",
-        cli=(["--merge-shards", str(SHARDS)] if SHARDS > 1 else []) + v.cli(),
-    log: wf.log("create_rasters", v)
-    threads: threads("create_rasters")
-    resources: **res("create_rasters")
-    shell: STAGE
-
-rule:
-    name: f"find_unserved_pop__{v.tag}"
-    input: wf.raster_stats(v)[1], ANNOTATED
-    output: RISK["find_unserved_pop"]["non_served_above_threshold_outpath"]
-    params: module="pop_at_risk_river_calculations.find_unserved_pop", cli=v.cli()
-    log: wf.log("find_unserved_pop", v)
-    threads: threads("find_unserved_pop")
-    resources: **res("find_unserved_pop")
-    shell: STAGE
 
 rule:
     name: f"assign_rivers_to_basin__{v.tag}"

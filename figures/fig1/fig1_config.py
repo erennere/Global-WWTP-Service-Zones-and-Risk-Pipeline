@@ -5,6 +5,7 @@
 e.g. r10000) or a path key (``match_dir``, ``cartogram_dir``, ``combined_dir``).
 """
 
+import glob
 import os
 import sys
 
@@ -24,6 +25,25 @@ PATHS = FIG1["paths"]
 def enough_plants(n, minimum=MIN_PLANTS):
     """Whether a unit has enough plants to be coloured (fewer: hatched). Works on numbers and Series."""
     return n >= minimum
+
+
+def pfaf_lookup(hb_dir):
+    """HYBAS_ID -> PFAF_ID from every ``hybas_lev<NN>_*attributes.csv`` in the HydroBASINS folder.
+
+    Plants and areas carry the HYBAS_ID of the level their file was made at: level 9 (first release), level 8
+    (the non-served areas of 2 Nov), level 6 (plant list v3, the pipeline's basins: hybas_lev06_pipeline_
+    attributes.csv, written by 00a_release_inputs.py basins). Digits 2-3 of an ID are its level, so the
+    tables of different levels never share an ID; the first k digits of any PFAF_ID are its level-k basin.
+    """
+    import pandas as pd
+
+    tables = sorted(glob.glob(os.path.join(hb_dir, "hybas_lev[0-9][0-9]_*attributes.csv")))
+    assert tables, f"no hybas_lev<NN>_*attributes.csv in {hb_dir}"
+    t = pd.concat([pd.read_csv(f, usecols=["HYBAS_ID", "PFAF_ID"]) for f in tables], ignore_index=True)
+    t = t.astype("int64").drop_duplicates()
+    clash = t.HYBAS_ID.duplicated(keep=False)
+    assert not clash.any(), f"{int(clash.sum())} HYBAS_IDs with two PFAF_IDs in {tables}"
+    return dict(zip(t.HYBAS_ID, t.PFAF_ID))
 
 
 def main():

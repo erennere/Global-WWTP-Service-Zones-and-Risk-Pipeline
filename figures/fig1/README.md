@@ -16,8 +16,8 @@ map (map 2), composed into one figure per level. Moved here from `wwtp/maps/fig1
 | `paths.match_dir` | `{data_dir}/figures/fig1/match` | work folder of map 1 (`data/`, `agg/`, `figs/`) |
 | `paths.cartogram_dir` | `{data_dir}/figures/fig1/cartogram` | work folder of map 2 (`data/`, `svc/`, `figs2/`) |
 | `paths.combined_dir` | `{data_dir}/figures/fig1/combined` | composed figures (`rows/`) |
-| `paths.heigit_attrs` | `{match_dir}/data/HeiGIT_WWTP_LVL9_BFK0_8_LOG_MULT.gpkg` | HeiGIT plants with their attributes, read by fid (tanks panel; `ATTRS` of the render scripts) |
-| `paths.hydrobasins_dir` | `{data_dir}/figures/fig1/hydrobasins` | `hybas_lev03/04_v1c.gpkg`, `hybas_lev08/09_v1c_attributes.csv` (`HB` of the render scripts) |
+| `paths.heigit_attrs` | `{match_dir}/data/heigit_attrs.csv` | HeiGIT plants with their attributes, read by fid (tanks panel; `ATTRS` of the render scripts); written by `00a_release_inputs.py plants` (a release GeoPackage also works) |
+| `paths.hydrobasins_dir` | `{data_dir}/figures/fig1/hydrobasins` | `hybas_lev03/04_v1c.gpkg` and the HYBAS_ID → PFAF_ID tables `hybas_lev<NN>_*attributes.csv` of every level the plants and areas carry (`hybas_lev08/09_v1c_attributes.csv`; `hybas_lev06_pipeline_attributes.csv` for plant list v3), read together by `fig1_config.pfaf_lookup` (`HB` of the render scripts) |
 
 Command-line arguments still override every default. `python figures/fig1/fig1_config.py <key>` prints
 a setting (the `render_*.sh` wrappers use it).
@@ -42,6 +42,22 @@ Prepared inputs (by hand, once): `match/data/` and `cartogram/data/` hold `heigi
 `match/00_fix_utm.py <data_dir>` (repairs UTM back-projections in `heigit_points.csv`, keeping the original as
 `heigit_points_original.csv`) and `match/00b_national_reference.py` (Australian and Japanese reference plants) edit
 or replace those files and are run before.
+
+### Inputs from a release file (plant list v3)
+
+Figure 1 on a release file (e.g. `HeiGIT_WWTP_v3_lvl6_bfcb25s_sz_mult.gpkg`, the released layer of 20 Nov 2026)
+instead of the first release:
+
+1. `python figures/fig1/00a_release_inputs.py plants <release.gpkg> <match_dir>/data` writes `heigit_points.csv`,
+   `heigit_epsg.csv`, `heigit_attrs.csv` and `heigit_pop.csv` (2024 and 2020 service-area population) from the
+   points layer, with the release file's fid; it removes an old `heigit_points_original.csv`.
+2. `python figures/fig1/match/00_fix_utm.py <match_dir>/data` (plant list v3 still has 21 such plants), then copy
+   `heigit_points.csv` and `heigit_pop.csv` to `<cartogram_dir>/data/`.
+3. The release's HYBAS_IDs are of its level (6), from the pipeline's basins:
+   `python figures/fig1/00a_release_inputs.py basins <data_dir>/hydroshed_river_levels/hydrobase_lvl6_combined.gpkg <hydrobasins_dir>`.
+4. Map 2 needs the urban population the released layer does not serve: `snakemake fig1_non_served_release`
+   (create_rasters and find_unserved_pop of release_export's variant, then `00a_release_inputs.py non_served`)
+   writes `<cartogram_dir>/release/non_served_points_<tag>.csv`; copy it to `<cartogram_dir>/data/non_served_points.csv`.
 
 Each render script changes into its work folder from the config before running; `ATTRS`/`HB` default to the two
 paths above.

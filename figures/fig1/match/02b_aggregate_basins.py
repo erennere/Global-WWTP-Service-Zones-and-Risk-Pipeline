@@ -1,8 +1,9 @@
 """Aggregate reconciled plants to HydroBASINS level 3 and level 4.
 
 Basin of a plant:
-  * HeiGIT plants that carry a level-9 HYBAS_ID: PFAF_ID of that level-9 basin, truncated to 3 / 4 digits
-    (Pfafstetter codes are nested: the first k digits of a level-9 code are its level-k ancestor).
+  * HeiGIT plants that carry a HYBAS_ID (level 9 in the first release, level 6 in plant list v3): PFAF_ID of
+    that basin, truncated to 3 / 4 digits (Pfafstetter codes are nested: the first k digits of a code are its
+    level-k ancestor); the IDs are looked up in every attribute table of <hydrobasins_dir> (fig1_config.pfaf_lookup).
   * all other plants (reference-only 'missing' plants, HeiGIT plants without HYBAS_ID): point-in-polygon
     on the level-3 / level-4 polygons, nearest polygon within 25 km for coastal outfalls.
   The Pfafstetter route is cross-checked against point-in-polygon for every HeiGIT plant.
@@ -10,7 +11,8 @@ Plants located in countries without HeiGIT coverage are kept out of the counts; 
 plants lie mostly in such countries is flagged 'uncovered'.
 
 Usage: python 02b_aggregate_basins.py <hydrobasins_dir> <agg_dir> [radius_tag]
-  <hydrobasins_dir> holds hybas_lev03_v1c.gpkg, hybas_lev04_v1c.gpkg and hybas_lev09_v1c_attributes.csv
+  <hydrobasins_dir> holds hybas_lev03_v1c.gpkg, hybas_lev04_v1c.gpkg and the hybas_lev<NN>_*attributes.csv
+  tables of the plants' levels (hybas_lev09_v1c_attributes.csv; hybas_lev06_pipeline_attributes.csv for v3)
 """
 
 import sys, json
@@ -18,7 +20,7 @@ import numpy as np, pandas as pd, geopandas as gpd
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import TAG, pfaf_lookup  # noqa: E402  (config.yaml, section figure1)
 
 HB, AGG = sys.argv[1:3]
 TAG = sys.argv[3] if len(sys.argv) > 3 else TAG
@@ -31,8 +33,7 @@ unc_cty = set(cty.loc[cty.status == "uncovered", "iso2"])
 pts["in_unc"] = pts.unit.isin(unc_cty)
 ref["in_unc"] = ref.unit.isin(unc_cty)
 
-att9 = pd.read_csv(f"{HB}/hybas_lev09_v1c_attributes.csv")
-pfaf9 = dict(zip(att9.HYBAS_ID.astype("int64"), att9.PFAF_ID.astype("int64")))
+pfaf9 = pfaf_lookup(HB)  # HYBAS_ID of any level -> PFAF_ID
 
 
 def spatial(df, polys, key):

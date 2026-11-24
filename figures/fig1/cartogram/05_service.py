@@ -1,13 +1,14 @@
 """Served share of the urban population per HydroBASINS level 3 / level 4 basin (Figure 1b).
 
   P_served = sum of HeiGIT service-area population (2024_zonal_sum) of the plants in the basin
-  P_non    = sum of pop_sum of non-served urban areas (non_served_nxt_river_v2_lvl8_bfk0_8_log_mult,
-             exact duplicate rows removed upstream) in the basin
+  P_non    = sum of pop_sum of non-served urban areas in the basin (non_served_points.csv: first
+             non_served_nxt_river_v2_lvl8_bfk0_8_log_mult; for plant list v3 the non-served areas of the released
+             variant, 00a_release_inputs.py non_served; exact duplicate rows removed upstream)
   S        = P_served / (P_served + P_non)
 
-Basin of a non-served area: level-8 HYBAS_ID -> PFAF_ID (HydroBASINS lev08 table) truncated to 3 / 4 digits;
-areas whose ID is not in the lake-version table fall back to point-in-polygon of their representative point.
-Basin of a HeiGIT plant: level-9 HYBAS_ID -> PFAF_ID truncated; fallback point-in-polygon (as for Figure 1a).
+Basin of a non-served area: its HYBAS_ID -> PFAF_ID (fig1_config.pfaf_lookup: every attribute table in <hb_dir>)
+truncated to 3 / 4 digits; areas whose ID is in no table fall back to point-in-polygon of their representative point.
+Basin of a HeiGIT plant: the same with its HYBAS_ID; fallback point-in-polygon (as for Figure 1a).
 Cartogram geometry: each basin polygon is scaled about its centroid so that its area is proportional to P_non;
 the reference density D_ref (people per km2 at full size) is the 95th percentile of basin densities, scale <= 1.
 
@@ -20,7 +21,7 @@ from shapely import affinity
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import TAG, pfaf_lookup  # noqa: E402  (config.yaml, section figure1)
 
 DATA, HB, AGG, OUT = sys.argv[1:5]
 TAG = sys.argv[5] if len(sys.argv) > 5 else TAG
@@ -32,10 +33,7 @@ hp = pd.read_csv(f"{DATA}/heigit_points.csv", keep_default_na=False, na_values=[
 pop = pd.read_csv(f"{DATA}/heigit_pop.csv")
 hp = hp.merge(pop, on="fid", how="left")
 assert hp.zonal_sum_2024.notna().all()
-pf8 = pd.read_csv(f"{HB}/hybas_lev08_v1c_attributes.csv")
-pf9 = pd.read_csv(f"{HB}/hybas_lev09_v1c_attributes.csv")
-pf8 = dict(zip(pf8.HYBAS_ID.astype("int64"), pf8.PFAF_ID.astype("int64")))
-pf9 = dict(zip(pf9.HYBAS_ID.astype("int64"), pf9.PFAF_ID.astype("int64")))
+pf8 = pf9 = pfaf_lookup(HB)  # HYBAS_ID of any level (areas: 8 or 6, plants: 9 or 6) -> PFAF_ID
 cty = gpd.read_file(f"{AGG}/units_country_{TAG}.gpkg", ignore_geometry=True)
 unc_cty = set(cty.loc[cty.status == "uncovered", "iso2"])
 

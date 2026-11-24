@@ -120,7 +120,7 @@ def test_fig1_targets_chain_from_the_prepared_inputs(tmp_path):
             "uwwtd_points.csv",
             "HydroWASTE_v10.csv",
             "ne_50m_admin_0_countries.geojson",
-            "HeiGIT_WWTP_LVL9_BFK0_8_LOG_MULT.gpkg",
+            "heigit_attrs.csv",
         ],
         "cartogram/data": [
             "non_served_points.csv",

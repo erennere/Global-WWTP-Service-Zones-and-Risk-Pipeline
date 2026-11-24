@@ -119,5 +119,19 @@ rule fig1_combined:
     shell: "ATTRS={ATTRS} HB={HB} TAG={TAG} bash {params.script} > {log} 2>&1"
 
 
+# Figure 1 c on the released layer: the urban areas release_export's variant does not serve (find_unserved_pop
+# of that variant, see the risk section of the Snakefile), one point per area. Copy the CSV to
+# <cartogram_dir>/data/non_served_points.csv (figures/fig1/README.md, "Inputs from a release file").
+NS_RELEASE = wf.config("find_unserved_pop", RELEASE)["paths"]["non_served_above_threshold_outpath"]
+rule fig1_non_served_release:
+    """Non-served urban areas of release_export's variant as points (00a_release_inputs.py non_served)."""
+    input: NS_RELEASE
+    output: f"{C}/release/non_served_points_{RELEASE.tag}.csv"
+    params: script=fig1_script("00a_release_inputs.py")
+    log: wf.log("fig1_non_served_release", RELEASE)
+    resources: **FIG1_RES
+    shell: "{PY} {params.script} non_served {input} {output} > {log} 2>&1"
+
+
 rule fig1:
     input: wf.stamp("fig1_maps"), wf.stamp("fig1_tanks"), wf.stamp("fig1_cartogram_figures"), wf.stamp("fig1_combined")
