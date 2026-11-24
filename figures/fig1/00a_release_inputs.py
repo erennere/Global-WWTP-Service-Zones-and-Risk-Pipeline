@@ -17,7 +17,8 @@ Three steps, each a subcommand; run before 00_fix_utm.py and `snakemake fig1`:
 
   non_served <non_served_areas_above_threshold.gpkg> <out.csv>
       The non-served urban areas (find_unserved_pop) as one point per area (representative point, WGS84):
-      fid, HYBAS_ID, data_idx, tile, country, pop_sum, lon, lat (the columns the layer has). Exact duplicate
+      fid, HYBAS_ID, data_idx, tile, country, pop_sum, island_pop_sum, lon, lat (the columns the layer has).
+      Since 24 Nov 2026 pop_sum is the island's urban part (within urban_buffer of an urban centre). Exact duplicate
       rows (same attributes and geometry) are dropped and counted. Snakemake: fig1_non_served_release, for the
       variant release_export exports. Copy the CSV to <cartogram_dir>/data/non_served_points.csv.
 
@@ -42,7 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fig1_config import POP_YEAR  # noqa: E402  (config.yaml, section figure1)
 
 POP_YEARS = (POP_YEAR,)
-NON_SERVED_COLUMNS = ["HYBAS_ID", "NEXT_DOWN", "MAIN_BAS", "data_idx", "tile", "country", "pop_sum"]
+NON_SERVED_COLUMNS = ["HYBAS_ID", "NEXT_DOWN", "MAIN_BAS", "data_idx", "tile", "country", "pop_sum", "island_pop_sum"]
 
 
 def plants(release, out_dir, layer="WWTP_LOCATIONS"):

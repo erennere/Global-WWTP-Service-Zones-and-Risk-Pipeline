@@ -1093,6 +1093,9 @@ find_unserved_pop:
   is_parallel: true
   zoom_level: null
   threshold_value: null  # create_rasters' (islands are already above it)
+  # pop_sum of an island is recounted for its part within urban_buffer of an urban centre, from the rasters of
+  # this year (Eren, 24 Nov 2026); island_pop_sum keeps the whole island
+  population_year: null  # create_rasters'
   urban_buffer: 15000
   wwtp_buffer: 50000
   tolerance: 30 # in meters
@@ -1100,6 +1103,7 @@ find_unserved_pop:
     data_dir: null
     non_served_outpath: null
     urban_areas_filepath: '{data_dir}/urban_areas/GHS_UCDB_GLOBE_R2024A.gpkg'
+    pop_tif_dir: null
     non_served_above_threshold_outpath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/non_served_areas_above_threshold_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
     # Downstream of merge_annotations in the pipeline: use the annotated dataset.
     annotated_all_filepath: null
@@ -2073,7 +2077,7 @@ workflow:
     add_pop: {threads: 8, mem_mb: 196608, runtime: 2880}  # 16 years (2015-2030)
     release_export: {threads: 1, mem_mb: 32768, runtime: 120}
     create_rasters: {threads: 16, mem_mb: 196608, runtime: 2880}
-    find_unserved_pop: {threads: 8, mem_mb: 32768, runtime: 2880}
+    find_unserved_pop: {threads: 8, mem_mb: 131072, runtime: 2880}  # whole islands as WKT (India alone: 0.56 GB)
     assign_rivers_to_basin: {threads: 16, mem_mb: 65536, runtime: 2880}
     find_intersection_river: {threads: 32, mem_mb: 131072, runtime: 2880}
     impact_polygons_pop: {threads: 64, mem_mb: 239616, runtime: 5760}

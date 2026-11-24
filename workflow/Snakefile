@@ -558,7 +558,7 @@ for v in {x.tag: x for x in (DEFAULT, RELEASE)}.values():
 
     rule:
         name: f"find_unserved_pop__{v.tag}"
-        input: wf.raster_stats(v)[1], ANNOTATED
+        input: wf.raster_stats(v)[1], ANNOTATED, wf.stamp("download_pop")  # rasters: the urban part of each island
         output: wf.config("find_unserved_pop", v)["paths"]["non_served_above_threshold_outpath"]
         params: module="pop_at_risk_river_calculations.find_unserved_pop", cli=v.cli()
         log: wf.log("find_unserved_pop", v)

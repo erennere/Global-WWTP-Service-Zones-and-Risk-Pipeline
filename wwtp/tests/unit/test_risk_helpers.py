@@ -354,6 +354,8 @@ def test_find_unserved_pop_main_passes_configured_paths_and_threshold(mock_cfg, 
     cfg["tolerance"] = 0.002
     cfg["wwtp_buffer"] = 750
     cfg["country_output_column"] = "ISO_2"
+    cfg["population_year"] = 2026
+    cfg["paths"]["pop_tif_dir"] = "./tifs"
     cfg["paths"]["non_served_outpath"] = "./outputs/non_served.gpkg"
     cfg["paths"]["non_served_above_threshold_outpath"] = "./outputs/non_served_above_threshold.gpkg"
     cfg["paths"]["urban_areas_filepath"] = "./outputs/urban.gpkg"
@@ -367,7 +369,7 @@ def test_find_unserved_pop_main_passes_configured_paths_and_threshold(mock_cfg, 
     monkeypatch.setattr(
         find_unserved_pop,
         "create_unserved_pop",
-        lambda filepath, threshold, output_filepath, urban_filepath, wwtp_filepath, max_workers=32, is_parallel=True, zoom_level=8, urban_buffer=10000, wwtp_buffer=10000, wwtp_country_col="ISO_2", tolerance=0.0001: (
+        lambda filepath, threshold, output_filepath, urban_filepath, wwtp_filepath, max_workers=32, is_parallel=True, zoom_level=8, urban_buffer=10000, wwtp_buffer=10000, wwtp_country_col="ISO_2", tolerance=0.0001, tif_dir=None, year=None: (
             captured.update(
                 {
                     "filepath": filepath,
@@ -382,6 +384,8 @@ def test_find_unserved_pop_main_passes_configured_paths_and_threshold(mock_cfg, 
                     "wwtp_buffer": wwtp_buffer,
                     "wwtp_country_col": wwtp_country_col,
                     "tolerance": tolerance,
+                    "tif_dir": tif_dir,
+                    "year": year,
                 }
             )
             or 4
@@ -403,6 +407,8 @@ def test_find_unserved_pop_main_passes_configured_paths_and_threshold(mock_cfg, 
         "wwtp_buffer": 750,
         "wwtp_country_col": "ISO_2",
         "tolerance": 0.002,
+        "tif_dir": "./tifs",
+        "year": 2026,
     }
 
 
@@ -589,6 +595,7 @@ def test_create_unserved_pop_rejects_non_integer_like_threshold(monkeypatch, tmp
 def test_find_unserved_pop_main_runs_with_module_imports(monkeypatch, tmp_path):
     cfg = {
         "threshold_value": 5,
+        "population_year": 2026,
         "max_workers": 4,
         "is_parallel": True,
         "zoom_level": 8,
@@ -601,6 +608,7 @@ def test_find_unserved_pop_main_runs_with_module_imports(monkeypatch, tmp_path):
             "non_served_above_threshold_outpath": str(tmp_path / "filtered.gpkg"),
             "urban_areas_filepath": str(tmp_path / "urban.gpkg"),
             "annotated_all_filepath": str(tmp_path / "all_annotated.gpkg"),
+            "pop_tif_dir": str(tmp_path / "tifs"),
         },
     }
     captured = {}
@@ -611,7 +619,7 @@ def test_find_unserved_pop_main_runs_with_module_imports(monkeypatch, tmp_path):
     monkeypatch.setattr(
         find_unserved_pop,
         "create_unserved_pop",
-        lambda filepath, threshold, output_filepath, urban_filepath, wwtp_filepath, max_workers=32, is_parallel=True, zoom_level=8, urban_buffer=10000, wwtp_buffer=10000, wwtp_country_col="ISO_2", tolerance=0.0001: (
+        lambda filepath, threshold, output_filepath, urban_filepath, wwtp_filepath, max_workers=32, is_parallel=True, zoom_level=8, urban_buffer=10000, wwtp_buffer=10000, wwtp_country_col="ISO_2", tolerance=0.0001, tif_dir=None, year=None: (
             captured.update(
                 {
                     "filepath": filepath,
@@ -877,3 +885,25 @@ def test_find_diff_pop_main_raises_when_the_population_layer_is_missing(mock_cfg
 
     with pytest.raises(FileNotFoundError, match="run add_pop first"):
         find_diff_pop.main()
+
+
+def test_only_the_urban_part_of_an_island_is_counted(tmp_path):
+    """pop_sum is recounted inside the (urban-clipped) geometry from the year's raster; island_pop_sum keeps the island."""
+    import rasterio
+    from rasterio.transform import from_origin
+
+    folder = tmp_path / "tifs" / "deu"
+    folder.mkdir(parents=True)
+    data = np.full((100, 100), 2.0, dtype="float32")  # 2 people per pixel
+    with rasterio.open(
+        folder / "deu_pop_2026_CN_100m_R2024B_v1.tif", "w", driver="GTiff", height=100, width=100, count=1,
+        dtype="float32", crs="EPSG:4326", transform=from_origin(10.0, 50.1, 0.001, 0.001), nodata=-99999,
+    ) as dst:
+        dst.write(data, 1)
+    islands = gpd.GeoDataFrame(
+        {"country": ["DE", "DE"], "pop_sum": ["20000", "5000"]},
+        geometry=[box(10.0, 50.05, 10.05, 50.1), box(11.0, 51.0, 11.01, 51.01)],  # 2,500 pixels; outside the raster
+        crs=4326,
+    )
+    out = find_unserved_pop.urban_part_population(islands, str(tmp_path / "tifs"), 2026, max_workers=1)
+    assert out["pop_sum"].tolist() == [5000] and out["island_pop_sum"].tolist() == [20000]

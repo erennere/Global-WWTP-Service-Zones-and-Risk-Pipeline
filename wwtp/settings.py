@@ -484,6 +484,7 @@ class CreateRasters(RunParams):
 
 
 class FindUnservedPop(RunParams):
+    population_year: PopulationYear
     country_output_column: str
     max_workers: PositiveInt
     is_parallel: bool

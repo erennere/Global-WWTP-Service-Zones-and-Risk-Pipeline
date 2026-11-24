@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import geopandas as gpd
 import mercantile
+import numpy as np
 import pandas as pd
 from shapely import from_wkt, to_wkt
 
@@ -29,6 +30,43 @@ def _point_tile(geom, zoom_level):
     pt = geom.representative_point()
     t = mercantile.tile(pt.x, pt.y, int(zoom_level))
     return f"{t.x}-{t.y}-{t.z}"
+
+
+def urban_part_population(gdf, tif_dir, year, country_col="country", max_workers=4):
+    """People inside each row's geometry (the island clipped to the urban buffers), from the ``year`` raster.
+
+    ``pop_sum`` becomes that number and ``island_pop_sum`` keeps the whole island's (Eren, 24 Nov 2026: the urban
+    part only, so that a large connected settlement area touching an urban buffer is not counted as urban in
+    full). Rows without people in their urban part, or without a raster, are dropped (logged).
+    """
+    from ..add_pop import intersect_all_files
+
+    gdf = gdf.copy()
+    gdf["island_pop_sum"] = pd.to_numeric(gdf["pop_sum"], errors="coerce").round().astype("Int64")
+    if gdf.empty:
+        return gdf
+    work = gpd.GeoDataFrame({"_row": np.arange(len(gdf)), country_col: gdf[country_col].values},
+                            geometry=gdf.geometry.values, crs=gdf.crs)
+    out = intersect_all_files(work, tif_dir, max_workers=max_workers, all_years=True, country_col=country_col,
+                              years=[int(year)])
+    col = f"{int(year)}_zonal_sum"
+    people = pd.Series(np.nan, index=np.arange(len(gdf)))
+    if col in out.columns:
+        people[out["_row"].astype(int).values] = pd.to_numeric(out[col], errors="coerce").values
+    people = people.round()
+    keep = (people > 0).values
+    if (~keep).any():
+        logger.warning(
+            "%s islands dropped: no people in their urban part (%s) or no %s raster (%s)",
+            int((~keep).sum()), int((people == 0).sum()), year, int(people.isna().sum()),
+        )
+    gdf["pop_sum"] = people.values
+    gdf = gdf[keep].copy()
+    gdf["pop_sum"] = gdf["pop_sum"].astype("int64")
+    logger.info(
+        "Urban part: %.0f of %.0f people of the kept islands", gdf["pop_sum"].sum(), gdf["island_pop_sum"].sum()
+    )
+    return gdf
 
 
 def read_urban_areas(filepath):
@@ -229,8 +267,14 @@ def create_unserved_pop(
     wwtp_buffer=10000,
     wwtp_country_col="ISO_2",
     tolerance=0.0001,
+    tif_dir=None,
+    year=None,
+    island_country_col="country",
 ):
     """Create a GeoPackage with non-served polygons above a population threshold.
+
+    With ``tif_dir`` and ``year``, ``pop_sum`` is recounted for the urban part of each island
+    (``urban_part_population``); ``island_pop_sum`` keeps the whole island.
 
     Parameters
     ----------
@@ -301,6 +345,9 @@ def create_unserved_pop(
         wwtp_country_col=wwtp_country_col,
     )
 
+    if tif_dir is not None and year is not None:
+        df = urban_part_population(df, tif_dir, year, country_col=island_country_col, max_workers=max_workers)
+
     with atomic_output(output_filepath) as tmp_path:
         df.to_file(tmp_path, driver="GPKG", index=False)
     logger.info("Wrote %s polygons to %s", len(df), output_filepath)
@@ -340,6 +387,8 @@ def main():
         wwtp_buffer=wwtp_buffer,
         wwtp_country_col=wwtp_country_col,
         tolerance=tolerance,
+        tif_dir=cfg["paths"]["pop_tif_dir"],
+        year=int(cfg["population_year"]),
     )
     logger.info("Completed non-served population extraction. rows_written=%s", rows_written)
 
