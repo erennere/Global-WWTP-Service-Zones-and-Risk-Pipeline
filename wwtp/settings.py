@@ -834,6 +834,7 @@ class PlantsV3(Section):
     with_image_text: bool
     image_names: Literal["ref_idx", "ref_row"]
     location_priority: list[Literal["corrected_eu_file", "national_plants", "v2"]] = Field(min_length=3, max_length=3)
+    location_fix_match_m: PositiveFloat
     paths: Paths
 
 

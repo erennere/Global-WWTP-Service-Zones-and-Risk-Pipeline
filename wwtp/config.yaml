@@ -1766,6 +1766,9 @@ plants_v3:
   image_names: ref_idx
   # Location of the merged plant when plants share a site: the first source in this order
   location_priority: ['corrected_eu_file', 'national_plants', 'v2']
+  # Known location errors (wwtp/data_merge/location_fixes.py, paths.location_fixes): a plant is found by its
+  # HydroWASTE id within this distance (m) of the wrong position the table gives
+  location_fix_match_m: 200
   paths:
     data_dir: null
     base_filepath: '{data_dir}/all_annotated_v2.gpkg'
@@ -1788,6 +1791,12 @@ plants_v3:
     summary: '{data_dir}/heigit_sizes/plants_v3_summary.csv'
     # Segmentation results not given to any plant (image not verified to show it), with the reason
     unused_image_results: '{data_dir}/heigit_sizes/plants_v3_unused_image_results.csv'
+    # Known location errors of v3 (in git; 24 Nov 2026): 17 plants converted back from UTM with the wrong zone
+    # are moved (10 leave what their image showed as a plant of its own), 4 plants with another plant's EU code
+    # lose it and those plants are added from the corrected EU file. Applied by plants_v3, and to an existing
+    # v3 file by `python -m wwtp.data_merge.location_fixes`, which also writes the report.
+    location_fixes: '{data_dir}/heigit_sizes/location_fixes_2026-11-24.csv'
+    location_fixes_report: '{data_dir}/heigit_sizes/location_fixes_report.csv'
 
 # Calibration on national statistics (wwtp/calibration/connection_radius.py; Snakemake target
 # `calibration`). For every country with plants and a WorldPop raster: the share of its people inside

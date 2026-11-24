@@ -51,7 +51,7 @@ instead of the first release:
 1. `python figures/fig1/00a_release_inputs.py plants <release.gpkg> <match_dir>/data` writes `heigit_points.csv`,
    `heigit_epsg.csv`, `heigit_attrs.csv` and `heigit_pop.csv` (2024 and 2020 service-area population) from the
    points layer, with the release file's fid; it removes an old `heigit_points_original.csv`.
-2. `python figures/fig1/match/00_fix_utm.py <match_dir>/data` (plant list v3 still has 21 such plants), then copy
+2. `python figures/fig1/match/00_fix_utm.py <match_dir>/data` (the release of 20 Nov 2026 has 17 such plants; plant list v3 with `location_fixes` none. A plant within 5 km of its other reference record keeps its place: it carries a wrong code), then copy
    `heigit_points.csv` and `heigit_pop.csv` to `<cartogram_dir>/data/`.
 3. The release's HYBAS_IDs are of its level (6), from the pipeline's basins:
    `python figures/fig1/00a_release_inputs.py basins <data_dir>/hydroshed_river_levels/hydrobase_lvl6_combined.gpkg <hydrobasins_dir>`.

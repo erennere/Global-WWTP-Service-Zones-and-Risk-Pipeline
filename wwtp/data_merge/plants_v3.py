@@ -18,10 +18,13 @@ Steps, from ``base_filepath`` (all_annotated_v2):
    that plant (same idx and plant_id) within ``max_image_offset_m`` of the image; the others are written to
    ``unused_image_results`` with the reason. Image-to-text names an image ``bbox_<idx>.png``. A plant without
    a result keeps its v2 values (``size_source`` v2_image, or none); old plants keep their v2 category.
-6. Plants closer than ``same_site_distance_m`` are one plant: the location of the member whose
+6. Known location errors are corrected (``paths.location_fixes``, see ``location_fixes.py``): plants converted back
+   from UTM with the wrong zone are moved, plants carrying another plant's EU code lose it and that plant is
+   added from the corrected EU file.
+7. Plants closer than ``same_site_distance_m`` are one plant: the location of the member whose
    ``location_source`` comes first in ``location_priority``, and per column the first value in that order;
    the largest POP_SERVED; ``idx_v2`` and ``origin`` of the member with the lowest idx_v2 (a v2 plant).
-7. Every plant gets a new ``idx`` (0..n-1); ``idx_v2`` keeps its v2 number (for new plants their
+8. Every plant gets a new ``idx`` (0..n-1); ``idx_v2`` keeps its v2 number (for new plants their
    work-list number, which follows v2's).
 
 Added columns: ``origin`` (v2, new_plant_national, new_plant_eu_file), ``location_source`` (v2,
@@ -273,6 +276,21 @@ def build(cfg):
     plants.loc[never, "size_source"] = NO_IMAGE
     counts["plants never imaged (size_source no_image)"] = int(never.sum())
     counts["segmentation results set apart (image not verified to show the plant)"] = len(unused)
+
+    if paths.get("location_fixes"):  # known location errors (location_fixes.py), before same sites are merged
+        from .location_fixes import apply_location_fixes, read_fixes
+
+        plants, fixed = apply_location_fixes(plants.reset_index(drop=True), read_fixes(paths["location_fixes"]), cfg,
+                                             eu_file=paths["eu_file"])  # fmt: skip
+        status = fixed["status"].astype(str)
+        counts["known location errors corrected (location_fixes)"] = int((status == "moved").sum())
+        counts["plants with another plant's EU code, code removed (location_fixes)"] = int(status.str.startswith("kept").sum())
+        counts["plants added by location_fixes"] = int(plants["origin"].isin(["location_fix_split"]).sum()) + int(
+            fixed.get("added", pd.Series(dtype=object)).astype(str).str.startswith("added").sum()
+        )
+        missing = fixed[status.str.startswith("not found")]
+        if len(missing):
+            raise ValueError(f"{paths['location_fixes']}: plants not found: {missing[['WASTE_ID', 'name']].to_dict('records')}")
 
     plants, n_groups, n_rows = merge_same_sites(plants.reset_index(drop=True), cfg)
     counts[f"same-site groups merged (closer than {cfg['same_site_distance_m']:g} m)"] = n_groups

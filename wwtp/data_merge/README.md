@@ -70,6 +70,7 @@ For v3 (paths in config sections `national_plants`, `work_list`, `plants_v3`):
 | `national_plants.py` | Python worker | AU, CA, JP, NZ plants in v2's columns | national registers, P22, OSM, HydroWASTE | `data/national_plants/` |
 | `work_list.py` | Python worker | The plants that need a new image | population layer v2, corrected EU file, national plants | `data/heigit_sizes/plants_without_size_and_new_plants.gpkg`, removed and not-added lists |
 | `plants_v3.py` | Python worker | v2 updated with the work list and the new images' results | all_annotated_v2, work list, image results | `data/all_annotated_v3.gpkg`, `data/heigit_sizes/plants_v3_summary.csv` |
+| `location_fixes.py` | Python worker | Known location errors from a table in git (`data/heigit_sizes/location_fixes_2026-11-24.csv`): 17 plants converted back from UTM with the wrong zone moved, 4 plants with another plant's EU code without it (that plant added). Part of `plants_v3`; `python -m wwtp.data_merge.location_fixes` applies it to an existing v3 file | all_annotated_v3, the table, the corrected EU file | `data/all_annotated_v3.gpkg` (rewritten), `data/heigit_sizes/location_fixes_report.csv` |
 
 ## Execution Flow
 ```mermaid

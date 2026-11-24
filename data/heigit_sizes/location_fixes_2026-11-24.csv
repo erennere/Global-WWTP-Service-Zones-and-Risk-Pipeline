@@ -1,0 +1,22 @@
+WASTE_ID,uwwCode,name,wrong_lon,wrong_lat,action,lon,lat,ISO_2,location_source,clear,split,add_uwwCode,note
+53228,,HydroWASTE 53228,-53.5956,49.1234,move,-71.256024,-41.129464,AR,v2,,no,,wrong UTM zone: lay in Canada
+57058,,HydroWASTE 57058,-4.081453,52.108073,move,25.918547,52.108073,BY,v2,,yes,,wrong UTM zone: lay in Great Britain
+46227,,Anhui,75.796698,31.007207,move,117.796698,31.007207,CN,v2,,no,,wrong UTM zone: lay in India
+45671,,Jilin,-80.5061,43.4867,move,123.4939,43.4867,CN,v2,,yes,,wrong UTM zone: lay in Canada
+23484,CZ5101-621382-49099469-4/1U,COV Ceska Lipa,8.518905,50.680752,move,14.513277,50.678736,CZ,corrected_eu_file,,yes,,wrong UTM zone: lay in Germany
+23283,CZ2107-627968-00242098-4/1U,COV Dobris,20.1858,49.785,move,14.188701,49.783936,CZ,corrected_eu_file,,no,,wrong UTM zone: lay in Poland
+56652,FR026837801946,WOLFERSDORF,13.122223,47.654174,move,7.119042,47.649499,FR,corrected_eu_file,hydrowaste,no,,wrong UTM zone: lay in Austria; its HydroWASTE link (56652) is a plant in Russia
+13831,,Ozun,-82.1549,45.7877,move,25.8451,45.7877,RO,v2,,no,,wrong UTM zone: lay in Canada
+58414,,HydroWASTE 58414,14.460154,50.382164,move,116.460154,50.382164,RU,v2,,yes,,wrong UTM zone: lay in Czechia
+57254,,HydroWASTE 57254,-116.9679,53.2449,move,45.0321,53.2449,RU,v2,,no,,wrong UTM zone: lay in Canada
+331,SKCAO60805425257911,COV Jelsava,14.2449,48.6195,move,20.242125,48.617613,SK,corrected_eu_file,,no,,wrong UTM zone: lay in Czechia
+564,SKCAO70605775601037,COV Tatranska Lomnica,8.300554,49.161117,move,20.30377,49.161392,SK,corrected_eu_file,,yes,,wrong UTM zone: lay in Germany
+536,SKCAO81102285280991,COV Trebisov,9.738646,48.608236,move,21.733235,48.608962,SK,corrected_eu_file,,yes,,wrong UTM zone: lay in Germany
+568,SKCAO61301725165891,COV Ziar nad Hronom,12.821589,48.567577,move,18.824445,48.564761,SK,corrected_eu_file,,yes,,wrong UTM zone: lay in Germany
+55617,,HydroWASTE 55617,109.260747,25.050229,move,121.260747,25.050229,TW,v2,,yes,,wrong UTM zone: lay in China
+56806,,HydroWASTE 56806,5.900441,49.531608,move,29.900441,49.531608,UA,v2,,yes,,wrong UTM zone: lay in Luxembourg
+56769,,HydroWASTE 56769,38.347382,49.008305,move,26.347382,49.008305,UA,v2,,yes,,wrong UTM zone: lay in eastern Ukraine
+12549,ATTP_4-41507001,Bogacs,20.539641,47.886305,keep,,,HU,,eu_code,no,ATTP_4-41507001,right place; carried the code of Grossraming (AT)
+23562,DETP_BYAB-K0173,Pardubice-Rybitvi,15.692746,50.044555,keep,,,CZ,,eu_code,no,DETP_BYAB-K0173,right place; carried the code of Gemuenden (DE)
+12722,FR0449218S0002,Sarvar,16.958869,47.264588,keep,,,HU,,eu_code,no,FR0449218S0002,right place; carried the code of Saint-Pierre-Montlimart (FR)
+12740,FR060925601001,Szekesfehervar,18.387237,47.184244,keep,,,HU,,eu_code,no,FR060925601001,right place; carried the code of Vercel (FR)

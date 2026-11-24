@@ -59,7 +59,13 @@ L = H[hasU | hasW].copy()
 L["shift_m"] = hav(L.lon, L.lat, L.ref_lon, L.ref_lat)
 L["zone_heigit"] = zone_epsg(L.lon, L.lat)
 L["zone_ref"] = zone_epsg(L.ref_lon, L.ref_lat)
-C = L[(L.zone_heigit != L.zone_ref) & (L.shift_m > 50_000)].copy()
+# A plant already within 5 km of its other reference record (HydroWASTE when the UWWTD was used, or the
+# reverse) is in the right place and carries a wrong code (24 Nov 2026: Bogacs, Sarvar, Szekesfehervar with
+# Austrian/French UWWTD codes, Pardubice-Rybitvi with a German one): not moved.
+other_lon = np.where(useU.loc[L.index], W.reindex(wi.loc[L.index]).LON_WWTP.values, U.reindex(L.uwwCode).lon.values)
+other_lat = np.where(useU.loc[L.index], W.reindex(wi.loc[L.index]).LAT_WWTP.values, U.reindex(L.uwwCode).lat.values)
+L["other_shift_m"] = hav(L.lon, L.lat, other_lon, other_lat)
+C = L[(L.zone_heigit != L.zone_ref) & (L.shift_m > 50_000) & ~(L.other_shift_m <= 5_000)].copy()
 fx, fy = [], []
 for _, r in C.iterrows():
     e, n = Transformer.from_crs(4326, int(r.zone_heigit), always_xy=True).transform(r.lon, r.lat)

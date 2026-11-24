@@ -402,7 +402,7 @@ def v3_world(tmp_path):
                         segmentation_results=str(tmp_path / "seg.csv"),
                         image_text_results=str(tmp_path / "i2t.csv"), image_text_list=str(tmp_path / "new_plants.csv"),
                         output=str(tmp_path / "all_annotated_v3.gpkg"), summary=str(tmp_path / "summary.csv"),
-                        unused_image_results=str(tmp_path / "unused.csv"))  # fmt: skip
+                        unused_image_results=str(tmp_path / "unused.csv"), location_fixes=None)  # fmt: skip
     cfg["with_image_text"] = True
     return cfg, v2, moved_to, far, national, eu_new
 
@@ -551,3 +551,23 @@ def test_same_sites_use_geodesic_metres():
     assert [sorted(g) for g in p3.same_sites(gpd.GeoDataFrame(geometry=pts.iloc[[0, 1]]), 500)] == [[0, 1]]
     assert p3.same_sites(gpd.GeoDataFrame(geometry=pts.iloc[[0, 2]]), 500) == []
     assert [sorted(g) for g in p3.same_sites(gpd.GeoDataFrame(geometry=pts), 500)] == [[0, 1, 2]]  # a chain
+
+
+def test_plants_v3_corrects_the_known_location_errors(v3_world, tmp_path):
+    cfg, v2 = v3_world[0], v3_world[1]
+    right = offset(v2[5].x + 6.0, v2[5].y)  # one UTM zone east
+    table = tmp_path / "fixes.csv"
+    pd.DataFrame([{"WASTE_ID": "5", "uwwCode": "", "name": "plant 5", "wrong_lon": v2[5].x, "wrong_lat": v2[5].y,
+                   "action": "move", "lon": right.x, "lat": right.y, "ISO_2": "AT", "location_source": "v2",
+                   "clear": "", "split": "no", "add_uwwCode": "", "note": ""}]).to_csv(table, index=False)  # fmt: skip
+    cfg["paths"]["location_fixes"] = str(table)
+    plants, counts, _ = p3.build(cfg)
+    five = plants[plants["idx_v2"] == 5].iloc[0]
+    assert five.geometry.equals(right) and five["ISO_2"] == "AT" and five["geometry_v2"] == v2[5].wkt
+    assert five["size_source"] == "no_image" and counts["known location errors corrected (location_fixes)"] == 1
+    assert counts["v3 plants"] == 7
+
+    cfg["paths"]["location_fixes"] = str(tmp_path / "missing.csv")
+    pd.read_csv(table).assign(WASTE_ID="55").to_csv(tmp_path / "missing.csv", index=False)
+    with pytest.raises(ValueError, match="plants not found"):
+        p3.build(cfg)
