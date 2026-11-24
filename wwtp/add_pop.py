@@ -352,6 +352,29 @@ def find_newest_country_tif_files(countries, tif_dir):
     return newest
 
 
+def _raster_year(path):
+    """The year in a WorldPop file name (the first token of 20xx), or None."""
+    parts = [int(t) for t in os.path.basename(path).replace(".tif", "").split("_") if t.startswith("20") and t.isdigit()]
+    return parts[0] if parts else None
+
+
+def find_country_tif_files_for_year(countries, tif_dir, year):
+    """Map ISO-2 codes to their raster of one year; countries without that year are left out.
+
+    The risk chain reads one configured year (create_rasters.population_year) for served and not-served
+    population alike; the newest file would be a projection once download_pop goes past the present.
+    """
+    found = {}
+    for country, files in find_country_tif_files(countries, tif_dir).items():
+        match = [f for f in files or [] if os.path.exists(f) and _raster_year(f) == int(year)]
+        if match:
+            found[country] = sorted(match)[0]
+    missing = sorted(set(_normalize_country_code(c) for c in countries) - set(found) - {None})
+    if missing:
+        logger.warning("%s countries have no %s raster and are left out: %s", len(missing), year, ", ".join(missing))
+    return found
+
+
 def intersect_all_files(gdf, tif_dir, max_workers=16, all_years=True, country_col="ISO_2", years=None):
     """Intersect population rasters with polygons across all countries.
 

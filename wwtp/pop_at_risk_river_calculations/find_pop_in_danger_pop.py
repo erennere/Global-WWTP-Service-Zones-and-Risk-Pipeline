@@ -247,6 +247,7 @@ def main():
     provenance.write_run_manifest(cfg, "find_pop_in_danger_pop")
     zoom_level = int(cfg["zoom_level"])
     max_workers = int(cfg["annotations"]["max_workers"])
+    year = int(cfg["population_year"])
     tif_dir = cfg["paths"]["pop_tif_dir"]
     country_boundary_col = cfg["country_boundary_column"]
     country_output_col = cfg["country_output_column"]
@@ -289,14 +290,16 @@ def main():
         _log_stage_frame_stats(f"radius={radius} intersects_with_country_db", impact_polygons)
         ensure_output_dir_for_file("impact_polygons_tiled.gpkg")
         # impact_polygons.to_file('impact_polygons_tiled.gpkg', index=False, driver='GPKG')
-        intersect_workers = max(1, int(max_workers / 8))
-        logger.info("radius=%s intersect_all_files workers=%s", radius, intersect_workers)
+        # all workers (it was max_workers / 8 = 1: one country after another), the configured year (it was the
+        # newest file, a projection once download_pop goes past the present)
+        logger.info("radius=%s intersect_all_files workers=%s year=%s", radius, max_workers, year)
         impact_polygons = intersect_all_files(
             impact_polygons,
             tif_dir,
-            intersect_workers,
-            all_years=False,
+            max_workers,
+            all_years=True,
             country_col=country_output_col,
+            years=[year],
         )
         _log_stage_frame_stats(f"radius={radius} intersect_all_files", impact_polygons)
         _log_and_validate_no_nan(f"radius={radius} post_intersect", impact_polygons, strict=True)

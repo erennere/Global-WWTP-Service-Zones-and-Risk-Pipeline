@@ -97,8 +97,9 @@ def test_snakemake_alone_runs_nothing(work):
     "target, wanted, unwanted",
     [
         ("service_areas", {"create_voronoi", "add_pop"} | COMPARISONS, RISK | INDUSTRIAL | FIGURES | SWEEP),
-        ("risk", RISK | INDUSTRIAL | {"find_diff_pop"}, COMPARISONS | FIGURES | SWEEP),
-        ("analysis", RISK | INDUSTRIAL | COMPARISONS | {"find_diff_pop"}, FIGURES | SWEEP),
+        ("risk", RISK | INDUSTRIAL, COMPARISONS | FIGURES | SWEEP | {"find_diff_pop"}),
+        ("analysis", RISK | INDUSTRIAL | COMPARISONS, FIGURES | SWEEP | {"find_diff_pop"}),
+        ("diff_pop", {"find_diff_pop"}, RISK | INDUSTRIAL | FIGURES | SWEEP),  # on demand only (Eren, 24 Nov 2026)
         ("figures", FIGURES | RISK, SWEEP | {"hw_comparison", "eu_comparison", "find_diff_pop"}),
         (
             "sweep",

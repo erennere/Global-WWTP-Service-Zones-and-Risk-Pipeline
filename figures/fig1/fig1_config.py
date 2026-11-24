@@ -2,7 +2,7 @@
 
 ``python fig1_config.py <key>`` prints one value for the render_*.sh wrappers:
 ``min_plants``, ``match_radius_m``, ``tag`` (the radius tag of the matched files,
-e.g. r10000) or a path key (``match_dir``, ``cartogram_dir``, ``combined_dir``).
+e.g. r10000), ``population_year`` or a path key (``match_dir``, ``cartogram_dir``, ``combined_dir``).
 """
 
 import glob
@@ -18,6 +18,8 @@ from wwtp.starter import load_config  # noqa: E402
 FIG1 = load_config(script_name="figure1")
 MIN_PLANTS = int(FIG1["min_plants"])
 MATCH_RADIUS_M = float(FIG1["match_radius_m"])
+POP_YEAR = int(FIG1["population_year"])  # served population of map 2 (= the year of the non-served areas)
+SERVED = f"zonal_sum_{POP_YEAR}"  # its column in heigit_pop.csv
 TAG = f"r{int(MATCH_RADIUS_M)}"  # suffix of the matched files: plants_with_units_<TAG>.csv
 PATHS = FIG1["paths"]
 
@@ -48,7 +50,7 @@ def pfaf_lookup(hb_dir):
 
 def main():
     key = sys.argv[1]
-    values = {"min_plants": MIN_PLANTS, "match_radius_m": int(MATCH_RADIUS_M), "tag": TAG}
+    values = {"min_plants": MIN_PLANTS, "match_radius_m": int(MATCH_RADIUS_M), "tag": TAG, "population_year": POP_YEAR}
     print(values[key] if key in values else PATHS[key])
 
 

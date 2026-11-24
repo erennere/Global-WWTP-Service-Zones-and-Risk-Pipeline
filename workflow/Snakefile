@@ -109,7 +109,8 @@ def threads(stage):
 
 TARGETS = {
     "service_areas": "configured variant: service areas, population layers, HydroWASTE/UWWTD comparisons",
-    "risk": "configured variant: non-served population, river risk, population differences, industrial areas",
+    "risk": "configured variant: non-served population, river risk, industrial areas",
+    "diff_pop": "configured variant: population of each basin outside its service areas (on demand, not in risk)",
     "analysis": "service_areas + risk",
     "figures": "configured variant's figures (and whatever of the analysis they need)",
     "sweep": "whole sweep grid: service areas + population, validation and the recommended candidate",
@@ -122,6 +123,7 @@ TARGETS = {
     "all": "analysis + figures + sweep",
     "fig1": "Figure 1 from its prepared inputs",
     "fig1_non_served_release": "non-served urban areas of release_export's variant, as the points Figure 1 c reads (CSV to send back)",
+    "create_rasters_check": "create_rasters on a few countries (create_rasters.check_countries) of release_export's variant: timings, totals",
     "annotations": "grids, OSM context, images, labels: `snakemake annotations --config run_once=annotations`",
     "annotation_context": "annotation without images: `snakemake annotation_context --config run_once=annotation_context`",
     "annotation_overlay": "text overlay once the images are there: `... annotation_overlay --config run_once=annotation_overlay`",
@@ -564,6 +566,24 @@ for v in {x.tag: x for x in (DEFAULT, RELEASE)}.values():
         resources: **res("find_unserved_pop")
         shell: STAGE
 
+# A check run before the full run: a few countries (create_rasters.check_countries) of release_export's variant;
+# timings and totals in the log, the two CSVs in <risk folder>/check. Nothing else is written.
+CRX = wf.config("create_rasters", RELEASE)
+CHECK_DIR = os.path.join(os.path.dirname(CRX["paths"]["csv_output_filepath"]), "check")
+CHECK_LOG = wf.log("create_rasters_check", RELEASE)
+rule create_rasters_check:
+    """create_rasters on create_rasters.check_countries; the CSVs and the log in one check.tgz to send back."""
+    input: wf.population_layer(RELEASE, wf.figure_approach(RELEASE)), wf.watershed(RELEASE.level), wf.stamp("download_pop")
+    output: f"{CHECK_DIR}.tgz"
+    params:
+        module="pop_at_risk_river_calculations.create_rasters",
+        cli=["--countries", ",".join(CRX["check_countries"]), "--out-dir", CHECK_DIR, *RELEASE.cli()],
+        folder=os.path.dirname(CHECK_DIR), logdir=os.path.dirname(CHECK_LOG), logname=os.path.basename(CHECK_LOG),
+    log: CHECK_LOG
+    threads: threads("create_rasters")
+    resources: **res("create_rasters")
+    shell: STAGE + " && tar czf {output} -C {params.folder} check -C {params.logdir} {params.logname}"
+
 v = DEFAULT
 SHARDS = wf.raster_shards(v)
 FIG = wf.population_layer(v, wf.figure_approach(v))
@@ -690,11 +710,16 @@ rule service_areas:
 
 
 rule risk:
-    """Non-served population, river risk, population differences, unconnected industrial areas."""
+    """Non-served population, river risk, unconnected industrial areas."""
     input:
         RISK["find_pop_in_danger_pop"]["pop_at_risk_output_filepath"],
-        wf.diff_layer(v),
         RISK["find_unconnected_industrial_areas"]["industrial_unconnected_output"],
+
+
+rule diff_pop:
+    """Population of each basin outside its service areas (find_diff_pop). Not part of `risk`: nothing reads it
+    (Eren, 24 Nov 2026: kept, run on demand)."""
+    input: wf.diff_layer(v)
 
 
 rule analysis:

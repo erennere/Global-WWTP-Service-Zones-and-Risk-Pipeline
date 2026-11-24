@@ -1,6 +1,6 @@
 """Served share of the urban population per Natural Earth country (map 2 at country level, Figure 1c/d).
 
-  P_served = sum of HeiGIT service-area population (2024_zonal_sum) of the plants in the country
+  P_served = sum of HeiGIT service-area population (<population_year>_zonal_sum; figure1.population_year) of the plants in the country
   P_non    = sum of pop_sum of the non-served urban areas in the country
   S        = P_served / (P_served + P_non),  R_not_served = 1 - S
 
@@ -19,7 +19,7 @@ import sys, json, os
 import numpy as np, pandas as pd, geopandas as gpd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import TAG  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import TAG, POP_YEAR, SERVED  # noqa: E402  (config.yaml, section figure1)
 
 DATA, AGG, OUT = sys.argv[1:4]
 TAG = sys.argv[4] if len(sys.argv) > 4 else TAG
@@ -28,7 +28,8 @@ EA = "EPSG:8857"
 ns = pd.read_csv(f"{DATA}/non_served_points.csv", keep_default_na=False, na_values=[""])
 hp = pd.read_csv(f"{DATA}/heigit_points.csv", keep_default_na=False, na_values=[""])
 hp = hp.merge(pd.read_csv(f"{DATA}/heigit_pop.csv"), on="fid", how="left")
-assert hp.zonal_sum_2024.notna().all()
+assert SERVED in hp.columns, f"heigit_pop.csv has no {SERVED} (figure1.population_year)"
+assert hp[SERVED].notna().all()
 
 ne = gpd.read_file(f"{DATA}/ne_50m_admin_0_countries.geojson")
 ne["iso2"] = ne["ISO_A2_EH"].where(ne["ISO_A2_EH"] != "-99", ne["ADM0_A3"])
@@ -73,7 +74,7 @@ agg = pd.DataFrame(
     {
         "P_non": ns.groupby("unit").pop_sum.sum(),
         "n_areas": ns.groupby("unit").size(),
-        "P_served": hp.groupby("unit").zonal_sum_2024.sum(),
+        "P_served": hp.groupby("unit")[SERVED].sum(),
         "n_plants": hp.groupby("unit").size(),
     }
 ).fillna(0)

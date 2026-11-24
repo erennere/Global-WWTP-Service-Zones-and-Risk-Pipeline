@@ -62,6 +62,9 @@ class Section(Strict):
     """A config.yaml section."""
 
 
+PopulationYear = Annotated[int, Field(ge=2000, le=2100)]
+
+
 class RunParams(Section):
     """The seven run parameters that pick a service-area variant (and its output paths)."""
 
@@ -467,7 +470,10 @@ class RasterAnnotations(Strict):
 class CreateRasters(RunParams):
     zoom_level: PositiveInt
     min_pixels: PositiveInt
+    population_year: PopulationYear
+    threshold_value: NonNegativeInt
     served_all_touched: bool
+    check_countries: list[str]
     shards: PositiveInt
     basin_column_name: str
     country_boundary_column: str
@@ -490,6 +496,7 @@ class FindUnservedPop(RunParams):
 
 
 class FindDiffPop(RunParams):
+    population_year: PopulationYear
     max_workers: PositiveInt
     basin_column_name: str
     country_output_column: str
@@ -531,6 +538,7 @@ class ImpactPolygonsPop(RunParams):
 
 
 class FindPopInDangerPop(RunParams):
+    population_year: PopulationYear
     zoom_level: PositiveInt
     country_boundary_column: str
     country_output_column: str
@@ -653,6 +661,7 @@ class PopAtRiskFigures(RunParams):
 class Figure1(Section):
     min_plants: PositiveInt
     match_radius_m: PositiveInt
+    population_year: PopulationYear
     paths: Paths
 
 

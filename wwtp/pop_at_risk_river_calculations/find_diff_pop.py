@@ -206,7 +206,11 @@ def main():
                 polygon_country_col=cfg["country_boundary_column"],
                 output_country_col=country_col,
             )
-    diff_gdf = intersect_all_files(diff_gdf, tif_dir, max_workers=max_workers, country_col=country_col)
+    # the configured year only (create_rasters.population_year); it was every downloaded year, 16 zonal
+    # statistics over basin-sized polygons
+    diff_gdf = intersect_all_files(
+        diff_gdf, tif_dir, max_workers=max_workers, country_col=country_col, years=[int(cfg["population_year"])]
+    )
     logger.info("Post-intersection features: %s", len(diff_gdf))
 
     if not os.path.exists(pop_dif_output_dir):

@@ -38,6 +38,7 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[3]
 EQUAL_AREA = 6933
 MOCK_VERSION = "2"  # the mock world's plant list (all_annotated_v2.gpkg)
+MOCK_RASTER_YEAR = 2024  # the newest of the mock world's rasters (mock_world.YEARS)
 PYTHON = sys.executable  # interpreter the stages run with; --python overrides
 
 STAGES = [
@@ -126,6 +127,9 @@ def write_config(code_root, data_dir, out_path, settings=None):
     # The mock world is a plant list v2 (all_annotated_v2.gpkg and the golden outputs named after it), whatever
     # version the real runs are on: the first section's version, which every later section inherits.
     text = re.sub(r"^(  version: )'\d+'", rf"\1'{MOCK_VERSION}'", text, count=1, flags=re.M)
+    # The mock rasters are 2020 and 2024; the risk chain reads create_rasters.population_year (inherited by the
+    # later sections), here the newest mock year, as it read the newest file before that setting existed.
+    text = re.sub(r"^(  population_year: )\d+", rf"\g<1>{MOCK_RASTER_YEAR}", text, count=1, flags=re.M)
     # Cluster paths (Sukanya's image folders on SDS@hd) go into the copy too, so tests never write there.
     text = text.replace("'/mnt/sds-hd/", f"'{data_dir}/sds-hd/")
     # Other relative paths point into the package (templates); the copy lives elsewhere, so make them absolute.

@@ -21,6 +21,7 @@ def _pop_at_risk_cfg_defaults(request):
 
     cfg = request.getfixturevalue("mock_cfg")
     cfg.setdefault("annotations", {"max_workers": 8})
+    cfg.setdefault("population_year", 2026)
 
 
 class _ImmediateFuture:
@@ -402,7 +403,7 @@ def test_main_uses_at_least_one_worker_for_intersections(monkeypatch, mock_cfg, 
         find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *args, **kwargs: frame.assign(ISO_2="DE")
     )
 
-    def _intersect(frame, tif_dir, max_workers, all_years=False, country_col=None):
+    def _intersect(frame, tif_dir, max_workers, all_years=False, country_col=None, years=None):
         seen["intersect_workers"] = max_workers
         return frame.copy()
 
@@ -528,8 +529,40 @@ def test_find_pop_in_danger_script_entrypoint_runs_main_guard(monkeypatch):
     monkeypatch.setattr(
         starter_mod,
         "load_config",
-        lambda **overrides: {"zoom_level": 8, "annotations": {"max_workers": 1}, "paths": {}},
+        lambda **overrides: {"zoom_level": 8, "annotations": {"max_workers": 1}, "population_year": 2026, "paths": {}},
     )
 
     with pytest.raises(KeyError, match="pop_tif_dir"):
         runpy.run_module(module_name, run_name="__main__")
+
+
+def test_main_reads_the_configured_year_with_all_workers(monkeypatch, mock_cfg, tmp_path):
+    """The year of create_rasters.population_year (not the newest file) and every worker (it was max_workers / 8)."""
+    cfg = mock_cfg
+    cfg["zoom_level"] = 4
+    cfg["annotations"] = {"max_workers": 16}
+    cfg["population_year"] = 2026
+    cfg["paths"]["impact_pop_polygons_outpath"] = str(tmp_path / "impact_polygons.gpkg")
+    cfg["paths"]["pop_at_risk_output_filepath"] = str(tmp_path / "pop_at_risk.parquet")
+    cfg["paths"]["pop_tif_dir"] = str(tmp_path / "tifs")
+    cfg["paths"]["overture"] = str(tmp_path / "overture.parquet")
+    cfg["country_boundary_column"] = "country"
+    cfg["country_output_column"] = "ISO_2"
+    gpd.GeoDataFrame({"ISO_2": ["DE"]}, geometry=[box(0, 0, 1, 1)], crs=4326).to_file(
+        tmp_path / "impact_polygons_1000.gpkg"
+    )
+    seen = {}
+    monkeypatch.setattr(find_pop_in_danger_pop, "load_config", lambda **kw: cfg)
+    monkeypatch.setattr(find_pop_in_danger_pop, "parse_config_overrides", lambda *a, **k: {})
+    monkeypatch.setattr(find_pop_in_danger_pop, "parse_args", lambda: None)
+    monkeypatch.setattr(find_pop_in_danger_pop.provenance, "write_run_manifest", lambda *a, **k: None)
+    monkeypatch.setattr(find_pop_in_danger_pop, "assign_tile_to_df", lambda frame, zoom_level, max_workers: frame.assign(tile="1-1-4"))
+    monkeypatch.setattr(find_pop_in_danger_pop, "intersects_with_country_db", lambda frame, *a, **k: frame)
+
+    def _intersect(frame, tif_dir, max_workers, all_years=False, country_col=None, years=None):
+        seen.update(workers=max_workers, all_years=all_years, years=years)
+        return frame.assign(**{"2026_zonal_sum": 5.0})
+
+    monkeypatch.setattr(find_pop_in_danger_pop, "intersect_all_files", _intersect)
+    find_pop_in_danger_pop.main()
+    assert seen == {"workers": 16, "all_years": True, "years": [2026]}

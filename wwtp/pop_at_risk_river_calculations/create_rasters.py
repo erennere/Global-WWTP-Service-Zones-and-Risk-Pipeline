@@ -1,42 +1,75 @@
-"""Create signed population rasters and extract unserved-population islands by basin.
+"""Non-served population per country and the islands it forms, from the WorldPop rasters of one year.
 
-This script combines:
-1. Raster sign assignment (+ inside WWTP Voronoi polygons, - outside), and
-2. Island extraction/statistics for non-served populated areas by watershed basin.
+For every country raster of ``population_year``:
 
-It is intended for country-wise batch processing of WorldPop rasters.
+1. Country totals: people inside the country's service areas (served) and outside them (not served). A
+   pixel is served when its centre lies in a service area of the same country (``served_all_touched``: any
+   part of it). Only the country's own service areas count, as add_pop counts each plant's people from its
+   own country's raster.
+2. Islands: 8-connected populated, non-served pixels of one HydroBASINS basin. An island is kept when it has
+   at least ``min_pixels`` pixels and more than ``threshold_value`` people, the whole island (Eren, 24 Nov
+   2026; before, its pieces per zoom-8 tile were tested one by one in find_unserved_pop). The basins are the
+   ones the raster covers, by location; before, a basin was only processed for the one country it overlaps
+   most, so its populated pixels in the neighbouring country were never looked at.
+
+How:
+  * One pass over the raster in bands of 512 rows: the served mask is rasterised once per band, the sums are
+    taken, and a 512 x 512 block grid notes where people live. A raster stored in strips (a few rows per
+    block) and wider than 8,192 pixels is copied to a tiled file in the temp folder during this pass, so that
+    reading one basin does not decompress whole rows of the country.
+  * One task per basin that holds people: read its window once, rasterise the basin and the service areas
+    once, label the islands (scipy.ndimage.label), sum people and pixels per island from the pixels
+    (np.bincount), and turn only the kept islands into polygons.
+  * Countries go to shards largest first (by file size), and within a shard the basin tasks of all countries
+    share one process pool, largest first.
+  Before: a loop over every raster block with one mask per basin per block, a polygon for every non-served
+  pixel cluster, unions per basin, a second read of the raster per island (exact_extract), and a signed
+  GeoTIFF per country that nothing read.
+
+Outputs (CSV, appended per country when it is complete; shards write their own and are merged):
+  csv_output_filepath  country, population_served, population_unserved, population_total, population_served_index
+  non_served_outpath   one row per island: geometry (WKT, EPSG:4326), the basin's columns (basin_column_name,
+                       NEXT_DOWN, NEXT_SINK, MAIN_BAS), pop_sum, pixel_count, country
+
+``--countries LU,NL --out-dir DIR`` runs only these countries and writes the two CSVs to DIR (a check run).
 """
 
-import os
-import random
-import logging
-import gc
 import argparse
-from tqdm import tqdm
+import gc
+import logging
+import math
+import os
+import shutil
+import tempfile
+import time
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-
 import rasterio
+import shapely
 from rasterio import windows
-from rasterio.features import shapes, geometry_mask, rasterize
-from exactextract import exact_extract
-from shapely.geometry import shape, box
-from shapely import to_wkt
+from rasterio.features import rasterize, shapes
+from rasterio.windows import Window
+from scipy import ndimage
+from shapely.geometry import box, shape
 from shapely.ops import unary_union
 
-from ..add_pop import find_newest_country_tif_files
-from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
 from .. import provenance
-from ..service_areas import download_overture_maps, intersects_with_country_db
-from ..pipelines import create_pop_output_paths
-from ..utils import atomic_output, configure_logging, ensure_output_dir_for_file
+from ..add_pop import find_country_tif_files_for_year
 from ..geo_utils import repair_geometry
-from .find_pop_in_danger_pop import find_bbox, finding_tiles
+from ..pipelines import create_pop_output_paths
+from ..starter import add_standard_override_arguments, load_config, parse_config_overrides
+from ..utils import atomic_output, configure_logging, ensure_output_dir_for_file
 
 logger = logging.getLogger(__name__)
+
+BLOCK = 512  # rows per band of the country pass, block size of the occupancy grid and of the tiled copy
+STRIP_MAX_ROWS = 64  # a source whose blocks have fewer rows than this is stored in strips
+COPY_MIN_WIDTH = 8192  # narrower striped rasters are read as they are
+BASIN_META = ("NEXT_DOWN", "NEXT_SINK", "MAIN_BAS")
+EIGHT = np.ones((3, 3), dtype=bool)  # 8-connectivity
 
 
 def _sanitize_polygon_geom(geom):
@@ -73,519 +106,306 @@ def geotiff_exists_and_valid(path):
         return False
 
 
-def extract_worldpop_universal(
-    raster_path, hybas_gdf, exclude_gdf, min_pixels=9, zoom_level=8, basin_col="HYBAS_ID", all_touched=False
-):
+def _clean(block, nodata):
+    """People per pixel as float32: nodata, NaN and values <= 0 become 0."""
+    block = np.asarray(block, dtype=np.float32)
+    if nodata is not None and not np.isnan(nodata):
+        block[block == np.float32(nodata)] = 0
+    block[~(block > 0)] = 0
+    return block
+
+
+def _mask(geoms, out_shape, transform, all_touched=False):
+    """Boolean raster of the pixels the geometries cover (centre rule unless all_touched)."""
+    if len(geoms) == 0:
+        return np.zeros(out_shape, dtype=bool)
+    return rasterize(
+        ((g, 1) for g in geoms), out_shape=out_shape, transform=transform, fill=0, dtype=np.uint8,
+        all_touched=all_touched,
+    ).view(bool)
+
+
+def _is_striped(src):
+    return src.block_shapes[0][0] < STRIP_MAX_ROWS and src.width > COPY_MIN_WIDTH
+
+
+def country_pass(raster_path, served_wkb, all_touched=False, copy_dir=None):
+    """Served / not-served sums of one country raster, the blocks that hold people, and the file to read basins from.
+
+    Returns a dict: served, unserved, occupied (bool grid, one cell per 512 x 512 block), read_path (a tiled
+    copy in ``copy_dir`` when the source is stored in strips, else the source), crs, transform, height, width.
     """
-    Extracts population islands from WorldPop rasters with strict RAM management.
-    Designed for 64GB / 4 processes (16GB per worker).
-
-    Parameters
-    ----------
-    raster_path : str
-        Input population raster path.
-    hybas_gdf : geopandas.GeoDataFrame
-        Watershed polygons that provide basin IDs and metadata.
-    exclude_gdf : geopandas.GeoDataFrame
-        Polygons to exclude (served areas).
-    min_pixels : int, default=9
-        Minimum island size in pixels, unless touching window boundaries.
-
-    Returns
-    -------
-    geopandas.GeoDataFrame | None
-        Extracted islands with basin metadata and zonal statistics.
-
-    Notes
-    -----
-    This chunked implementation is the maintained extraction path. Earlier
-    experimental versions were removed to avoid ambiguity about which logic is
-    currently in use.
-    """
-    geom_registry = {}
-    country_code = os.path.basename(raster_path)
-    MERGE_THRESHOLD = 200  # Merge shards into the registry every 200 items
-
-    try:
-        with rasterio.open(raster_path) as src:
-            crs = src.crs
-            res = src.res[0]
-            transform = src.transform
-
-            logger.info("[%s] Aligning CRS and building spatial indices", country_code)
-            hybas_gdf = hybas_gdf.to_crs(crs)
-            exclude_gdf = exclude_gdf.to_crs(crs)
-
-            # Pre-trigger spatial index creation
-            _ = hybas_gdf.sindex
-            _ = exclude_gdf.sindex
-
-            # Iterate windows
-            for i, (index, window) in enumerate(src.block_windows(1)):
-                if i % 250 == 0:
-                    logger.info("[%s] Processing window %s", country_code, i)
-
-                w_bounds = windows.bounds(window, transform)
-                w_transform = windows.transform(window, transform)
-                w_poly_boundary = box(*w_bounds).boundary
-
-                # Spatial intersection check
-                possible_idx = list(hybas_gdf.sindex.intersection(w_bounds))
-                if not possible_idx:
-                    continue
-
-                # 1. READ AND BINARIZE IN-PLACE (Save RAM)
-                binary_data = src.read(1, window=window)
-                np.nan_to_num(binary_data, copy=False)
-                binary_data[binary_data <= 0] = 0
-                binary_data[binary_data > 0] = 1
-                binary_data = binary_data.astype(np.uint8, copy=False)
-
-                # 2. EXCLUSION MASKING
-                excl_idx = list(exclude_gdf.sindex.intersection(w_bounds))
-                if excl_idx:
-                    rel_excl = exclude_gdf.iloc[excl_idx]
-                    excl_mask = geometry_mask(
-                        rel_excl.geometry,
-                        (window.height, window.width),
-                        w_transform,
-                        invert=True,
-                        all_touched=all_touched,
-                    )
-                    binary_data[excl_mask] = 0
-                    del excl_mask, rel_excl
-
-                # 3. BASIN PROCESSING
-                for idx in possible_idx:
-                    row = hybas_gdf.iloc[idx]
-                    h_id = row.get(basin_col)
-
-                    # Create basin mask
-                    h_mask = geometry_mask([row.geometry], (window.height, window.width), w_transform, invert=False)
-
-                    # Combine masks: population pixels inside basin
-                    h_mask = (binary_data == 1) & (~h_mask)
-                    if not h_mask.any():
-                        continue
-
-                    # Vectorize shards
-                    shape_gen = shapes(
-                        h_mask.astype(np.uint8, copy=False), mask=h_mask, transform=w_transform, connectivity=8
-                    )
-
-                    window_shards = []
-                    for geom, _ in shape_gen:
-                        poly = shape(geom).buffer(0)
-                        shard_pixels = round(poly.area / (res * res))
-
-                        # Filter noise unless it touches window boundary (potential split island)
-                        if shard_pixels < min_pixels and not poly.intersects(w_poly_boundary):
-                            continue
-                        window_shards.append(poly)
-
-                    if not window_shards:
-                        continue
-
-                    # Update Registry with Deferred Unioning
-                    if h_id not in geom_registry:
-                        geom_registry[h_id] = {
-                            "geom_list": window_shards,
-                            "meta": {k: row.get(k) for k in ["NEXT_DOWN", "NEXT_SINK", "MAIN_BAS"]},
-                        }
-                    else:
-                        geom_registry[h_id]["geom_list"].extend(window_shards)
-
-                        # Merge if list is too long to prevent row-count bloat
-                        if len(geom_registry[h_id]["geom_list"]) >= MERGE_THRESHOLD:
-                            merged = unary_union(geom_registry[h_id]["geom_list"])
-                            geom_registry[h_id]["geom_list"] = [merged]
-
-                del binary_data
-                gc.collect()
-
-        # 4. FINAL MERGE AND EXPLODE
-        logger.info("[%s] Loop complete. Exploding MultiPolygons", country_code)
-        final_rows = []
-
-        for h_id, content in geom_registry.items():
-            # Final merge of all shards for this Basin ID
-            merged = unary_union(content["geom_list"])
-            geoms = getattr(merged, "geoms", None)
-            islands = list(geoms) if geoms is not None else [merged]
-
-            for island in islands:
-                if not island.is_empty:
-                    tiles = finding_tiles(island, zoom_level=zoom_level)  # Example zoom level for tile assignment
-                    for tile in tiles:
-                        clipped = _sanitize_polygon_geom(island.intersection(find_bbox(tile)))
-                        if clipped is None:
-                            continue
-                        final_rows.append({"geometry": clipped, basin_col: h_id, "tile": tile, **content["meta"]})
-
-        del geom_registry
-        gc.collect()
-
-        if not final_rows:
-            return None
-
-        final_gdf = gpd.GeoDataFrame(final_rows, crs=crs)
-
-        del final_rows
-        logger.info("[%s] Total islands to check: %s", country_code, len(final_gdf))
-
-        # 5. CHUNKED ZONAL STATS (The OOM-Killer Prevention)
-        sums = np.zeros(len(final_gdf), dtype=np.int64)
-        counts = np.zeros(len(final_gdf), dtype=np.int64)
-        chunk_size = 100000
-
-        for start_idx in range(0, len(final_gdf), chunk_size):
-            end_idx = min(start_idx + chunk_size, len(final_gdf))
-            logger.info("[%s] Calculating stats for chunk %s-%s", country_code, start_idx, end_idx)
-
-            # exact_extract is faster and more memory-efficient than rasterstats
-            chunk = final_gdf.iloc[start_idx:end_idx][["geometry"]].copy()
-            chunk["geometry"] = pd.Series(
-                [_sanitize_polygon_geom(geom) for geom in chunk["geometry"]],
-                index=chunk.index,
+    served_geoms = shapely.from_wkb(np.asarray(served_wkb, dtype=object)) if len(served_wkb) else np.array([])
+    tree = shapely.STRtree(served_geoms) if len(served_geoms) else None
+    with rasterio.open(raster_path) as src:
+        if src.crs is None or src.crs.to_epsg() != 4326:
+            raise ValueError(f"{raster_path}: expected a WorldPop raster in EPSG:4326, got {src.crs}")
+        height, width, transform = src.height, src.width, src.transform
+        occupied = np.zeros((math.ceil(height / BLOCK), math.ceil(width / BLOCK)), dtype=bool)
+        read_path, dst = raster_path, None
+        if copy_dir is not None and _is_striped(src):
+            read_path = os.path.join(copy_dir, f"tiled_{os.path.basename(raster_path)}")
+            profile = dict(
+                driver="GTiff", width=width, height=height, count=1, dtype="float32", crs=src.crs,
+                transform=transform, nodata=None, tiled=True, blockxsize=BLOCK, blockysize=BLOCK,
+                compress="deflate", predictor=3, BIGTIFF="IF_SAFER",
             )
-            invalid = chunk["geometry"].isna()
-            if invalid.any():
-                logger.warning(
-                    "[%s] Dropping %s invalid geometries before exact_extract in chunk %s-%s",
-                    country_code,
-                    int(invalid.sum()),
-                    start_idx,
-                    end_idx,
-                )
-                chunk = chunk[~invalid]
-
-            if chunk.empty:
-                continue
-
-            stats_df = exact_extract(rast=raster_path, vec=chunk, ops=["sum", "count"], output="pandas")
-
-            if stats_df is None or len(stats_df) == 0:
-                continue
-            stats_df = pd.DataFrame(stats_df)
-
-            row_index = chunk.index.to_numpy()
-            sum_values = np.asarray(np.round(stats_df["sum"].fillna(0)).astype(np.int64))
-            count_values = np.asarray(stats_df["count"].fillna(0).astype(np.int64))
-            sums[row_index] = sum_values
-            counts[row_index] = count_values
-
-            del stats_df, chunk
-            gc.collect()
-
-        final_gdf["pop_sum"] = sums
-        final_gdf["pixel_count"] = counts
-        del sums, counts
-
-        # 6. FINAL CLEANUP
-        logger.info("[%s] Filtering and resetting index", country_code)
-        final_gdf = (
-            final_gdf[(final_gdf["pop_sum"] > 0) & (final_gdf["pixel_count"] >= min_pixels)]
-            .copy()
-            .reset_index(drop=True)
+            try:
+                dst = rasterio.open(read_path, "w", **profile)
+            except Exception as err:  # no room in the temp folder: read the source as it is
+                logger.warning("No tiled copy of %s (%s); basins read the source", raster_path, err)
+                read_path, dst = raster_path, None
+        served = unserved = 0.0
+        try:
+            for r0 in range(0, height, BLOCK):
+                win = Window(0, r0, width, min(BLOCK, height - r0))
+                data = _clean(src.read(1, window=win), src.nodata)
+                if dst is not None:
+                    try:
+                        dst.write(data, 1, window=win)
+                    except Exception as err:
+                        logger.warning("Tiled copy of %s failed (%s); basins read the source", raster_path, err)
+                        dst.close()
+                        os.remove(read_path)
+                        read_path, dst = raster_path, None
+                populated = data > 0
+                if not populated.any():
+                    continue
+                cols = np.add.reduceat(populated.any(axis=0), np.arange(0, width, BLOCK)) > 0
+                occupied[r0 // BLOCK] |= cols
+                total = float(data.sum(dtype=np.float64))
+                inside = 0.0
+                if tree is not None:
+                    hits = tree.query(box(*windows.bounds(win, transform)))
+                    if len(hits):
+                        m = _mask(served_geoms[hits], data.shape, windows.transform(win, transform), all_touched)
+                        inside = float(np.sum(data, where=m, dtype=np.float64))
+                served += inside
+                unserved += total - inside
+        finally:
+            if dst is not None:
+                dst.close()
+        return dict(
+            served=served, unserved=unserved, occupied=occupied, read_path=read_path, crs=src.crs,
+            transform=transform, height=height, width=width,
         )
 
-        final_gdf["pop_sum"] = final_gdf["pop_sum"].astype(np.int64)
-        final_gdf["pixel_count"] = final_gdf["pixel_count"].astype(np.int64)
 
-        logger.info("[%s] SUCCESS. Final islands: %s", country_code, len(final_gdf))
-        return final_gdf
-
-    except Exception as e:
-        logger.exception("[%s] CRITICAL FAILURE: %s", country_code, str(e))
+def basin_window(bounds, transform, height, width):
+    """The pixel window of ``bounds`` (whole pixels, clipped to the raster), or None outside it."""
+    w = windows.from_bounds(*bounds, transform=transform)
+    c0, c1 = max(0, math.floor(w.col_off)), min(width, math.ceil(w.col_off + w.width))
+    r0, r1 = max(0, math.floor(w.row_off)), min(height, math.ceil(w.row_off + w.height))
+    if c1 <= c0 or r1 <= r0:
         return None
+    return Window(c0, r0, c1 - c0, r1 - r0)
 
 
-def polygon_raster_sign_from_gdf(raster_path, polygons_gdf, output_path, all_touched=False):
-    """Write a signed raster that is positive inside served polygons and negative outside.
-
-    Parameters
-    ----------
-    raster_path : str
-        Input population raster path.
-    polygons_gdf : geopandas.GeoDataFrame
-        Served-area polygons used to determine the sign mask.
-    output_path : str
-        Output raster path.
-
-    Returns
-    -------
-    tuple[str, int | None, int | None]
-        Output path, positive sum, and negative sum.
-    """
-    try:
-        # 1. Build a spatial index for the GDF (CRITICAL for speed)
-        sindex = polygons_gdf.sindex
-
-        with rasterio.open(raster_path) as src:
-            logger.info("Raster block shapes for %s: %s", raster_path, src.block_shapes)
-
-            profile = src.profile.copy()
-            transform = src.transform
-            nodata_val = src.nodata
-
-            profile.update(
-                dtype="float32",
-                count=1,
-                nodata=None,
-                compress="lzw",
-                tiled=True,
-                blockxsize=256,  # Standardizing block sizes for better I/O
-                blockysize=256,
-            )
-
-            # WorldPop counts are fractional (most rural pixels hold < 1
-            # person); keep them as floats and sum in float64.
-            sum_positive = 0.0
-            sum_negative = 0.0
-
-            with atomic_output(output_path) as tmp_path, rasterio.open(tmp_path, "w", **profile) as dst:
-                for _, window in src.block_windows(1):
-                    # Get geographic bounds of the current window
-                    win_bounds = windows.bounds(window, transform)
-
-                    # 2. Filter polygons: Only those inside/touching this window
-                    possible_idx = list(sindex.intersection(win_bounds))
-
-                    # Read the data block
-                    data = src.read(1, window=window)
-
-                    # Convert nodata/NaN to 0 (no integer cast: that truncated
-                    # every pixel below 1 person to 0)
-                    data = data.astype(np.float64)
-                    if nodata_val is not None:
-                        data = np.where(np.isclose(data, nodata_val), 0.0, data)
-                    data = np.nan_to_num(data, nan=0.0)
-
-                    # Force strictly positive to avoid sign errors
-                    data = np.abs(data)
-
-                    # 3. Conditional Rasterization
-                    if possible_idx:
-                        # Extract the actual geometries for this window
-                        window_shapes = [(geom, 1) for geom in polygons_gdf.iloc[possible_idx].geometry]
-
-                        mask = rasterize(
-                            window_shapes,
-                            out_shape=(window.height, window.width),
-                            transform=windows.transform(window, transform),
-                            fill=0,
-                            dtype=np.uint8,
-                            all_touched=all_touched,
-                        )
-
-                        # Within polygons = positive, Outside = negative
-                        signed = np.where(mask == 1, data, -data)
-                    else:
-                        # No polygons in this window? Everything is negative
-                        signed = -data
-
-                    # 4. Global statistics
-                    sum_positive += float(signed[signed > 0].sum())
-                    sum_negative += float(signed[signed < 0].sum())
-
-                    dst.write(signed.astype(np.float32), 1, window=window)
-        return output_path, sum_positive, sum_negative
-
-    except Exception as err:
-        logger.exception("Error processing raster %s: %s", raster_path, err)
-        return output_path, None, None
-
-
-def orchestrate_country_intersection(
-    raster_path,
-    polygons_gdf,
-    watershed_gdf,
-    output_path,
-    min_pixels=9,
-    zoom_level=8,
-    basin_col="HYBAS_ID",
-    all_touched=False,
-):
-    """Process one country raster and return signed-raster stats plus extracted islands.
-
-    Parameters
-    ----------
-    raster_path : str
-        Input country raster path.
-    polygons_gdf : geopandas.GeoDataFrame
-        Served-area polygons for the country.
-    watershed_gdf : geopandas.GeoDataFrame
-        Watershed polygons used to aggregate non-served islands.
-    output_path : str
-        Output path for the signed raster.
-    min_pixels : int, default=9
-        Minimum island size retained after extraction.
-    zoom_level : int, default=8
-        Tile zoom level used for non-served island tagging.
-
-    Returns
-    -------
-    tuple
-        Tuple ``(filepath, sum_pos, sum_neg, gdf)`` containing signed-raster
-        statistics and the extracted island GeoDataFrame.
-    """
-    # One 'served' rule for both outputs: a pixel is served when its centre
-    # (or, with all_touched, any part) lies in a service area.
-    filepath, sum_pos, sum_neg = polygon_raster_sign_from_gdf(
-        raster_path, polygons_gdf, output_path, all_touched=all_touched
-    )
-    # gdf = extract_worldpop_optimized_v2(raster_path, polygons_gdf)
-    gdf = extract_worldpop_universal(
-        raster_path,
-        watershed_gdf,
-        polygons_gdf,
-        min_pixels=min_pixels,
-        zoom_level=zoom_level,
-        basin_col=basin_col,
-        all_touched=all_touched,
-    )
-    return filepath, sum_pos, sum_neg, gdf
+def basin_islands(read_path, window, basin_wkb, basin_attrs, served_wkb, min_pixels, min_pop, all_touched=False):
+    """The kept islands of one basin: rows with geometry (shapely, raster CRS), pop_sum, pixel_count and the basin columns."""
+    with rasterio.open(read_path) as src:
+        data = _clean(src.read(1, window=window), src.nodata)
+        wt = windows.transform(window, src.transform)
+    mask = data > 0
+    if not mask.any():
+        return []
+    # pixel centres in the basin; HydroBASINS edges lie on its 15" grid, never through a WorldPop (3") pixel
+    # centre, so every pixel belongs to exactly one basin whatever window it is read in
+    mask &= _mask([shapely.from_wkb(basin_wkb)], data.shape, wt)
+    if len(served_wkb) and mask.any():
+        mask &= ~_mask(shapely.from_wkb(np.asarray(served_wkb, dtype=object)), data.shape, wt, all_touched)
+    if not mask.any():
+        return []
+    labels, n = ndimage.label(mask, structure=EIGHT)
+    lab = labels[mask]
+    pop = np.round(np.bincount(lab, weights=data[mask], minlength=n + 1)).astype(np.int64)
+    px = np.bincount(lab, minlength=n + 1).astype(np.int64)
+    keep = (px >= min_pixels) & (pop > min_pop)
+    keep[0] = False
+    if not keep.any():
+        return []
+    del data, lab
+    parts = {}
+    for geom, value in shapes(labels, mask=keep[labels], connectivity=8, transform=wt):
+        parts.setdefault(int(value), []).append(shape(geom))
+    rows = []
+    for value, geoms in parts.items():
+        geom = _sanitize_polygon_geom(geoms[0] if len(geoms) == 1 else unary_union(geoms))
+        if geom is not None:
+            rows.append({**basin_attrs, "geometry": geom, "pop_sum": int(pop[value]), "pixel_count": int(px[value])})
+    return rows
 
 
 def _append_csv(df, filepath):
     """Append ``df`` to ``filepath``, writing the header only on first creation."""
     ensure_output_dir_for_file(filepath)
-    exists = os.path.exists(filepath)
+    exists = os.path.exists(filepath) and os.path.getsize(filepath) > 0
     df.to_csv(filepath, index=False, mode="a" if exists else "w", header=not exists)
 
 
-def orchestrate_intersections(
+def _finished_countries(csv_output_filepath, non_served_outpath):
+    """Countries already in the stats CSV; island rows of any other country (an interrupted run) are removed."""
+    if not (os.path.exists(csv_output_filepath) and os.path.getsize(csv_output_filepath) > 0):
+        done = set()
+    else:
+        done = set(pd.read_csv(csv_output_filepath, keep_default_na=False, na_values=[""]).country.astype(str))
+    if os.path.exists(non_served_outpath) and os.path.getsize(non_served_outpath) > 0:
+        islands = pd.read_csv(non_served_outpath, keep_default_na=False, na_values=[""])
+        stale = ~islands.country.astype(str).isin(done)
+        if stale.any():
+            logger.warning("Removing %s island rows of unfinished countries from %s", int(stale.sum()), non_served_outpath)
+            with atomic_output(non_served_outpath) as tmp_path:
+                islands[~stale].to_csv(tmp_path, index=False)
+    return done
+
+
+def process_countries(
     tif_dict,
-    gdf,
-    watershed_gdf,
-    output_dir,
+    served_gdf,
+    basins_gdf,
     csv_output_filepath,
     non_served_outpath,
     max_workers=4,
     min_pixels=9,
-    zoom_level=8,
+    min_pop=0,
     country_col="ISO_2",
     basin_col="HYBAS_ID",
     all_touched=False,
+    copy_dir=None,
 ):
-    """
-    Process multiple raster files in parallel, intersecting with polygons
-    and creating signed rasters (+ inside polygons, - outside).
+    """Country totals and islands of every country in ``tif_dict``; a country's rows are written when it is complete.
 
-    Parameters
-    ----------
-    tif_dict : dict
-        Dictionary mapping country codes to raster filepaths.
-    gdf : geopandas.GeoDataFrame
-        GeoDataFrame containing polygons with a country-code column (see ``country_col``).
-    watershed_gdf : geopandas.GeoDataFrame
-        Watershed polygons used for island extraction.
-    output_dir : str
-        Directory where output rasters will be saved.
-    csv_output_filepath : str
-        Output CSV path for per-country population statistics.
-    non_served_outpath : str
-        Output base path for the extracted non-served polygons.
-    max_workers : int
-        Maximum number of parallel processes.
-    min_pixels : int, default=9
-        Minimum island size retained after extraction.
-    zoom_level : int, default=8
-        Tile zoom level used for non-served island tagging.
-
-    Returns
-    -------
-    dict[str, bool]
-        Mapping from country code to success flag.
+    Countries already in the stats CSV are skipped (a rerun continues). Raises at the end if a country failed,
+    after writing every country that did not.
     """
     if int(max_workers) < 1:
         raise ValueError("max_workers must be >= 1")
+    done = _finished_countries(csv_output_filepath, non_served_outpath)
+    countries = sorted((c for c in tif_dict if c not in done), key=lambda c: (-_size(tif_dict[c]), c))
+    if done:
+        logger.info("Skipping %s countries finished before", len([c for c in tif_dict if c in done]))
+    if not countries:
+        return {}
+    basins_gdf = basins_gdf.reset_index(drop=True)
+    basin_tree = shapely.STRtree(basins_gdf.geometry.values)
+    meta_cols = [c for c in (basin_col, *BASIN_META) if c in basins_gdf.columns]
+    served_by_country = {c: np.asarray(g.geometry.values, dtype=object) for c, g in served_gdf.groupby(country_col)}
+    copy_dir = copy_dir or tempfile.mkdtemp(prefix="create_rasters_")
+    state, results = {}, {}
 
-    logger.info("Starting orchestration for %s countries", len(tif_dict))
-    results = {}
-
-    # Create a mapping: Future -> country
-    future_to_country = {}
-
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        countries = list(tif_dict.keys())  # convert dict keys to a list
-        random.shuffle(countries)  # shuffle in-place
-
-        if os.path.exists(csv_output_filepath) and os.path.getsize(csv_output_filepath) > 0:
-            stats = pd.read_csv(csv_output_filepath).country.unique()
-            countries = [c for c in countries if c not in stats]
-            logger.info("Skipping %s previously processed countries", len(tif_dict) - len(countries))
-
-        for country in countries:
-            tif_filepath = tif_dict[country]
-            country_dir = os.path.join(output_dir, country)
-            os.makedirs(country_dir, exist_ok=True)
-
-            output_filepath = os.path.join(country_dir, f"WWTP_{os.path.basename(tif_filepath)}")
-
-            future = executor.submit(
-                orchestrate_country_intersection,
-                tif_filepath,
-                gdf[gdf[country_col] == country],
-                watershed_gdf[watershed_gdf[country_col] == country],
-                output_filepath,
-                min_pixels=min_pixels,
-                zoom_level=zoom_level,
-                basin_col=basin_col,
-                all_touched=all_touched,
-            )
-            future_to_country[future] = country
-        # Collect results with a progress bar
-
-        for future in tqdm(as_completed(future_to_country), total=len(future_to_country), desc="Processing countries"):
-            country = future_to_country[future]
-            try:
-                # Named island_gdf, not gdf: this loop runs inside a function whose
-                # own `gdf` parameter is still needed by later iterations.
-                _, sum_pos, sum_neg, island_gdf = future.result()  # Raises exception if failed
-
-                if island_gdf is not None and not island_gdf.empty:
-                    island_gdf["country"] = country
-                    if island_gdf.crs is None:
-                        logger.warning("[%s] Extracted islands missing CRS; assuming EPSG:4326", country)
-                        island_gdf = island_gdf.set_crs(4326, allow_override=True)
-                    elif island_gdf.crs.to_epsg() != 4326:
-                        island_gdf = island_gdf.to_crs(4326)
-                    island_gdf["geometry"] = island_gdf.geometry.apply(to_wkt)
-                elif island_gdf is None:
-                    logger.warning("[%s] No island dataframe returned", country)
-
-                if sum_pos is None:
-                    logger.warning("[%s] Skipping stats write due to missing signed sums", country)
-                    continue
-
-                stats = {
+    def finish(country):
+        st = state.pop(country)
+        rows = st["rows"]
+        islands = gpd.GeoDataFrame(rows, geometry="geometry", crs=st["crs"]) if rows else None
+        if islands is not None:
+            table = pd.DataFrame(islands.drop(columns="geometry"))
+            table["country"] = country
+            table["geometry"] = islands.geometry.to_wkt().values
+            _append_csv(table, non_served_outpath)
+        s, u = st["served"], st["unserved"]
+        _append_csv(
+            pd.DataFrame(
+                {
                     "country": [country],
-                    "population_served": [sum_pos],
-                    "population_unserved": [abs(sum_neg)],
-                    "population_total": [sum_pos + abs(sum_neg)],
-                    "population_served_index": [sum_pos / (sum_pos + abs(sum_neg) + 0.1)],
+                    "population_served": [s],
+                    "population_unserved": [u],
+                    "population_total": [s + u],
+                    "population_served_index": [s / (s + u + 0.1)],
                 }
-                stats = pd.DataFrame(stats)
-                # No inner except here: a failed stats/polygon write must reach the
-                # outer handler so the country is recorded as failed rather than
-                # reported as "processed successfully" with no output on disk.
-                _append_csv(stats, csv_output_filepath)
+            ),
+            csv_output_filepath,
+        )
+        if st["read_path"] != tif_dict[country] and os.path.exists(st["read_path"]):
+            os.remove(st["read_path"])
+        logger.info(
+            "[%s] done in %.0f s: %s basins, %s islands, %.0f served, %.0f not served",
+            country, time.time() - st["t0"], st["n_basins"], len(rows), s, u,
+        )
+        results[country] = True
 
-                if island_gdf is not None and not island_gdf.empty:
-                    _append_csv(island_gdf, non_served_outpath.replace(".gpkg", ".csv"))
-
-                logger.warning("[OK] %s: processed successfully", country)
-                results[country] = True
-            except Exception as e:
-                logger.exception("[FAIL] %s: failed with error: %s", country, e)
-                results[country] = False
+    with ProcessPoolExecutor(max_workers=int(max_workers)) as executor:
+        pending = {}
+        for country in countries:
+            served = served_by_country.get(country, np.array([], dtype=object))
+            fut = executor.submit(country_pass, tif_dict[country], shapely.to_wkb(served), all_touched, copy_dir)
+            pending[fut] = ("pass", country)
+            state[country] = {"t0": time.time(), "served_geoms": served}
+        while pending:
+            finished, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                kind, country = pending.pop(fut)
+                if country not in state:  # failed already
+                    continue
+                st = state[country]
+                try:
+                    out = fut.result()
+                except Exception as err:
+                    logger.exception("[FAIL] %s (%s): %s", country, kind, err)
+                    results[country] = False
+                    if os.path.exists(st.get("read_path", "")) and st["read_path"] != tif_dict[country]:
+                        os.remove(st["read_path"])
+                    state.pop(country)
+                    continue
+                if kind == "basin":
+                    st["rows"].extend(out)
+                    st["left"] -= 1
+                    if st["left"] == 0:
+                        finish(country)
+                    continue
+                # the country pass is back: one task per basin that holds people
+                st.update(out, rows=[])
+                tasks = _basin_tasks(out, basins_gdf, basin_tree, meta_cols, st.pop("served_geoms"))
+                st["n_basins"] = st["left"] = len(tasks)
+                logger.info("[%s] pass done in %.0f s; %s basins with people", country, time.time() - st["t0"], len(tasks))
+                if not tasks:
+                    finish(country)
+                for window, basin_wkb, attrs, served_wkb in tasks:
+                    f = executor.submit(
+                        basin_islands, out["read_path"], window, basin_wkb, attrs, served_wkb, min_pixels, min_pop,
+                        all_touched,
+                    )
+                    pending[f] = ("basin", country)
+            gc.collect()
+    shutil.rmtree(copy_dir, ignore_errors=True)
+    failed = sorted(c for c, ok in results.items() if not ok)
+    if failed:
+        raise RuntimeError(f"create_rasters failed for {len(failed)} countries: {', '.join(failed)}")
     return results
 
 
-def parse_args():
+def _size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+def _basin_tasks(country_out, basins_gdf, basin_tree, meta_cols, served_geoms):
+    """(window, basin WKB, basin columns, served WKB) for every basin whose window touches a block with people, largest first."""
+    t, h, w, occ = country_out["transform"], country_out["height"], country_out["width"], country_out["occupied"]
+    bounds = rasterio.transform.array_bounds(h, w, t)  # (west, south, east, north)
+    served_tree = shapely.STRtree(served_geoms) if len(served_geoms) else None
+    tasks = []
+    for i in basin_tree.query(box(bounds[0], bounds[1], bounds[2], bounds[3])):
+        geom = basins_gdf.geometry.values[i]
+        win = basin_window(geom.bounds, t, h, w)
+        if win is None:
+            continue
+        r0, c0 = win.row_off // BLOCK, win.col_off // BLOCK
+        r1, c1 = (win.row_off + win.height - 1) // BLOCK + 1, (win.col_off + win.width - 1) // BLOCK + 1
+        if not occ[r0:r1, c0:c1].any():
+            continue
+        attrs = {c: basins_gdf[c].values[i] for c in meta_cols}
+        attrs = {c: (v.item() if hasattr(v, "item") else v) for c, v in attrs.items()}
+        served = served_geoms[served_tree.query(box(*geom.bounds))] if served_tree is not None else []
+        tasks.append((win, shapely.to_wkb(geom), attrs, shapely.to_wkb(np.asarray(served, dtype=object))))
+    tasks.sort(key=lambda task: -(task[0].width * task[0].height))
+    return tasks
+
+
+def parse_args(argv=None):
     """Parse sharding args and standardized named config overrides."""
-    parser = argparse.ArgumentParser(description="Create signed rasters and unserved island stats for a country shard.")
+    parser = argparse.ArgumentParser(description="Country totals and non-served islands of a country shard.")
     parser.add_argument(
         "--job-index", type=int, default=0, help="Index of this shard, in [0, total-jobs-1] (default: 0)."
     )
@@ -599,10 +419,10 @@ def parse_args():
         metavar="N",
         help="Only concatenate the CSVs of shards 0..N-1 into the final CSVs and exit.",
     )
+    parser.add_argument("--countries", default=None, help="Check run: only these ISO-2 codes (comma-separated).")
+    parser.add_argument("--out-dir", default=None, help="Check run: write the two CSVs here instead.")
     add_standard_override_arguments(parser)
-
-    args = parser.parse_args()
-    return args
+    return parser.parse_args(argv)
 
 
 def shard_path(path, job_index, total_jobs):
@@ -624,7 +444,7 @@ def merge_shards(paths, total_jobs):
         missing = [part for part in parts if not os.path.exists(part)]
         if missing:
             raise FileNotFoundError(f"shards not finished: {missing}")
-        frames = [pd.read_csv(part) for part in parts if os.path.getsize(part) > 0]
+        frames = [pd.read_csv(part, keep_default_na=False, na_values=[""]) for part in parts if os.path.getsize(part) > 0]
         with atomic_output(path) as tmp_path:
             if frames:
                 pd.concat(frames, ignore_index=True).to_csv(tmp_path, index=False)
@@ -633,46 +453,44 @@ def merge_shards(paths, total_jobs):
         logger.info("Merged %s shards into %s", total_jobs, path)
 
 
-def shard_tif_dict(tif_dict, job_index, total_jobs, seed):
-    """Split the country-to-raster mapping into a deterministic worker shard."""
+def shard_tif_dict(tif_dict, job_index, total_jobs, seed=None):
+    """The countries of shard ``job_index``: largest raster files first, each to the shard with the least so far.
+
+    Balances the shards by file size (before: a random split, so one shard could get Russia, China and the
+    United States). ``seed`` is not used any more; kept for the call signature.
+    """
     if total_jobs < 1:
         raise ValueError(f"total_jobs must be >= 1, got {total_jobs}")
     if job_index < 0 or job_index >= total_jobs:
         raise ValueError(f"job_index must be in [0, {total_jobs - 1}], got {job_index}")
+    load = [(0, 0)] * total_jobs  # (bytes, countries) per shard
+    mine = {}
+    for country in sorted(tif_dict, key=lambda c: (-_size(tif_dict[c]), c)):
+        shard = min(range(total_jobs), key=lambda i: (load[i], i))
+        load[shard] = (load[shard][0] + _size(tif_dict[country]), load[shard][1] + 1)
+        if shard == job_index:
+            mine[country] = tif_dict[country]
+    return mine
 
-    countries = sorted(tif_dict.keys())
-    random.Random(seed).shuffle(countries)
-    shard_countries = countries[job_index::total_jobs]
-    return {country: tif_dict[country] for country in shard_countries}
 
-
-def main():
-    """Load configuration, prepare inputs, and run country batch processing.
-
-    Returns
-    -------
-    None
-        The function writes signed rasters, summary CSV rows, and non-served
-        polygon outputs for the configured shard.
-    """
-    args = parse_args()
+def main(argv=None):
+    """Load the configuration, the service areas and the basins, and run the shard (or a check run)."""
+    args = parse_args(argv)
     overrides = parse_config_overrides(args=args)
     cfg = load_config(script_name="create_rasters", **overrides)
     provenance.write_run_manifest(cfg, "create_rasters")
-    max_workers = cfg["annotations"]["max_workers"]
-    seed = int(cfg["annotations"]["random_seed"])
-    min_pixels = int(cfg["min_pixels"])
-    tif_dir = cfg["paths"]["pop_tif_dir"]
-
-    zoom_level = int(cfg["zoom_level"])
-    output_tif_dir = cfg["paths"]["WWTP_tif_dir"]
     non_served_outpath = os.path.abspath(cfg["paths"]["non_served_outpath"].replace(".gpkg", ".csv"))
     csv_output_filepath = os.path.abspath(cfg["paths"]["csv_output_filepath"].replace(".gpkg", ".csv"))
     if args.merge_shards is not None:
         merge_shards([csv_output_filepath, non_served_outpath], args.merge_shards)
         return
-    non_served_outpath = shard_path(non_served_outpath, args.job_index, args.total_jobs)
-    csv_output_filepath = shard_path(csv_output_filepath, args.job_index, args.total_jobs)
+    if args.out_dir:
+        os.makedirs(args.out_dir, exist_ok=True)
+        csv_output_filepath = os.path.join(os.path.abspath(args.out_dir), os.path.basename(csv_output_filepath))
+        non_served_outpath = os.path.join(os.path.abspath(args.out_dir), os.path.basename(non_served_outpath))
+    else:
+        non_served_outpath = shard_path(non_served_outpath, args.job_index, args.total_jobs)
+        csv_output_filepath = shard_path(csv_output_filepath, args.job_index, args.total_jobs)
 
     approach = str(cfg["figures"]["approach"])
     voronoi_map = create_pop_output_paths(cfg)["voronoi"]
@@ -680,64 +498,45 @@ def main():
         raise KeyError(
             f"Configured figures.approach '{approach}' is not available; expected one of {sorted(voronoi_map)}"
         )
-    voronoi_3a_filepath = os.path.abspath(voronoi_map[approach])
-    if not os.path.exists(output_tif_dir):
-        os.makedirs(output_tif_dir, exist_ok=True)
-    logger.info("Loading Voronoi polygons from %s", voronoi_3a_filepath)
+    country_col, basin_col = cfg["country_output_column"], cfg["basin_column_name"]
+    layer = os.path.abspath(voronoi_map[approach])
+    logger.info("Loading service areas from %s", layer)
+    served = gpd.read_file(layer, columns=[country_col])
+    if served.crs is None:
+        raise ValueError(f"{layer} has no CRS")
+    served = served[served.geometry.notna() & ~served.geometry.is_empty].to_crs(4326)
 
-    gdf = gpd.read_file(voronoi_3a_filepath)
-    country_output_col = cfg["country_output_column"]
-    tif_dict = find_newest_country_tif_files(gdf[country_output_col].unique(), tif_dir)
-    logger.info("Resolved %s newest country TIFF files", len(tif_dict))
+    year = int(cfg["population_year"])
+    tif_dict = find_country_tif_files_for_year(served[country_col].dropna().unique(), cfg["paths"]["pop_tif_dir"], year)
+    if args.countries:
+        wanted = {c.strip().upper() for c in args.countries.split(",") if c.strip()}
+        tif_dict = {c: p for c, p in tif_dict.items() if c in wanted}
+    else:
+        tif_dict = shard_tif_dict(tif_dict, args.job_index, args.total_jobs)
+    logger.info("%s countries with a %s raster in this run (shard %s/%s)", len(tif_dict), year, args.job_index, args.total_jobs)
 
-    tif_dict = shard_tif_dict(tif_dict, args.job_index, args.total_jobs, seed)
-    logger.info("Running shard %s/%s with %s countries", args.job_index, args.total_jobs, len(tif_dict))
-
-    watershed_gdf = gpd.read_file(cfg["paths"]["watershed"])
-    if watershed_gdf.crs is None:
+    basins = gpd.read_file(cfg["paths"]["watershed"])
+    if basins.crs is None:
         raise ValueError("Watershed dataset must include CRS metadata")
-    watershed_gdf = (
-        watershed_gdf.to_crs("EPSG:4326")
-        .drop_duplicates(
-            subset=[cfg["basin_column_name"], "geometry"],
-            keep="first",
-        )
-        .reset_index(drop=True)
+    keep = [c for c in (basin_col, *BASIN_META) if c in basins.columns]
+    basins = (
+        basins[[*keep, "geometry"]].to_crs(4326).drop_duplicates(subset=[basin_col, "geometry"]).reset_index(drop=True)
     )
-    country_boundary_col = cfg["country_boundary_column"]
-    if country_output_col not in watershed_gdf.columns:
-        logger.warning("Watershed %s missing; running overture enrichment", country_output_col)
-        if not os.path.exists(cfg["paths"]["overture"]):
-            download_overture_maps(cfg["paths"]["overture_s3_url"], cfg["paths"]["overture"])
-        watershed_gdf = intersects_with_country_db(
-            watershed_gdf,
-            cfg["paths"]["overture"],
-            polygon_country_col=country_boundary_col,
-            output_country_col=country_output_col,
-        )
-        # Persist to a dedicated path, never back onto cfg['paths']['watershed']:
-        # that was a self-loop that mutated the asset combine_watersheds
-        # produces and would race under concurrent/partitioned execution.
-        # Every variant of one level writes the same file; the rename keeps concurrent writers from tearing it.
-        with atomic_output(cfg["paths"]["watershed_with_countries"]) as tmp_path:
-            watershed_gdf.to_file(tmp_path, driver="GPKG", index=False)
 
-    logger.info("Starting country intersection workflow with max_workers=%s", max_workers)
-    orchestrate_intersections(
+    process_countries(
         tif_dict,
-        gdf,
-        watershed_gdf,
-        output_tif_dir,
+        served,
+        basins,
         csv_output_filepath,
         non_served_outpath,
-        max_workers,
-        min_pixels=min_pixels,
-        zoom_level=zoom_level,
-        country_col=country_output_col,
-        basin_col=cfg["basin_column_name"],
+        max_workers=int(cfg["annotations"]["max_workers"]),
+        min_pixels=int(cfg["min_pixels"]),
+        min_pop=int(cfg["threshold_value"]),
+        country_col=country_col,
+        basin_col=basin_col,
         all_touched=bool(cfg["served_all_touched"]),
     )
-    if args.total_jobs > 1:
+    if args.total_jobs > 1 and not args.out_dir:
         for path in (csv_output_filepath, non_served_outpath):  # a shard without rows still reports that it finished
             if not os.path.exists(path):
                 ensure_output_dir_for_file(path)

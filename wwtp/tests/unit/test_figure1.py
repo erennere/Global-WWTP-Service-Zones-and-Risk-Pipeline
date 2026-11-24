@@ -67,6 +67,15 @@ def test_every_threshold_check_goes_through_enough_plants():
         assert not re.search(r"\b(n_ref|n_shift|n_tank|n_cat|n)\s*>=\s*a\.min_", text), name
 
 
+def _pop_year():
+    return load_config(script_name="figure1")["population_year"]
+
+
+def test_figure1_serves_the_year_of_the_non_served_areas():
+    assert _pop_year() == load_config(script_name="create_rasters")["population_year"]
+    assert _setting("population_year") == str(_pop_year())
+
+
 def _release_inputs():
     import importlib.util
 
@@ -118,7 +127,7 @@ def test_plants_of_a_release_file_become_the_figure_inputs(tmp_path):
             "rect_area": [25.0, 0.0],
             "category_number": ["6.0", None],
             "epsg": [32633.0, 32633.0],
-            "2024_zonal_sum": [1000.0, 2000.0],
+            f"{_pop_year()}_zonal_sum": [1000.0, 2000.0],
             "2020_zonal_sum": [900.0, 1900.0],
         },
         geometry=[Point(17.0839, -22.5609), Point(17.049136, 47.778667)],
@@ -136,7 +145,8 @@ def test_plants_of_a_release_file_become_the_figure_inputs(tmp_path):
     assert pts.HYBAS_ID.tolist() == [1060000010, 2060000020]
     assert not (out / "heigit_points_original.csv").exists()
     pop = pd.read_csv(out / "heigit_pop.csv")
-    assert pop.zonal_sum_2024.tolist() == [1000.0, 2000.0] and pop.zonal_sum_2020.tolist() == [900.0, 1900.0]
+    assert pop.columns.tolist() == ["fid", f"zonal_sum_{_pop_year()}"]  # the year of figure1.population_year only
+    assert pop[f"zonal_sum_{_pop_year()}"].tolist() == [1000.0, 2000.0]
     attrs = pd.read_csv(out / "heigit_attrs.csv")
     assert {"fid", "round_area", "rect_area", "category_number", "category_name"} <= set(attrs.columns)
     assert pd.read_csv(out / "heigit_epsg.csv").columns.tolist() == ["fid", "epsg"]

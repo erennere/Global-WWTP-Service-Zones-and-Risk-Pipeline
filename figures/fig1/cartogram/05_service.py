@@ -1,6 +1,6 @@
 """Served share of the urban population per HydroBASINS level 3 / level 4 basin (Figure 1b).
 
-  P_served = sum of HeiGIT service-area population (2024_zonal_sum) of the plants in the basin
+  P_served = sum of HeiGIT service-area population (<population_year>_zonal_sum; figure1.population_year) of the plants in the basin
   P_non    = sum of pop_sum of non-served urban areas in the basin (non_served_points.csv: first
              non_served_nxt_river_v2_lvl8_bfk0_8_log_mult; for plant list v3 the non-served areas of the released
              variant, 00a_release_inputs.py non_served; exact duplicate rows removed upstream)
@@ -21,7 +21,7 @@ from shapely import affinity
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fig1_config import TAG, pfaf_lookup  # noqa: E402  (config.yaml, section figure1)
+from fig1_config import TAG, pfaf_lookup, POP_YEAR, SERVED  # noqa: E402  (config.yaml, section figure1)
 
 DATA, HB, AGG, OUT = sys.argv[1:5]
 TAG = sys.argv[5] if len(sys.argv) > 5 else TAG
@@ -32,7 +32,8 @@ ns = pd.read_csv(f"{DATA}/non_served_points.csv", keep_default_na=False, na_valu
 hp = pd.read_csv(f"{DATA}/heigit_points.csv", keep_default_na=False, na_values=[""])
 pop = pd.read_csv(f"{DATA}/heigit_pop.csv")
 hp = hp.merge(pop, on="fid", how="left")
-assert hp.zonal_sum_2024.notna().all()
+assert SERVED in hp.columns, f"heigit_pop.csv has no {SERVED} (figure1.population_year)"
+assert hp[SERVED].notna().all()
 pf8 = pf9 = pfaf_lookup(HB)  # HYBAS_ID of any level (areas: 8 or 6, plants: 9 or 6) -> PFAF_ID
 cty = gpd.read_file(f"{AGG}/units_country_{TAG}.gpkg", ignore_geometry=True)
 unc_cty = set(cty.loc[cty.status == "uncovered", "iso2"])
@@ -61,7 +62,8 @@ report = {
     "non_served_rows": len(ns),
     "non_served_pop": float(ns.pop_sum.sum()),
     "heigit_plants": len(hp),
-    "served_pop_2024": float(hp.zonal_sum_2024.sum()),
+    "served_year": POP_YEAR,
+    "served_pop": float(hp[SERVED].sum()),
 }
 for lev in (3, 4):
     units = gpd.read_file(f"{AGG}/units_hybas{lev}_{TAG}.gpkg")[["PFAF_ID", "status", "geometry"]]
@@ -85,7 +87,7 @@ for lev in (3, 4):
         {
             "P_non": ns.groupby(ns_unit).pop_sum.sum(),
             "n_areas": ns.groupby(ns_unit).size(),
-            "P_served": hp.groupby(h_unit).zonal_sum_2024.sum(),
+            "P_served": hp.groupby(h_unit)[SERVED].sum(),
             "n_plants": hp.groupby(h_unit).size(),
         }
     ).fillna(0)

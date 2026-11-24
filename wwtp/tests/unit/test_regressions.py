@@ -24,7 +24,8 @@ from wwtp import geo_utils
 from wwtp import pipelines
 from wwtp.data_merge import final_data_merge
 from wwtp.industrial_analysis.find_unconnected_industrial_areas import find_unconnected_areas
-from wwtp.pop_at_risk_river_calculations.create_rasters import polygon_raster_sign_from_gdf
+import shapely
+from wwtp.pop_at_risk_river_calculations.create_rasters import country_pass
 from wwtp.pop_at_risk_river_calculations.find_unserved_pop import add_buffers_to_WWTP
 from wwtp import service_areas as sa
 
@@ -152,9 +153,9 @@ def test_B6_final_merge_cluster_points_never_sums_population():
 
 
 # --------------------------------------------------------------------------- #
-# B7  fractional WorldPop counts must survive the signed raster               #
+# B7  fractional WorldPop counts must survive the country totals              #
 # --------------------------------------------------------------------------- #
-def test_B7_signed_raster_keeps_fractional_population(tmp_path):
+def test_B7_country_totals_keep_fractional_population(tmp_path):
     raster = tmp_path / "pop.tif"
     with rasterio.open(
         raster,
@@ -171,10 +172,10 @@ def test_B7_signed_raster_keeps_fractional_population(tmp_path):
         dst.write(np.full((100, 100), 0.6, dtype="float32"), 1)  # 6,000 people
     served = gpd.GeoDataFrame(geometry=[box(0, 0, 0.5, 1)], crs=4326)
 
-    _, pos, neg = polygon_raster_sign_from_gdf(str(raster), served, str(tmp_path / "out.tif"))
+    out = country_pass(str(raster), shapely.to_wkb(np.asarray(served.geometry.values, dtype=object)))
 
-    assert pos == pytest.approx(3000.0, rel=1e-4)
-    assert -neg == pytest.approx(3000.0, rel=1e-4)
+    assert out["served"] == pytest.approx(3000.0, rel=1e-4)
+    assert out["unserved"] == pytest.approx(3000.0, rel=1e-4)
 
 
 # --------------------------------------------------------------------------- #

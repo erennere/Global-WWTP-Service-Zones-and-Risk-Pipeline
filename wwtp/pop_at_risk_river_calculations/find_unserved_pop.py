@@ -10,6 +10,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import geopandas as gpd
+import mercantile
 import pandas as pd
 from shapely import from_wkt, to_wkt
 
@@ -21,6 +22,13 @@ from ..utils import atomic_output, configure_logging, duckdb_connection
 from .find_pop_in_danger_pop import finding_tiles
 
 logger = logging.getLogger(__name__)
+
+
+def _point_tile(geom, zoom_level):
+    """'x-y-z' of the zoom-level tile that holds the geometry's representative point."""
+    pt = geom.representative_point()
+    t = mercantile.tile(pt.x, pt.y, int(zoom_level))
+    return f"{t.x}-{t.y}-{t.z}"
 
 
 def read_urban_areas(filepath):
@@ -229,7 +237,7 @@ def create_unserved_pop(
     filepath : str
         Input CSV path containing at least `pop_sum` and `geometry` columns.
     threshold : int
-        Minimum population sum to keep a polygon.
+        Minimum population sum to keep a polygon (create_rasters already keeps only whole islands above it).
     output_filepath : str
         Output GPKG path.
 
@@ -279,6 +287,10 @@ def create_unserved_pop(
         urban_buffer=urban_buffer,
         tolerance=tolerance,
     )
+    if len(df):
+        # One tile per island: the one holding its representative point (islands are whole since 24 Nov 2026 and
+        # may span several tiles; the lowest-numbered tile string was an arbitrary one of them)
+        df["tile"] = [_point_tile(g, zoom_level) for g in df.geometry]
     df = add_buffers_to_WWTP(
         df,
         wwtp_filepath=wwtp_filepath,

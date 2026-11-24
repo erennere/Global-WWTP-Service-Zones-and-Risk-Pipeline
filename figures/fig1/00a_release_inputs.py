@@ -10,7 +10,7 @@ Three steps, each a subcommand; run before 00_fix_utm.py and `snakemake fig1`:
         heigit_epsg.csv    fid, epsg  (00_fix_utm's report)
         heigit_attrs.csv   fid, ISO_2, round_area, rect_area, category_number, category_name, SOURCE_DS
                            (the tanks panel: figure1.paths.heigit_attrs)
-        heigit_pop.csv     fid, zonal_sum_2024, zonal_sum_2020  (05_service, 05b_service_country)
+        heigit_pop.csv     fid, zonal_sum_<year> for figure1.population_year (05_service, 05b_service_country)
       fid is the release file's fid. A heigit_points_original.csv left by an earlier 00_fix_utm run is removed,
       so 00_fix_utm starts again from these plants. After 00_fix_utm, copy heigit_points.csv and heigit_pop.csv
       to <cartogram_dir>/data.
@@ -38,7 +38,10 @@ import pyogrio
 POINT_COLUMNS = ["WASTE_ID", "HW_WASTE_ID", "uwwCode", "ISO_2", "CNTRY_ISO", "HYBAS_ID", "SOURCE_DS",
                  "num_detections", "category_name", "POP_SERVED"]
 ATTR_COLUMNS = ["ISO_2", "round_area", "rect_area", "category_number", "category_name", "SOURCE_DS"]
-POP_YEARS = (2024, 2020)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fig1_config import POP_YEAR  # noqa: E402  (config.yaml, section figure1)
+
+POP_YEARS = (POP_YEAR,)
 NON_SERVED_COLUMNS = ["HYBAS_ID", "NEXT_DOWN", "MAIN_BAS", "data_idx", "tile", "country", "pop_sum"]
 
 
@@ -78,8 +81,9 @@ def plants(release, out_dir, layer="WWTP_LOCATIONS"):
         "without_HYBAS_ID": int(pts.HYBAS_ID.isna().sum()),
         "HYBAS_ID_levels": sorted({int(str(int(v))[1:3]) for v in pts.HYBAS_ID.dropna()}),
         "by_SOURCE_DS": pts.SOURCE_DS.value_counts(dropna=False).to_dict(),
-        "served_2024": float(pop.zonal_sum_2024.sum()),
-        "plants_without_served_2024": int(pop.zonal_sum_2024.isna().sum()),
+        "served_year": POP_YEAR,
+        "served": float(pop[f"zonal_sum_{POP_YEAR}"].sum()),
+        "plants_without_served": int(pop[f"zonal_sum_{POP_YEAR}"].isna().sum()),
     }
     with open(os.path.join(out_dir, "release_inputs_report.json"), "w") as f:
         json.dump(report, f, indent=1, default=str)

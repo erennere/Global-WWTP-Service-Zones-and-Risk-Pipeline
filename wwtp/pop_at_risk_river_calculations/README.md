@@ -35,8 +35,8 @@ Note: `find_intersection_river.py` reads the river search distance from `find_in
 ## Scripts in This Folder
 | Script | Role | What it does | Key inputs | Key outputs |
 | --- | --- | --- | --- | --- |
-| `create_rasters.py` | Python worker | Builds raster inputs for the non-served analysis | population-enriched Voronoi layers, rasters, basin data | served/non-served raster products |
-| `find_unserved_pop.py` | Python worker | Thresholds and vectorizes non-served areas | raster products and threshold settings | non-served GeoPackages |
+| `create_rasters.py` | Python worker | Served / not-served totals per country and the non-served islands (8-connected non-served populated pixels of one basin, whole islands above `threshold_value`) of `population_year` | population layer of figures.approach, WorldPop rasters of that year, basins | country stats CSV, islands CSV |
+| `find_unserved_pop.py` | Python worker | Keeps the islands within `urban_buffer` of an urban centre and `wwtp_buffer` of a plant; one zoom-8 tile per island (its representative point) | islands CSV, GHS-UCDB, plants | non-served GeoPackage |
 | `find_diff_pop.py` | Python worker | Computes population differences for later impact logic | served/unserved products and references | difference layers and tables |
 | `assign_rivers_to_basin.py` | Python worker | Assigns river segments to basins | river and watershed layers | basin-linked river GeoPackage |
 | `find_intersection_river.py` | Python worker | Links non-served polygons to nearby rivers | non-served polygons and basin-linked rivers | river-linked non-served polygons |
@@ -69,7 +69,9 @@ Outputs go under `data/risk_calculation/...` and `data/results_pop_at_risk/...`;
 
 ## Smart Behaviors
 - `create_rasters` shards never write the same file; a shard rerun resumes from its own CSV (countries already listed are skipped).
-- `create_rasters.py` skips countries that already have completed outputs.
+- `create_rasters.py` skips countries that already have completed outputs; island rows of a country without stats (an interrupted run) are removed first.
+- `create_rasters` works per basin: one read and one rasterisation per basin window, islands labelled and summed from the pixels, only kept islands turned into polygons; a striped raster wider than 8,192 pixels is copied to a tiled file in the temp folder first. `--countries LU,NL --out-dir DIR` is a check run (target `create_rasters_check`).
+- `find_diff_pop` is not part of `risk` (nothing reads it); run it with the target `diff_pop`.
 - `assign_rivers_to_basin.py` skips assignment work if one of the join inputs is empty.
 - `find_intersection_river.py` uses `find_intersection_river.x_distance` to control river matching distance.
 - `impact_polygons_pop.py` uses propagation parameters from `impact_polygons_pop_params`, including `org_per_pop`, `c_limit`, `base_k`, `theta`, `step_m`, `least_discharge_cms`, and `impact_radii`.
@@ -80,9 +82,11 @@ Delete the corresponding risk output directory to force a rerun.
 | Config key | Default | Effect |
 | --- | --- | --- |
 | `create_rasters.annotations.default_mode` | `sequential` | Launcher execution mode |
-| `create_rasters.zoom_level` | `8` | Tile zoom level |
+| `create_rasters.population_year` | `2026` | WorldPop year of the whole risk chain (create_rasters, find_pop_in_danger_pop, find_diff_pop) and of Figure 1's served population |
+| `create_rasters.zoom_level` | `8` | Tile zoom level (find_unserved_pop, find_pop_in_danger_pop) |
 | `create_rasters.min_pixels` | `9` | Minimum raster island size |
-| `find_unserved_pop.threshold_value` | `1000` | Non-served population threshold |
+| `create_rasters.threshold_value` | `1000` | An island is kept when it holds more people than this (the whole island; find_unserved_pop inherits it) |
+| `create_rasters.check_countries` | `LU, NL, DE, KE, IN` | Countries of the check run (target `create_rasters_check`) |
 | `find_intersection_river.x_distance` | `5000` | Max distance for matching non-served polygons to nearby rivers |
 | `impact_polygons_pop.impact_polygons_pop_params.org_per_pop` | `60.0` | Organic load per person |
 | `impact_polygons_pop.impact_polygons_pop_params.c_limit` | `5.0` | Concentration threshold |
@@ -92,7 +96,6 @@ Delete the corresponding risk output directory to force a rerun.
 | `impact_polygons_pop.impact_polygons_pop_params.step_m` | `100.0` | Propagation step |
 | `impact_polygons_pop.impact_polygons_pop_params.least_discharge_cms` | `0.269` | Minimum discharge fallback |
 | `find_pop_in_danger_pop.zoom_level` | null | Tile zoom level override |
-| `create_rasters.paths.WWTP_tif_dir` | template | WWTP raster output directory |
 | `create_rasters.paths.non_served_outpath` | template | Non-served polygon output |
 | `find_unserved_pop.paths.non_served_above_threshold_outpath` | template | Thresholded non-served output |
 | `assign_rivers_to_basin.paths.rivershed` | template | River network input |

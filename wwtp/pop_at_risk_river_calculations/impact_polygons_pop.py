@@ -517,15 +517,10 @@ def orchestrate_logic(pop_gdf, nxt_dis_col, main_riv_col, max_workers, model_par
         initializer=init_worker,
         initargs=(next_dict, geom_dict, lat_dict, level_dict, discharge_dict),
     ) as executor:
+        # one groupby (a filter of the whole table per main river was quadratic in the number of rivers)
         futures = [
-            executor.submit(
-                create_impact_polygons,
-                pop_gdf[pop_gdf[main_riv_col] == main_riv].copy(),
-                main_riv,
-                nxt_dis_col,
-                model_params,
-            )
-            for main_riv in total_chunks
+            executor.submit(create_impact_polygons, chunk.copy(), main_riv, nxt_dis_col, model_params)
+            for main_riv, chunk in pop_gdf.groupby(main_riv_col, sort=False)
         ]
 
         for future in tqdm(as_completed(futures), total=len(total_chunks), desc="Generating Plumes"):

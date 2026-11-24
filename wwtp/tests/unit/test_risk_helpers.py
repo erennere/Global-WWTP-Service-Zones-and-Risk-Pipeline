@@ -753,6 +753,7 @@ def test_find_diff_pop_main_reads_the_configured_approach_and_writes_output(
     cfg["paths"]["pop_tif_dir"] = "./tifs"
     cfg["paths"]["pop_dif_output_dir"] = "./diff_outputs"
     cfg["max_workers"] = 3
+    cfg["population_year"] = 2026
     cfg["basin_column_name"] = "HYBAS_ID"
     cfg["country_output_column"] = "country"
     cfg["figures"] = {"approach": 1}
@@ -802,11 +803,12 @@ def test_find_diff_pop_main_reads_the_configured_approach_and_writes_output(
         }
         return diff_gdf.copy()
 
-    def fake_intersect_all_files(gdf, tif_dir, max_workers=None, country_col=None):
+    def fake_intersect_all_files(gdf, tif_dir, max_workers=None, country_col=None, years=None):
         captured["intersect_all_files"] = {
             "tif_dir": tif_dir,
             "max_workers": max_workers,
             "country_col": country_col,
+            "years": years,
             "rows": len(gdf),
         }
         return gdf.copy()
@@ -848,6 +850,7 @@ def test_find_diff_pop_main_reads_the_configured_approach_and_writes_output(
         "tif_dir": cfg["paths"]["pop_tif_dir"],
         "max_workers": 3,
         "country_col": "country",
+        "years": [2026],  # the configured year only
         "rows": 1,
     }
     assert captured["ensured"] == expected_output

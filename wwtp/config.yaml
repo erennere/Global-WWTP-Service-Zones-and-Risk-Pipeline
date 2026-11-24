@@ -1044,9 +1044,20 @@ create_rasters:
   size_measure: null
   zoom_level: 8
   min_pixels: 9
+  # WorldPop year of the non-served population and of everything downstream that reads rasters
+  # (find_pop_in_danger_pop, find_diff_pop) and of Figure 1's served population: one year for
+  # served and not served (Eren, 24 Nov 2026). Before, each step took the newest file (2030 projection).
+  population_year: 2026
+  # An island (8-connected populated, non-served pixels of one basin, >= min_pixels) is kept when it
+  # holds more people than this; the whole island counts, not its pieces per map tile (Eren, 24 Nov
+  # 2026). find_unserved_pop applies the same value.
+  threshold_value: 1000
   # A pixel counts as served when its centre lies in a service area
   # (false), or when any part of it does (true). Used for both outputs.
   served_all_touched: false
+  # A check run before the full run (target create_rasters_check, release_export's variant): these countries
+  # only, timings and totals in its log, the two CSVs in <risk folder>/check
+  check_countries: ['LU', 'NL', 'DE', 'KE', 'IN']
   # Countries are split into this many jobs (create_rasters --job-index/--total-jobs);
   # each writes its own CSVs and a final job merges them (--merge-shards).
   shards: 10
@@ -1054,9 +1065,8 @@ create_rasters:
   country_boundary_column: null
   country_output_column: null
   annotations:
-    # Worker processes for rasterising countries. Was inherited from the
-    # OSM extraction step's annotations.max_workers; same value, now explicit.
-    max_workers: 8
+    # Worker processes: country passes and basin tasks share one pool (create_rasters job: 16 threads)
+    max_workers: 16
     random_seed: null
   figures:
     approach: 1
@@ -1066,17 +1076,9 @@ create_rasters:
     voronoi_dir: null
     pop_output_dir: null
     pop_tif_dir: null
-    WWTP_tif_dir: '{data_dir}/WWTP_tifs/v{version}/lvl{level}/bf{buffer}/{weight_type}'
     non_served_outpath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/non_served_areas_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.gpkg'
     csv_output_filepath: '{data_dir}/risk_calculation/v{version}/lvl{level}/bf{buffer}/{weight_type}/raster_country_stats_v{version}_lvl{level}_bf{buffer}_{weight_type}{weight_func}.csv'
     watershed: null
-    # A dedicated output for the country-enriched watershed, never the same
-    # path as `watershed`: writing back onto that path was a self-loop
-    # (mutating the asset combine_watersheds produces) that races under any
-    # concurrent/partitioned execution of this stage.
-    watershed_with_countries: '{data_dir}/hydroshed_river_levels/hydrobase_lvl{level}_combined_with_countries.gpkg'
-    overture: null
-    overture_s3_url: null
 
 find_unserved_pop:
   level: null
@@ -1090,7 +1092,7 @@ find_unserved_pop:
   max_workers: null
   is_parallel: true
   zoom_level: null
-  threshold_value: 1000
+  threshold_value: null  # create_rasters' (islands are already above it)
   urban_buffer: 15000
   wwtp_buffer: 50000
   tolerance: 30 # in meters
@@ -1110,6 +1112,7 @@ find_diff_pop:
   weight_func: null
   dynamic_buffering: null
   size_measure: null
+  population_year: null  # create_rasters'
   max_workers: null
   basin_column_name: null
   country_output_column: null
@@ -1194,6 +1197,7 @@ find_pop_in_danger_pop:
   weight_func: null
   dynamic_buffering: null
   size_measure: null
+  population_year: null  # create_rasters'
   zoom_level: null
   country_boundary_column: null
   country_output_column: null
@@ -1911,6 +1915,8 @@ figure1:
   min_plants: 5
   # A HeiGIT and a reference plant closer than this are the same plant.
   match_radius_m: 10000
+  # Year of the served population (map 2): create_rasters' population_year, the year of the non-served areas
+  population_year: null
   paths:
     data_dir: null
     match_dir: '{data_dir}/figures/fig1/match'
