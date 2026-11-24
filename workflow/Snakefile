@@ -117,6 +117,7 @@ TARGETS = {
     "sweep_layers": "only the service areas + population of the sweep grid",
     "size_measure_layers": "the configured variant's population layers with the size measures of workflow.size_measure_layers",
     "release_export": "a population layer in the release format (HeiGIT_WWTP_...gpkg; variant: section release_export)",
+    "fill_missing_population": "population for the rows of the existing population layers that have none (no raster before), in place",
     "national_data": "reference data downloaded (login node), national registers described",
     "work_list": "national plants + plants that need a new image: `snakemake work_list --config run_once=work_list`",
     "plants_v3": "plant list v3 from v2, the work list and the new images: `... plants_v3 --config run_once=plants_v3`",
@@ -380,6 +381,30 @@ rule release_export:
     threads: threads("release_export")
     resources: **res("release_export")
     shell: STAGE
+
+
+# Population for the rows of the existing population layers that have none (their country had no raster:
+# Kosovo and the Palestinian territories until 24 Nov 2026, utils.WORLDPOP_ISO3), in place: add_pop
+# --fill-missing. Layers of the configured variant, the size-measure layers and the released one, if made.
+FILL_LAYERS = {}
+for _v, _a in [(x, a) for x in (DEFAULT, *SIZE_LAYERS, RELEASE) for a in wf.approaches(x)]:
+    _path = wf.population_layer(_v, _a)
+    if os.path.exists(_path):
+        FILL_LAYERS.setdefault(_path, (_v, _a))
+for _path, (_v, _a) in FILL_LAYERS.items():
+    rule:
+        name: f"fill_population__{_v.tag}__a{_a}"
+        input: _path, wf.stamp("download_pop")
+        output: touch(wf.stamp(f"fill_population_a{_a}", _v))
+        params: module="add_pop", cli=["--approach", _a, "--fill-missing", *_v.cli()]
+        log: wf.log(f"fill_population_a{_a}", _v)
+        threads: threads("release_export")
+        resources: **res("release_export")
+        shell: STAGE
+
+rule fill_missing_population:
+    """Population for the rows that have none, in every population layer made so far (then: release_export)."""
+    input: [wf.stamp(f"fill_population_a{a}", v) for v, a in FILL_LAYERS.values()]
 
 
 rule sweep_layers:

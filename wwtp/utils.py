@@ -114,6 +114,15 @@ def atomic_output(filepath):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+# Country codes of our plants (their country assignment) that WorldPop files under another ISO-3 (Eren,
+# 24 Nov 2026: 29 plants had no population). Kosovo has no ISO 3166 code (WorldPop: XKX); XG and XW are the
+# Gaza Strip and the West Bank (WorldPop: PSE, the State of Palestine); XH is the Golan Heights (one plant),
+# which WorldPop's boundaries (LSIB v11.3, U.S. Government policy since 2019) put in Israel's raster.
+WORLDPOP_ISO3 = {"XK": "XKX", "XG": "PSE", "XW": "PSE", "XH": "ISR"}
+# WorldPop country codes outside ISO 3166 (not in pycountry) that download_pop fetches as well
+WORLDPOP_EXTRA_ISO3 = ("XKX",)
+
+
 def get_iso_codes():
     """Build ISO-code lookup dictionaries used by population workflows.
 

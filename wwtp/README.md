@@ -201,6 +201,11 @@ Workflow:
 - Use `exactextract` to compute zonal statistics for every polygon.
 - Add year-specific `*_zonal_sum` and `*_zonal_std` columns to the GeoPackage.
 - Write the enriched result as `pop_added_<original_filename>.gpkg`.
+- Country codes that WorldPop files under another ISO-3 are looked up through `utils.WORLDPOP_ISO3`: Kosovo
+  (XK → XKX, which download_pop fetches as well), Gaza Strip and West Bank (XG, XW → PSE), Golan Heights (XH → ISR).
+- `--fill-missing` adds population only to the rows of the existing layer that have none (every `*_zonal_sum`
+  empty), in place (SQL updates of those rows; nothing else changes). Snakemake target `fill_missing_population`
+  runs it on every population layer made so far; rerun `release_export` afterwards.
 
 Important behavior:
 - The script takes the approach as the required `--approach` flag (0, 0_only_round, 1, 1_only_round, 2), alongside the shared override flags.

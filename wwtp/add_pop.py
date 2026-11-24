@@ -30,7 +30,7 @@ from shapely.validation import explain_validity
 from .starter import load_config, parse_config_overrides, add_standard_override_arguments
 from . import provenance
 from .pipelines import APPROACHES, create_output_paths, create_pop_output_paths
-from .utils import atomic_output, configure_logging, get_iso_codes
+from .utils import WORLDPOP_ISO3, atomic_output, configure_logging, get_iso_codes
 from .geo_utils import repair_geometry
 from exactextract import exact_extract
 
@@ -295,6 +295,9 @@ def find_country_tif_files(countries, tif_dir):
     -------
     dict[str, list[str] | None]
         Mapping of ISO-2 code to TIFF paths or None when not found.
+
+    Codes WorldPop files under another ISO-3 (Kosovo, Gaza Strip, West Bank, Golan Heights) are looked up
+    through ``utils.WORLDPOP_ISO3``.
     """
     alpha_3_to_2, alpha_2_to_3, alpha_3_to_names, alpha_2_to_names = get_iso_codes()
     tif_filepaths = {}
@@ -303,8 +306,8 @@ def find_country_tif_files(countries, tif_dir):
         if normalized_iso2 is None:
             continue
 
-        if normalized_iso2 in alpha_2_to_3:
-            iso_3 = alpha_2_to_3[normalized_iso2].lower()
+        if normalized_iso2 in WORLDPOP_ISO3 or normalized_iso2 in alpha_2_to_3:
+            iso_3 = WORLDPOP_ISO3.get(normalized_iso2, alpha_2_to_3.get(normalized_iso2)).lower()
             temp_dir = os.path.join(tif_dir, iso_3)
             if os.path.exists(temp_dir):
                 tif_filepath = [os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.endswith(".tif")]
@@ -511,6 +514,80 @@ def orchestrate_intersections(
     logger.info(f"Successfully saved population-enhanced file to {output_path}")
 
 
+def _gpkg_sql_functions(con):
+    """ST_IsEmpty / ST_MinX ... for a plain sqlite3 connection to a GeoPackage (GDAL defines them for its own).
+
+    The rtree triggers of a GeoPackage table mention them on every UPDATE of the table, so SQLite needs them
+    even when, as here, no geometry changes.
+    """
+    import shapely
+
+    sizes = {0: 0, 1: 32, 2: 48, 3: 48, 4: 64}
+
+    def geom(blob):
+        flags = blob[3]
+        return shapely.from_wkb(bytes(blob[8 + sizes[(flags >> 1) & 7]:]))
+
+    con.create_function("ST_IsEmpty", 1, lambda b: None if b is None else int(bool(b[3] & 0x10) or geom(b).is_empty))
+    for name, i in (("ST_MinX", 0), ("ST_MinY", 1), ("ST_MaxX", 2), ("ST_MaxY", 3)):
+        con.create_function(name, 1, lambda b, i=i: None if b is None else float(geom(b).bounds[i]))
+
+
+def fill_missing_population(output_path, tif_dir, max_workers=16, country_col="ISO_2", years=None):
+    """Add population to the rows of an existing population layer that have none, in place.
+
+    A row has none when every ``<year>_zonal_sum`` of ``years`` is empty: its country had no raster when the
+    layer was made (Kosovo and the Palestinian territories until 24 Nov 2026, see ``utils.WORLDPOP_ISO3``).
+    Only those rows' zonal columns are written (one SQL UPDATE per row in the GeoPackage), so every other
+    value, the column types and the file's layout stay as they were. Nothing is written when no row is
+    missing. Returns the number of rows filled.
+    """
+    import sqlite3
+
+    import pyogrio
+
+    layer = pyogrio.list_layers(output_path)[0][0]
+    fields = list(pyogrio.read_info(output_path, layer=layer)["fields"])
+    cols = [f"{y}_zonal_sum" for y in sorted(years)] if years else [c for c in fields if c.endswith("_zonal_sum")]
+    cols = [c for c in cols if c in fields]
+    if not cols:
+        raise ValueError(f"{output_path} has none of the zonal-sum columns {sorted(years or [])}")
+    attrs = pyogrio.read_dataframe(
+        output_path, layer=layer, columns=[country_col, *cols], read_geometry=False, fid_as_index=True
+    )
+    missing = attrs[cols].isna().all(axis=1)
+    if not missing.any():
+        logger.info("No row without population in %s", output_path)
+        return 0
+    fids = attrs.index[missing].tolist()
+    sub = pyogrio.read_dataframe(output_path, layer=layer, columns=[country_col], fids=fids, fid_as_index=True)
+    sub["_fid"] = sub.index
+    logger.info("Filling %s rows without population: %s", len(fids), sub[country_col].value_counts().to_dict())
+    filled = intersect_all_files(
+        sub.reset_index(drop=True), tif_dir, max_workers, all_years=True, country_col=country_col, years=years
+    )
+    write = [c for c in filled.columns if "_zonal_" in c and c in fields]
+    done = filled[filled[cols[-1]].notna()] if cols[-1] in filled.columns else filled.iloc[0:0]
+    if len(done):
+        with sqlite3.connect(output_path) as con:
+            _gpkg_sql_functions(con)  # the GeoPackage's rtree triggers name them on every UPDATE
+            sql = f'UPDATE "{layer}" SET ' + ", ".join(f'"{c}" = ?' for c in write) + " WHERE fid = ?"
+            con.executemany(
+                sql,
+                [
+                    (*[None if pd.isna(v) else float(v) for v in row[write]], int(row["_fid"]))
+                    for _, row in done.iterrows()
+                ],
+            )
+    for country, part in done.groupby(country_col):
+        logger.info("[%s] %s rows, %s: %.0f people", country, len(part), cols[-1], part[cols[-1]].sum())
+    if len(done) < len(fids):
+        left = sub[~sub["_fid"].isin(done["_fid"])][country_col].value_counts().to_dict()
+        logger.warning("%s rows still without population (no raster): %s", len(fids) - len(done), left)
+    logger.info("Filled %s rows in %s", len(done), output_path)
+    return int(len(done))
+
+
 def main():
     """Add population to the service areas of one approach (``--approach 1``) of the configured variant."""
     parser = argparse.ArgumentParser(
@@ -521,6 +598,11 @@ def main():
         required=True,
         choices=APPROACHES,
         help="Service-area approach whose layer gets population columns",
+    )
+    parser.add_argument(
+        "--fill-missing",
+        action="store_true",
+        help="Only add population to the rows of the existing population layer that have none, in place",
     )
     add_standard_override_arguments(parser)
     args = parser.parse_args()
@@ -539,6 +621,15 @@ def main():
         f"Configuration loaded: input={voronoi_file}, pop_tif_dir={cfg['paths']['pop_tif_dir']}, "
         f"max_workers={cfg['add_pop_max_workers']}"
     )
+    if args.fill_missing:
+        fill_missing_population(
+            output_path,
+            cfg["paths"]["pop_tif_dir"],
+            cfg["add_pop_max_workers"],
+            country_col=cfg["country_output_column"],
+            years=population_years(cfg),
+        )
+        return
     try:
         orchestrate_intersections(
             voronoi_file,

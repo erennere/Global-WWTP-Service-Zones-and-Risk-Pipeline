@@ -37,6 +37,7 @@ from .utils import (
     atomic_output,
     configure_logging,
     ensure_output_dir_for_file,
+    WORLDPOP_EXTRA_ISO3,
     get_iso_codes,
     requests_session_with_retries,
 )
@@ -203,7 +204,8 @@ def get_urls(
     when ``include_2014`` is true.
     """
     alpha_3_to_2, alpha_2_to_3, alpha_3_to_names, alpha_2_to_names = get_iso_codes()
-    all_countries = list(alpha_3_to_2.keys())
+    # every ISO 3166 country, and the WorldPop codes outside it (Kosovo: XKX)
+    all_countries = list(alpha_3_to_2.keys()) + [c for c in WORLDPOP_EXTRA_ISO3 if c not in alpha_3_to_2]
     if worldpop_2014_template is None:
         worldpop_2014_template = "https://data.worldpop.org/GIS/Population/Global_2000_2020_1km/2014/{country_upper}/{country_lower}_ppp_2014_1km_Aggregated.tif"
     if worldpop_yearly_template is None:

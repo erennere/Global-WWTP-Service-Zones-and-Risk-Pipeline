@@ -403,6 +403,14 @@ def _basin_tasks(country_out, basins_gdf, basin_tree, meta_cols, served_geoms):
     return tasks
 
 
+def raster_country(path, code):
+    """The ISO-2 code of the raster's own country (from its folder, the ISO-3), or ``code`` when it has none."""
+    from ..utils import get_iso_codes
+
+    iso3 = os.path.basename(os.path.dirname(path)).upper()
+    return get_iso_codes()[0].get(iso3, code)
+
+
 def parse_args(argv=None):
     """Parse sharding args and standardized named config overrides."""
     parser = argparse.ArgumentParser(description="Country totals and non-served islands of a country shard.")
@@ -507,7 +515,14 @@ def main(argv=None):
     served = served[served.geometry.notna() & ~served.geometry.is_empty].to_crs(4326)
 
     year = int(cfg["population_year"])
-    tif_dict = find_country_tif_files_for_year(served[country_col].dropna().unique(), cfg["paths"]["pop_tif_dir"], year)
+    by_code = find_country_tif_files_for_year(served[country_col].dropna().unique(), cfg["paths"]["pop_tif_dir"], year)
+    # Several codes can share one raster (XG and XW: PSE; XH: ISR, with IL; utils.WORLDPOP_ISO3): one task per
+    # raster, labelled with the raster's country, and all their service areas count as served in it.
+    label = {code: raster_country(path, code) for code, path in by_code.items()}
+    served[country_col] = served[country_col].map(lambda c: label.get(c, c))
+    tif_dict = {}
+    for code, path in by_code.items():
+        assert tif_dict.setdefault(label[code], path) == path, f"{label[code]}: two rasters"
     if args.countries:
         wanted = {c.strip().upper() for c in args.countries.split(",") if c.strip()}
         tif_dict = {c: p for c, p in tif_dict.items() if c in wanted}
